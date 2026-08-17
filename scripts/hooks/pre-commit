@@ -1,0 +1,45 @@
+#!/bin/sh
+# PowderLine pre-commit guard: block accidental commits of private/dev material.
+#
+# Enable once per clone with:
+#     git config core.hooksPath scripts/hooks
+#
+# Blocks staged paths that must never enter the public code repo's history:
+#   - _dev/            the private devkit checkout (dossiers, agent context,
+#                      private regression data)
+#   - *.gpx            GSAS-II binary project files (large, regenerable)
+#   - data-like files added OUTSIDE the sanctioned locations (examples/,
+#     tests/data/, docs/) — raw patterns and instrument files belong out of
+#     git; examples embed their data inside input.json instead.
+#
+# The deliberately tracked regression references under examples/**/output/
+# are unaffected: this hook checks only paths outside the allowed roots.
+
+fail=0
+
+staged=$(git diff --cached --name-only --diff-filter=ACR)
+
+for f in $staged; do
+    case "$f" in
+        _dev/*)
+            echo "pre-commit: BLOCKED '$f' — _dev/ is the private devkit and must never be committed." >&2
+            fail=1 ;;
+        *.gpx)
+            echo "pre-commit: BLOCKED '$f' — GSAS-II .gpx binaries are regenerable and stay out of git." >&2
+            fail=1 ;;
+        examples/*|tests/data/*|docs/*)
+            : ;;  # sanctioned locations for committed reference data
+        *.xye|*.xy|*.chi|*.dat|*.tif|*.tiff|*.h5|*.hdf5|*.npy|*.instprm|*.prm)
+            echo "pre-commit: BLOCKED '$f' — data-like file outside examples/, tests/data/, docs/." >&2
+            echo "            Real data lives outside the repo; ship reference data only in the sanctioned dirs." >&2
+            fail=1 ;;
+    esac
+done
+
+if [ "$fail" -ne 0 ]; then
+    echo "pre-commit: commit aborted. Unstage the paths above (git restore --staged <path>)." >&2
+    echo "            To bypass knowingly (rare!): git commit --no-verify" >&2
+    exit 1
+fi
+
+exit 0

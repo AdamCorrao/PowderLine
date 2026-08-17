@@ -1,0 +1,18 @@
+# Normalize all text files to LF in the repository, and check them out as LF on
+# every platform (including Windows). This keeps the committed regression
+# artifacts (TOPAS .inp/.xye/.csv/.txt/.out, GSAS-II reports) byte-stable across
+# a Linux vs Windows round-trip: a fresh tc.exe run on Windows cannot introduce
+# CRLF churn, so `git diff` on re-run reflects only real numeric changes.
+# The repo tracks no binary files (GSAS-II .gpx projects are gitignored), so
+# text=auto is safe; git still auto-detects and skips anything with NUL bytes.
+* text=auto eol=lf
+
+# Windows batch files must keep CRLF.
+*.bat text eol=crlf
+
+# SCM syntax highlighting & preventing 3-way merges
+pixi.lock merge=binary linguist-language=YAML linguist-generated=true
+
+# Shell scripts must always use LF line endings or bash will fail on Windows
+# (redundant with the global rule above, kept explicit for clarity).
+*.sh text eol=lf

@@ -1,0 +1,34 @@
+# pixi.toml template for projects that only need PowderLine's schema validation.
+#
+# Use this template if your project:
+#   - Builds or validates PowderLine recipe JSON (e.g., a recipe builder or UI)
+#   - Does NOT execute refinements directly
+#   - Does NOT need GSAS-II installed
+#
+# SETUP STEPS:
+#   1. Copy this file to your project root as `pixi.toml`
+#   2. Replace the placeholder path in [pypi-dependencies] with your local PowderLine clone path
+#   3. Edit [workspace] fields (name, version) for your project
+#   4. Run: pixi install
+#
+# NOTE: This environment is intentionally minimal — pydantic is the only
+# non-trivial dependency required by powderline.schema. GSAS-II is NOT installed.
+
+[workspace]
+name = "your-project-name"
+version = "0.1.0"
+channels = ["conda-forge"]
+platforms = ["linux-64"]  # adjust if targeting other platforms
+
+[dependencies]
+python = ">=3.10"
+pydantic = ">=2.0"
+
+# Needed to perform the editable install of PowderLine
+pip = ">=25.0"
+
+[pypi-dependencies]
+# EDIT THIS PATH to point to your local clone of the PowderLine repository.
+# Only powderline.schema (and its pydantic dependency) will be imported —
+# GSAS-II is never loaded in schema-only mode.
+powderline = { path = "/path/to/PowderLine", editable = true }

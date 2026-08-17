@@ -1,0 +1,76 @@
+# pixi.toml template for projects that use PowderLine for schema validation AND refinement execution.
+#
+# SETUP STEPS:
+#   1. Copy this file to your project root as `pixi.toml`
+#   2. Replace the placeholder path in [pypi-dependencies] with your local PowderLine clone path
+#   3. Edit [workspace] fields (name, version) for your project
+#   4. Run: pixi install
+#
+# NOTES:
+#   - GSAS-II is declared here (not in powderline's pyproject.toml) as a conda package
+#     built via `pixi-build` from the `tacaswell/GSAS-II` fork, which adds the conda
+#     recipe. This mirrors PowderLine's own pixi.toml and installs GSAS-II on ALL
+#     platforms (linux-64/win-64/osx-arm64) — no separate pip/from-source step.
+#     Requires `preview = ["pixi-build"]` in [workspace] (set below).
+#   - The heavy conda deps below (wxpython, pyopengl, etc.) are required by GSAS-II at
+#     import time even in headless/server mode.
+
+[workspace]
+name = "your-project-name"
+version = "0.1.0"
+channels = ["conda-forge"]
+platforms = ["linux-64", "win-64", "osx-arm64"]  # trim to the platforms you target
+preview = ["pixi-build"]  # required to build the GSAS-II conda package below
+
+[dependencies]
+python = ">=3.10"
+
+# Core scientific stack
+numpy = ">=2.0"
+scipy = ">=1.15"
+matplotlib = ">=3.10"
+pandas = ">=2.0"
+h5py = ">=3.12"
+
+# PowderLine runtime deps
+pydantic = ">=2.0"
+pyyaml = ">=6.0"
+pybaselines = ">=1.2"
+xmltodict = ">=0.14"
+requests = ">=2.32"
+
+# PowderLine server mode (GSASClient / gsas_server.py)
+fastapi = ">=0.115"
+uvicorn = ">=0.34"
+httpx = ">=0.28"
+
+# GSAS-II required at import time (GUI toolkit loaded even in headless mode)
+wxpython = ">=4.2.2"
+pyopengl = ">=3.1.6"
+pillow = ">=11.0"
+imageio = ">=2.36"
+zarr = ">=2.18"
+
+# GSAS-II crystallography dependencies
+pycifrw = ">=4.4.0"
+seekpath = ">=2.1"
+
+# Build deps used when pixi-build compiles the GSAS-II conda package
+meson-python = ">=0.17"
+ninja = ">=1.12"
+cython = ">=3.0"
+pkg-config = ">=0.29"
+
+# Needed to perform the editable install of PowderLine
+pip = ">=25.0"
+
+# GSAS-II as a conda package built via pixi-build from the tacaswell fork (conda
+# recipe). Pin the same rev PowderLine uses for reproducible refinement results —
+# a GSAS-II (or scipy/BLAS) change can shift refined values. Currently resolves to
+# GSAS-II v5.7.9.
+GSAS-II = { git = "https://github.com/tacaswell/GSAS-II", rev = "enh/pixi_pkg" }
+
+[pypi-dependencies]
+# EDIT THIS PATH to point to your local clone of the PowderLine repository.
+# Using editable=true means changes to PowderLine source are picked up immediately.
+powderline = { path = "/path/to/PowderLine", editable = true }

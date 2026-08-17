@@ -1,0 +1,77 @@
+[build-system]
+# >=1.26: first hatchling with PEP 639 support for the SPDX string `license`
+# and `license-files` fields used below.
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "powderline"
+dynamic = ["version"]
+requires-python = ">=3.10"
+description = "Automated powder X-ray diffraction Rietveld refinements using GSAS-II"
+readme = "README.md"
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Dan Olds", email = "dpolds@gmail.com" },
+    { name = "Adam Corrao", email = "95718914+AdamCorrao@users.noreply.github.com" },
+]
+keywords = [
+    "powder-diffraction",
+    "rietveld",
+    "gsas-ii",
+    "topas",
+    "crystallography",
+    "xrd",
+    "synchrotron",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Physics",
+    "Topic :: Scientific/Engineering :: Chemistry",
+]
+dependencies = [
+    "pydantic>=2.0",
+    "numpy>=2.0",
+    "scipy>=1.15",
+    "pyyaml>=6.0",
+    "pandas>=2.0",
+    "pybaselines>=1.2",
+    "xmltodict>=0.14",
+    "h5py>=3.12",
+    "fastapi>=0.115",
+    "uvicorn>=0.34",
+    "httpx>=0.28",
+    "gemmi>=0.7,<0.8",
+]
+
+[project.urls]
+Homepage = "https://github.com/NSLS2/PowderLine"
+Documentation = "https://powderline.readthedocs.io"
+Repository = "https://github.com/NSLS2/PowderLine"
+Issues = "https://github.com/NSLS2/PowderLine/issues"
+
+[tool.hatch.version]
+path = "src/powderline/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/powderline"]
+
+[tool.hatch.build.targets.sdist]
+# Keep the sdist minimal: without this, hatchling defaults to shipping the
+# whole tree — including examples/ (embedded diffraction patterns and
+# regression references, ~14 MB) and pixi.lock. Tests need examples/ to run,
+# so test from a git clone, not an sdist.
+only-include = ["src/powderline", "LICENSE", "README.md", "pyproject.toml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

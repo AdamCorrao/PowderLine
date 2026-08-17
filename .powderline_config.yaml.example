@@ -1,0 +1,68 @@
+# PowderLine Configuration File
+# Copy this file to .powderline_config.yaml and add your API keys
+# The actual config file (.powderline_config.yaml) is not tracked by git
+
+# Materials Project API Configuration
+materials_project:
+  api_key: "YOUR_API_KEY_HERE"
+  # Get your free API key at: https://next-gen.materialsproject.org/api
+  # Alternatively, set the MP_API_KEY environment variable
+  # (a real key set here takes precedence over the environment variable)
+
+# ─── GSAS-II simulation defaults ─────────────────────────────────────────────
+# Simulations (mp-simulate) run through the GSAS-II engine: all parameters
+# below follow GSAS-II conventions and units. TOPAS is NOT used here — it has
+# different conventions for polarization, axial divergence, and the
+# instrumental broadening parameters.
+#
+# This block is validated strictly: unknown keys and empty/non-numeric values
+# are rejected with an error naming the key. Omit any key to use the built-in
+# default shown below.
+simulation_defaults:
+
+  # Instrument parameters (GSAS-II Iparm)
+  instrument_defaults:
+    wavelength: 0.4133       # Angstroms (lambda = 12.398 / E[keV]; 0.4133 A = 30 keV)
+    polarization: 0.99       # GSAS-II 'Polariz.'
+    zero_shift: 0.0          # degrees 2theta (GSAS-II 'Zero')
+    axial_divergence: 0.001  # GSAS-II 'SH/L'
+
+    # Thompson-Cox-Hastings pseudo-Voigt instrumental broadening
+    # (GSAS-II U, V, W, X, Y, Z; reasonable high-resolution synchrotron values)
+    broadening:
+      U: 1.0
+      V: -0.5
+      W: 0.1
+      X: 0.0
+      Y: 0.0
+      Z: 0.0
+
+  # Per-phase parameters
+  phase_defaults:
+    scale: 1.0
+
+    # Structural fallbacks — applied ONLY when the structure source (e.g.
+    # Materials Project, CIF) does not provide a value; a warning is printed
+    # whenever a fallback is used
+    Uiso: 0.01      # isotropic displacement, Angstrom^2
+    occupancy: 1.0  # site occupancy fraction
+
+    # Sample peak broadening (GSAS-II conventions)
+    size_broadening:
+      model: isotropic       # 'isotropic' (uniaxial/ellipsoidal not yet implemented)
+      isotropic_size: 10.0   # crystallite size in MICRONS (10 um ~ no size broadening)
+      LG_eta: 1.0            # Lorentzian/Gaussian mixing (1 = Lorentzian, 0 = Gaussian)
+    strain_broadening:
+      model: isotropic       # 'isotropic' (uniaxial/generalized not yet implemented)
+      isotropic_strain: 0.0  # microstrain as delta-d/d x 10^-6 (0 = no strain broadening)
+      LG_eta: 1.0            # Lorentzian/Gaussian mixing (1 = Lorentzian, 0 = Gaussian)
+
+  # Data generation parameters
+  data_range:
+    min_2theta: 1.0   # degrees
+    max_2theta: 80.0  # degrees
+    step: 0.05        # degrees (0.05 = ~1600 points, 0.01 = 7900 points, affects speed)
+
+  # Background parameters
+  background:
+    chebyshev_coefficients: [10.0, 0.0, 0.0]  # Flat background

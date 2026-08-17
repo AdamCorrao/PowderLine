@@ -1,0 +1,329 @@
+********************************************************************************
+   General Structure Analysis System-II Crystal Structure Refinement
+              by Robert B. Von Dreele & Brian H. Toby
+                Argonne National Laboratory(C), 2010
+ This product includes software developed by the UChicago Argonne, LLC,
+            as Operator of Argonne National Laboratory.
+                          Please cite:
+   B.H. Toby & R.B. Von Dreele, J. Appl. Cryst. 46, 544-549 (2013)
+********************************************************************************
+ Least squares controls:
+ Refinement type: analytic Hessian
+ Maximum number of cycles: 5
+ Regularize hydrogens (if any): False
+ Initial shift factor: 1.000
+
+ Phases:
+
+ Phase name: DRX_33
+=======================================================================================================================================
+
+ X-ray scattering factors:
+   Symbol     fa                                      fb                                      fc
+---------------------------------------------------------------------------------------------------
+ Li         1.12820   0.75080   0.61750   0.46530   3.95460   1.05240  85.39050 168.26100   0.03770
+ Mg         5.42040   2.17350   1.22690   2.30730   2.82750  79.26110   0.38080   7.19370   0.85840
+ Mn        11.28190   7.35730   3.01930   2.24410   5.34090   0.34320  17.86740  83.75430   1.08960
+ O          3.04850   2.28680   1.54630   0.86700  13.27710   5.70110   0.32390  32.90890   0.25080
+ W         29.08180  15.43000  14.43270   5.11982   1.72029   9.22590   0.32170  57.05600   9.88750
+
+ Electron scattering factors:
+   Symbol     fa                                                fb
+---------------------------------------------------------------------------------------------------
+ Li         0.04780   0.20480   0.52530   1.52250   0.98530   0.22580   2.10320  12.93490  50.75010 136.62800
+ Mg         0.11300   0.55750   0.90460   2.15800   1.47350   0.13560   1.35790   6.92550  32.31650  92.11380
+ Mn         0.19430   0.81900   1.92960   2.49680   2.06250   0.11350   1.13130   5.03410  24.17980  80.55980
+ O          0.03650   0.17290   0.58050   0.88140   0.31210   0.06520   0.61840   2.94490   9.62980  28.21940
+ W          0.36610   1.61910   3.24550   4.08560   3.20640   0.07610   0.75430   4.09520  18.28860  68.09670
+
+ Neutron scattering factors:
+   Symbol   isotope       mass       b       resonant terms
+---------------------------------------------------------------------------------------------------
+ Li      Nat. Abund.      6.941   -0.193
+ Mg      Nat. Abund.     24.305    0.537
+ Mn      Nat. Abund.     54.938   -0.375
+ O       Nat. Abund.     15.999    0.580
+ W       Nat. Abund.    183.850    0.475
+
+ Space Group: F m -3 m
+ The lattice is centrosymmetric F-centered cubic
+ The Laue symmetry is m3m
+ The lattice point group is m3m
+ Multiplicity of a general site is 192
+ The inversion center is located at 0,0,0
+ 
+ The equivalent positions are:
+
+ (0,0,0; 0,1/2,1/2; 1/2,0,1/2; 1/2,1/2,0)+
+
+ ( 1)     X,     Y,     Z 
+ ( 2)     Z,     X,     Y 
+ ( 3)     Y,     Z,     X 
+ ( 4)     X,     Y,    -Z 
+ ( 5)    -Z,     X,     Y 
+ ( 6)     Y,    -Z,     X 
+ ( 7)    -Z,     X,    -Y 
+ ( 8)    -Y,    -Z,     X 
+ ( 9)     Y,    -Z,    -X 
+ (10)    -X,     Y,    -Z 
+ (11)    -Z,    -X,     Y 
+ (12)     X,    -Y,    -Z 
+ (13)     Y,     X,     Z 
+ (14)     Z,     Y,     X 
+ (15)     X,     Z,     Y 
+ (16)     Y,     X,    -Z 
+ (17)    -Z,     Y,     X 
+ (18)     X,    -Z,     Y 
+ (19)    -Z,     Y,    -X 
+ (20)    -X,    -Z,     Y 
+ (21)     X,    -Z,    -Y 
+ (22)    -Y,     X,    -Z 
+ (23)    -Z,    -Y,     X 
+ (24)     Y,    -X,    -Z 
+
+ Atoms:
+   name    type  refine?   x         y         z      frac site sym  mult I/A   Uiso     U11     U22     U33     U12     U13     U23
+---------------------------------------------------------------------------------------------------------------------------------------
+     Li     Li          0.00000   0.00000   0.00000   0.600    m3m    4    I 0.00510                                                
+     Mg     Mg          0.00000   0.00000   0.00000   0.100    m3m    4    I 0.00510                                                
+    Mn1     Mn          0.00000   0.00000   0.00000   0.200    m3m    4    I 0.00510                                                
+     O1      O          0.50000   0.50000   0.50000   1.000    m3m    4    I 0.00980                                                
+      W      W          0.00000   0.00000   0.00000   0.100    m3m    4    I 0.00510                                                
+
+ Unit cell: a = 4.18130 b = 4.18130 c = 4.18130 alpha = 90.000 beta = 90.000 gamma = 90.000 volume = 73.103 Refine? True
+
+ Phase name: Li4MgWO6_SG12
+=======================================================================================================================================
+
+ X-ray scattering factors:
+   Symbol     fa                                      fb                                      fc
+---------------------------------------------------------------------------------------------------
+ Li         1.12820   0.75080   0.61750   0.46530   3.95460   1.05240  85.39050 168.26100   0.03770
+ Mg         5.42040   2.17350   1.22690   2.30730   2.82750  79.26110   0.38080   7.19370   0.85840
+ O          3.04850   2.28680   1.54630   0.86700  13.27710   5.70110   0.32390  32.90890   0.25080
+ W         29.08180  15.43000  14.43270   5.11982   1.72029   9.22590   0.32170  57.05600   9.88750
+
+ Electron scattering factors:
+   Symbol     fa                                                fb
+---------------------------------------------------------------------------------------------------
+ Li         0.04780   0.20480   0.52530   1.52250   0.98530   0.22580   2.10320  12.93490  50.75010 136.62800
+ Mg         0.11300   0.55750   0.90460   2.15800   1.47350   0.13560   1.35790   6.92550  32.31650  92.11380
+ O          0.03650   0.17290   0.58050   0.88140   0.31210   0.06520   0.61840   2.94490   9.62980  28.21940
+ W          0.36610   1.61910   3.24550   4.08560   3.20640   0.07610   0.75430   4.09520  18.28860  68.09670
+
+ Neutron scattering factors:
+   Symbol   isotope       mass       b       resonant terms
+---------------------------------------------------------------------------------------------------
+ Li      Nat. Abund.      6.941   -0.193
+ Mg      Nat. Abund.     24.305    0.537
+ O       Nat. Abund.     15.999    0.580
+ W       Nat. Abund.    183.850    0.475
+
+ Space Group: C 2/m
+ The lattice is centrosymmetric C-centered monoclinic
+ The Laue symmetry is 2/m
+ The lattice point group is 2/m
+ Multiplicity of a general site is 8
+ The unique monoclinic axis is b
+ The inversion center is located at 0,0,0
+ 
+ The equivalent positions are:
+
+ (0,0,0; 1/2,1/2,0)+
+
+ ( 1)     X,     Y,     Z 
+ ( 2)    -X,     Y,    -Z 
+
+ Atoms:
+   name    type  refine?   x         y         z      frac site sym  mult I/A   Uiso     U11     U22     U33     U12     U13     U23
+---------------------------------------------------------------------------------------------------------------------------------------
+    Li1     Li          0.00000   0.33000   0.50000   1.000   2(y)    4    I 0.00000                                                
+    Li2     Li          0.00000   0.16700   0.00000   0.500   2(y)    4    I 0.00000                                                
+    Li3     Li          0.00000   0.00000   0.50000   1.000 2/m(y)    2    I 0.00000                                                
+     Mg     Mg          0.00000   0.16700   0.00000   0.500   2(y)    4    I 0.00000                                                
+     O1      O          0.23800   0.34300   0.23400   1.000      1    8    I 0.00000                                                
+     O2      O          0.25900   0.00000   0.22600   1.000   m(y)    4    I 0.00000                                                
+      W      W          0.00000   0.50000   0.00000   1.000 2/m(y)    2    I 0.00000                                                
+
+ Unit cell: a = 5.09200 b = 8.79400 c = 5.06100 alpha = 90.000 beta = 109.960 gamma = 90.000 volume = 213.014 Refine? True
+
+ Phase: DRX_33 in histogram: PWDR dummy
+=======================================================================================================================================
+ Phase fraction  :          1 Refine? True
+ Extinction coeff:     0.0000 Refine? False
+ March-Dollase PO:     1.0000 Refine? False Axis: 0 0 1
+
+ Size model    : isotropic equatorial:       1.000 Refine? True
+	 LG mixing coeff.:       1.0000 Refine? True
+
+ Mustrain model: isotropic equatorial:         1.0 Refine? True
+	 LG mixing coeff.:      1.0000 Refine? True
+
+ Hydrostatic/elastic strain:
+ names :         D11          eA
+ values:           0           0
+ refine:       False       False
+
+ Phase: Li4MgWO6_SG12 in histogram: PWDR dummy
+=======================================================================================================================================
+ Phase fraction  :          1 Refine? True
+ Extinction coeff:     0.0000 Refine? False
+ March-Dollase PO:     1.0000 Refine? False Axis: 0 0 1
+
+ Size model    : isotropic equatorial:       1.000 Refine? True
+	 LG mixing coeff.:       1.0000 Refine? True
+
+ Mustrain model: isotropic equatorial:         1.0 Refine? True
+	 LG mixing coeff.:      1.0000 Refine? True
+
+ Hydrostatic/elastic strain:
+ names :         D11         D22         D33         D13
+ values:           0           0           0           0
+ refine:       False       False       False       False
+
+ Histogram: PWDR dummy histogram Id: 0
+=======================================================================================================================================
+ Instrument type: Debye-Scherrer
+ Histogram limits:     1.00 deg to    15.00 deg
+
+ Sample Parameters:
+ Goniometer omega = 0.00, chi = 0.00, phi = 0.00
+ name  :         Scale    Absorption     DisplaceX     DisplaceY
+ value :        1.0000        0.0000        0.0000        0.0000
+ refine:         False         False         False         False
+
+ Instrument Parameters:
+ name  :     Azimuth         Lam    Polariz.        SH/L           U           V           W           X           Y
+ value :    0.000000    0.166500    0.990000    0.000500   18.717409    0.600341    1.147013    0.281430    0.001000
+ refine:                   False       False       False       False       False       False       False       False
+
+ name  :           Z        Zero
+ value :    0.000000    0.000000
+ refine:       False       False
+
+ Background function: chebyschev-1 Refine? True
+ Coefficients:     10.000     5.000     1.000     0.000     0.000     0.000
+ Fixed background file: ; mult: 1.000  Refine? False
+
+ Refinement results:
+---------------------------------------------------------------------------------------------------------------------------------------
+ Number of function calls: 14 No. of observations: 3768 No. of parameters: 21 User rejected: 0 Sp. gp. extinct: 0
+ Refinement time =    5.347s,    0.891s/cycle, for 6 cycles
+ wR =   10.83%, chi**2 =      4562.47, GOF =   1.10
+----------------------------------------------------------------------------------------------------------------------------------
+Parameters generated by constraints
+
+ name  :          0::A0
+ value :        0.05747
+ sig   :        0.00009 
+
+ Phases:
+ Result for phase: DRX_33
+=======================================================================================================================================
+ Reciprocal metric tensor: 
+  names :            A11            A22            A33            A12            A13            A23
+  values:    0.057465906    0.057465906    0.057465906    0.000000000    0.000000000    0.000000000
+  esds  :    0.000090971                                                                           
+ New unit cell:
+  names :           a           b           c       alpha        beta       gamma      Volume
+  values:    4.171525    4.171525    4.171525     90.0000     90.0000     90.0000      72.591
+  esds  :    0.003302                                                                   0.172
+
+ Atoms:
+   name      x         y         z      frac   Uiso     U11     U22     U33     U12     U13     U23
+---------------------------------------------------------------------------------------------------------------------------------------
+     Li     Li:
+ values:   0.00000   0.00000   0.00000   0.600 0.00510
+ sig   :                                               
+     Mg     Mg:
+ values:   0.00000   0.00000   0.00000   0.100 0.00510
+ sig   :                                               
+    Mn1     Mn:
+ values:   0.00000   0.00000   0.00000   0.200 0.00510
+ sig   :                                               
+     O1      O:
+ values:   0.50000   0.50000   0.50000   1.000 0.00980
+ sig   :                                               
+      W      W:
+ values:   0.00000   0.00000   0.00000   0.100 0.00510
+ sig   :                                               
+
+ Density: 4.7550 g/cm**3
+ Result for phase: Li4MgWO6_SG12
+=======================================================================================================================================
+ Reciprocal metric tensor: 
+  names :            A11            A22            A33            A12            A13            A23
+  values:    0.043529657    0.012939006    0.043977539    0.000000000    0.030943953    0.000000000
+  esds  :    0.000014670    0.000004186    0.000011289                   0.000021620               
+ New unit cell:
+  names :           a           b           c       alpha        beta       gamma      Volume
+  values:    5.124071    8.791228    5.097912     90.0000    110.7089     90.0000     214.807
+  esds  :    0.005974    0.001422    0.005692                  0.0154                   0.041
+
+ Atoms:
+   name      x         y         z      frac   Uiso     U11     U22     U33     U12     U13     U23
+---------------------------------------------------------------------------------------------------------------------------------------
+    Li1     Li:
+ values:   0.00000   0.33000   0.50000   1.000 0.00000
+ sig   :                                               
+    Li2     Li:
+ values:   0.00000   0.16700   0.00000   0.500 0.00000
+ sig   :                                               
+    Li3     Li:
+ values:   0.00000   0.00000   0.50000   1.000 0.00000
+ sig   :                                               
+     Mg     Mg:
+ values:   0.00000   0.16700   0.00000   0.500 0.00000
+ sig   :                                               
+     O1      O:
+ values:   0.23800   0.34300   0.23400   1.000 0.00000
+ sig   :                                               
+     O2      O:
+ values:   0.25900   0.00000   0.22600   1.000 0.00000
+ sig   :                                               
+      W      W:
+ values:   0.00000   0.50000   0.00000   1.000 0.00000
+ sig   :                                               
+
+ Density: 5.1316 g/cm**3
+
+ Phase: DRX_33 in histogram: PWDR dummy
+=======================================================================================================================================
+ Final refinement RF, RF^2 = 3.15%, 7.50% on 16 reflections
+ Durbin-Watson statistic = 0.052
+ Bragg intensity sum = 3.35e+03
+ Phase fraction  :   0.010823, sig 0.00078944 Weight fraction  :  0.30089, sig    0.01611
+
+ Size model:     isotropic equatorial:    10.00000, sig:  0.1864 LG mix coeff.:  15093.7153, sig:7401.7596
+
+ Mustrain model: isotropic
+ equatorial:       145.9, sig:    20.2 LG mix coeff.:    137.8439, sig:  19.921
+
+ Phase: Li4MgWO6_SG12 in histogram: PWDR dummy
+=======================================================================================================================================
+ Final refinement RF, RF^2 = 4.72%, 13.85% on 446 reflections
+ Durbin-Watson statistic = 0.052
+ Bragg intensity sum = 4.79e+04
+ Phase fraction  :  0.0078742, sig 7.2505e-05 Weight fraction  :  0.69911, sig    0.01611
+
+ Size model:     isotropic equatorial:     0.00100, sig:182.8173 LG mix coeff.:   -358.4862, sig: 53.2732
+
+ Mustrain model: isotropic
+ equatorial:        88.2, sig:     2.0 LG mix coeff.:     82.0727, sig:   1.976
+
+ Histogram: PWDR dummy histogram Id: 0
+=======================================================================================================================================
+ PWDR histogram weight factor = 1.000
+ Final refinement wR = 10.83% on 3768 observations in this histogram
+ Other residuals: R = 7.51%, R-bkg = 10.81%, wR-bkg = 10.83% wRmin = 9.84%
+ Instrument type: Debye-Scherrer
+
+ Resonant form factors:(ref: D.T. Cromer & D.A. Liberman (1981), Acta Cryst. A37, 267-268.)
+ Element:       Li       Mg       Mn        O        W
+ f'     :   -0.000   -0.006    0.005   -0.003   -2.060
+ f"     :    0.000    0.002    0.042    0.000    2.917
+
+ Background function: chebyschev-1
+ value :      65.33    -2.436    0.7135     1.625   -0.7395     2.373
+ sig   :      0.293    0.3413    0.3367    0.3152    0.2781    0.2825
+ Background sums: empirical 2.45e+05, Debye 0, peaks 0, Total 2.45e+05

@@ -1,0 +1,145 @@
+# PowderLine
+
+[![Documentation Status](https://readthedocs.org/projects/powderline/badge/?version=latest)](https://powderline.readthedocs.io/en/latest/?badge=latest)
+
+Automated powder X-ray diffraction refinement. You describe a refinement in a
+JSON "recipe"; PowderLine runs it with [GSAS-II](https://gsasii.github.io/) (or,
+optionally, Bruker TOPAS v7) and returns standardized result tables.
+
+**Documentation:** [powderline.readthedocs.io](https://powderline.readthedocs.io/)
+· **New here? Start with the [Quickstart](docs/quickstart.md).**
+
+> **Note:** the hosted documentation goes live when PowderLine becomes public.
+> Until then, build the same docs locally with `pixi run docs` (HTML lands in
+> `docs/_build/html/`).
+
+PowderLine gives you a programmatic, reproducible way to run Rietveld refinements
+and single-peak fits without hand-driving GSAS-II.
+
+- **Two workflow types:** Rietveld refinement (`GSASII_Rietveld`) and single-peak
+  fitting (`GSASII_SPF`).
+- **Refine what you need:** unit cell, atom coordinates, occupancies, isotropic and
+  anisotropic displacement parameters, background, and peak broadening — each
+  parameter individually flagged.
+- **Two engines, one recipe:** GSAS-II by default, or Bruker TOPAS v7
+  (`engine="topas"`) — the TOPAS path imports zero GSAS-II.
+- **Materials Project integration:** simulate a pattern from a crystal structure.
+- **Standardized outputs:** fixed-filename CSV/TXT reports plus a GSAS-II `.gpx`.
+
+## 1. Install
+
+PowderLine uses [pixi](https://pixi.sh) for reproducible conda environments.
+GSAS-II is installed **automatically** by `pixi install` (it ships as a conda
+package — no separate GSAS-II install).
+
+```bash
+git clone https://github.com/nsls2/PowderLine.git
+cd PowderLine
+pixi install
+```
+
+Platforms: `linux-64`, `win-64`, `osx-arm64`. Running a recipe through TOPAS
+additionally requires a Windows machine with `tc.exe` installed; generating the
+TOPAS input files needs no TOPAS and no GSAS-II.
+
+## 2. Getting started
+
+Run the bundled LaB6 calibrant example:
+
+```bash
+pixi run kicker examples/example_LaB6/input.json
+```
+
+Results are written next to the recipe in `examples/example_LaB6/output/`:
+
+| File | What it is |
+|---|---|
+| `refined_parameters.csv` | Every refined parameter with its ESD (9-column table) |
+| `LaB6_unit_cell_report.csv` | Per-phase unit-cell parameters + ESDs |
+| `LaB6_peak_list_report.csv` | Reflection list (hkl, d-spacing, 2θ, intensity) |
+| `fit_profile.txt` | Observed / calculated / background / difference |
+| `dummy.lst` | Human-readable GSAS-II refinement log (Rwp, parameter tables) |
+| `dummy.gpx` | GSAS-II project — reopenable in the GSAS-II GUI |
+
+> `examples/example_template/` is a fill-in-the-blanks skeleton, not a runnable
+> recipe — copy it to start your own.
+
+## 3. Ways to use PowderLine
+
+**Command line** — run or validate a recipe:
+
+```bash
+pixi run kicker <recipe.json>                  # run a refinement
+pixi run kicker <recipe.json> --validate-only  # check a recipe without running it
+pixi run topas-kicker <recipe.json>            # generate a TOPAS v7 .inp + .xye
+```
+
+Other flags: `--output DIR` (default: `output/` next to the recipe) and
+`--verbose`.
+
+**Python API** — load a recipe, run it, get pandas DataFrames back:
+
+```python
+import powderline, tempfile
+from pathlib import Path
+
+recipe = powderline.load_recipe_asset(Path("examples/example_LaB6/input.json"))
+
+# run() writes its file reports into the directory you give it; if you only
+# want the in-memory results, a throwaway temp dir works fine:
+result = powderline.run(recipe, Path(tempfile.mkdtemp()))
+
+print(result["rwp"])                 # weighted profile R-factor
+print(result["refined_parameters"])  # DataFrame of refined values + ESDs
+
+# Same recipe, TOPAS engine:
+result = powderline.run(recipe, Path(tempfile.mkdtemp()), engine="topas")
+```
+
+The returned dict holds more than the two keys shown: the fit metadata
+(`success`, `rwp`, elapsed time, which execution path ran, and the error +
+traceback on failure) plus every tabular report in memory — the full
+refined-parameter table with ESDs, the fit profile, per-phase unit-cell and
+peak-list tables (dicts keyed by phase name), and the SPF peak/convergence
+tables when single-peak fitting. Everything the CSV/TXT files contain, without
+touching disk yourself.
+
+The public API is `run`, `validate`, `load_recipe_asset`,
+`validate_simulation_mode_parameters`, `RecipeModel`, and `GSASClient`.
+
+**The GSAS-II server (used by default)** — refinements go through a persistent
+server that keeps GSAS-II resident in memory (auto-started in the background as
+needed), which is a large speedup across many refinements. Manage it directly,
+or opt out per run with `--no-server`:
+
+```bash
+pixi run gsas-server status                 # start | status | stop | restart
+pixi run kicker <recipe.json> --no-server   # force an isolated one-shot subprocess
+```
+
+**Simulate a pattern from Materials Project** (requires an MP API key in
+`.powderline_config.yaml` — see `.powderline_config.yaml.example` — or in the
+`MP_API_KEY` environment variable):
+
+```bash
+pixi run mp-simulate --material-id mp-2680 --output patterns/
+```
+
+## Documentation
+
+- **[Quickstart](docs/quickstart.md)** — clone → install → run → read the output.
+- **[Getting Started](docs/getting-started.rst)** — full recipe structure, output
+  files, and the Python API.
+- **[Troubleshooting](docs/TROUBLESHOOTING.md)** — common errors and fixes.
+- **[Schema History](docs/SCHEMA_HISTORY.md)** — recipe-schema changelog (current:
+  **0.26.0**) and migration guidance.
+- **[Using PowderLine as a library](docs/integration-guide.md)** — install it into
+  another project.
+- **[Developer Guide](docs/DEVELOPMENT.md)** — architecture and how PowderLine
+  works internally, for contributors. See also the
+  [known-issues register](docs/known_issues.md) (`KI-NN` ids referenced from
+  code and docs).
+
+## License
+
+BSD 3-Clause — see [LICENSE](LICENSE).

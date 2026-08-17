@@ -1,0 +1,5 @@
+# Documentation-build-only dependencies (not in pyproject.toml).
+# Versions track pixi.toml. Used by .readthedocs.yaml.
+sphinx>=8.0,<9
+sphinx_rtd_theme>=3.0,<4
+myst-parser>=4.0,<5
