@@ -53,7 +53,8 @@ pandas = ">=2.3.3,<3"
 sphinx = ">=8.0.0,<9"
 sphinx_rtd_theme = ">=3.0.0,<4"
 myst-parser = ">=4.0.0,<5"
-mp-api = ">=0.46,<1"
+mp-api = ">=0.46.4,<1"
+emmet-core = ">=0.87.1,<0.88"
 fastapi = ">=0.115.0,<1"
 uvicorn = ">=0.34.0,<1"
 httpx = ">=0.28.0,<1"
@@ -67,10 +68,7 @@ gemmi = ">=0.7.5,<0.8"
 # `refined_params_match`). The win-64 TOPAS path still imports zero GSAS-II — that
 # guarantee is enforced by the subprocess import-block tests, not by GSAS-II's
 # absence. Don't change the rev casually; re-check the regression suite if you do.
-GSAS-II = {
-    git = "https://github.com/tacaswell/GSAS-II",
-    rev = "enh/pixi_pkg"
-}
+GSAS-II = { git = "https://github.com/tacaswell/GSAS-II", rev = "enh/pixi_pkg" }
 
 
 
