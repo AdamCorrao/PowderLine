@@ -2837,6 +2837,41 @@ def set_refinement_cycles(proj: Any, num_cycles: int, print_info: bool = False) 
         print(f"Set number of refinement cycles to {num_cycles}")
 
 
+def _refine_with_message(proj) -> tuple[bool, str]:
+    """Run the project refinement, returning (ok, GSAS-II failure message).
+
+    ``G2Project.refine()`` calls ``G2strMain.Refine`` and DISCARDS its
+    ``(OK, Rvals)`` return, so failure text like "Invalid metric tensor for
+    phase #0" reaches only the console — callers see a silent no-Rwp failure.
+    Mirror the non-sequential branch of ``refine()`` (index, constraint
+    check, Refine, reload) to keep ``Rvals['msg']``. Any surprise from
+    GSAS-II internals falls back to the plain ``proj.refine()`` so behavior
+    is never worse than before.
+    """
+    try:
+        from GSASII import GSASIIstrIO as G2stIO
+        from GSASII import GSASIIstrMain as G2strMain
+
+        seq_setting = proj.data['Controls']['data'].get('Seq Data', [])
+        if not seq_setting:
+            proj.index_ids()  # saves the project, as refine() does
+            errmsg, _warnmsg = G2stIO.ReadCheckConstraints(proj.filename)
+            if errmsg:
+                return False, f"Constraint error: {errmsg}"
+            ret = G2strMain.Refine(proj.filename, makeBack=False)
+            proj.reload()
+            ok, rvals = (ret if isinstance(ret, tuple) and len(ret) == 2
+                         else (True, {}))
+            msg = rvals.get('msg', '') if isinstance(rvals, dict) else ''
+            msg = msg.replace('**** ERROR: Refinement failed ****', '').strip()
+            return bool(ok), msg
+    except Exception:
+        pass  # GSAS-II internals changed: fall back to the plain call below
+
+    proj.refine()
+    return True, ''
+
+
 def execute_rietveld_refinement(
     proj: Any,
     hist: Any,
@@ -2865,17 +2900,23 @@ def execute_rietveld_refinement(
         print(f"  Cycles: {controls.refinement_cycles}")
         print(f"{'='*60}\n")
 
-    # Execute refinement
-    proj.refine()
+    # Execute refinement (keeping GSAS-II's failure message, which
+    # G2Project.refine() would otherwise discard)
+    refine_ok, g2_msg = _refine_with_message(proj)
 
     # Extract Rwp
     rwp_final = hist.residuals.get("wR")
 
-    if rwp_final is None:
+    if not refine_ok or rwp_final is None:
+        if g2_msg:
+            error = f"Rietveld refinement failed: {' '.join(g2_msg.split())}"
+        else:
+            error = ("Rietveld refinement produced no Rwp — proj.refine() "
+                     "may have failed silently")
         return {
             'success': False,
             'rwp': None,
-            'error': "Rietveld refinement produced no Rwp — proj.refine() may have failed silently",
+            'error': error,
         }
 
     if verbose:
