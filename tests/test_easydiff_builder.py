@@ -171,3 +171,23 @@ def test_bounds_from_non_representative_axis(tmp_path):
     a_entry = next(m for m in br.manifest if m.parameter_name == "0::a")
     assert a_entry.parameter.fit_min == pytest.approx(4.0)
     assert a_entry.parameter.fit_max == pytest.approx(5.0)
+
+
+def test_data_outside_fit_range(tmp_path):
+    """Data extending outside fit_range is correctly masked in .xye file."""
+    r = base_recipe()
+    # Data extends beyond fit_range
+    tth = np.linspace(0.5, 16.0, 300)
+    r["payload"]["xrd_data"] = {
+        "tth": tth.tolist(),
+        "Itth": (100 + 10 * np.exp(-((tth - 5) ** 2))).tolist(),
+        "Itth_weights": (np.ones_like(tth) / 100.0).tolist(),
+    }
+    r["payload"]["fit_range"] = [1.0, 15.0]
+
+    br = build_project(r, tmp_path)
+    # Verify mask is partial
+    assert br.mask.sum() < 300
+    # Verify .xye file has exactly mask.sum() rows
+    xye_data = np.loadtxt(tmp_path / "easydiff_data.xye")
+    assert xye_data.shape[0] == br.mask.sum()

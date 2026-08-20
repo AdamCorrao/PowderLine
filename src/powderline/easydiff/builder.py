@@ -90,14 +90,13 @@ def build_project(recipe: dict, workdir) -> BuildResult:
 
     mask, sigma = crop_and_sigma(tth, itth, weights, fit_range)
 
-    # Write masked data
+    # Write masked data (sigma is already masked)
     masked_tth = tth[mask]
     masked_itth = itth[mask]
-    masked_sigma = sigma[mask]
     data_path = workdir / "easydiff_data.xye"
     np.savetxt(
         data_path,
-        np.column_stack([masked_tth, masked_itth, masked_sigma]),
+        np.column_stack([masked_tth, masked_itth, sigma]),
         fmt="%.6f"
     )
 
