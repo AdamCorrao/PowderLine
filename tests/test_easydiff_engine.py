@@ -1,4 +1,6 @@
 """Result-contract tests for the easydiffraction engine adapter."""
+import os
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -45,7 +47,7 @@ def test_synthetic_fit_result_contract(tmp_path):
     assert "LaB6" in result["unit_cell_data"]
     assert isinstance(result["spf_peaks"], pd.DataFrame) and result["spf_peaks"].empty
     assert result["error"] is None
-    out_names = {p.rsplit("/", 1)[-1] for p in result["output_files"]}
+    out_names = {os.path.basename(p) for p in result["output_files"]}
     assert {"refined_parameters.csv", "fit_profile.txt",
             "LaB6_unit_cell_report.csv"} <= out_names
 
