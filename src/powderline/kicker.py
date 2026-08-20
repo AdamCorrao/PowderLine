@@ -3468,13 +3468,15 @@ def run(
     result['fit_profile'] = (
         pd.DataFrame(fit_profile_raw) if fit_profile_raw else pd.DataFrame()
     )
+    # `or {}` (not a .get default): early-failure results serialize these
+    # tables as an explicit null, which .get(key, {}) passes through as None.
     result['unit_cell_data'] = {
         phase: pd.DataFrame(records)
-        for phase, records in result.get('unit_cell_data', {}).items()
+        for phase, records in (result.get('unit_cell_data') or {}).items()
     }
     result['peak_list_data'] = {
         phase: pd.DataFrame(records)
-        for phase, records in result.get('peak_list_data', {}).items()
+        for phase, records in (result.get('peak_list_data') or {}).items()
     }
     refined_params_raw = result.get('refined_parameters')
     result['refined_parameters'] = (
