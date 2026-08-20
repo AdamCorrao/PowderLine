@@ -70,4 +70,51 @@ def test_symmetry_constrained_axis_not_in_manifest(tmp_path):
     r["payload"]["phases"]["LaB6"]["parameterization"]["unit_cell"]["b"] = [None, True, None, None]
     br = build_project(r, tmp_path)
     names = {m.parameter_name for m in br.manifest}
-    assert "0::b" not in names  # cubic: b is symmetry-tied to a; library forces free=False
+    assert "0::b" not in names  # cubic: b is symmetry-tied to a
+    assert "0::a" in names  # flag folded into representative
+    assert any("tied" in w for w in br.warnings)  # warning about tied axis
+
+
+def test_tetragonal_symmetry(tmp_path):
+    r = base_recipe()
+    # Create tetragonal phase (P 42/m n m)
+    r["payload"]["phases"]["Tetragonal"] = {
+        "structure": {
+            "phase_name": "Tetragonal",
+            "space_group": "P 42/m n m",
+            "unit_cell": {"a": 4.59, "b": 4.59, "c": 2.96,
+                          "alpha": 90.0, "beta": 90.0, "gamma": 90.0},
+            "atoms": {"Ti": {"element": "Ti", "x": 0.0, "y": 0.0, "z": 0.0,
+                             "occupancy": 1.0, "Uiso": 0.01, "ADP": "Uiso"}}
+        },
+        "parameterization": {
+            "atoms": {"Ti": {k: [None, False, None, None]
+                             for k in ("x", "y", "z", "occupancy", "Uiso")}},
+            "scale": [1, True, None, None],
+            "unit_cell": {
+                "a": [None, True, None, None],
+                "b": [None, False, None, None],
+                "c": [None, True, None, None],
+                "alpha": [None, False, None, None],
+                "beta": [None, False, None, None],
+                "gamma": [None, True, None, None]  # fixed by symmetry
+            },
+        },
+    }
+    tth = np.linspace(1.0, 15.0, 200)
+    r["payload"]["xrd_data"] = {
+        "tth": tth.tolist(),
+        "Itth": (100 + 10 * np.exp(-((tth - 5) ** 2))).tolist(),
+        "Itth_weights": (np.ones_like(tth) / 100.0).tolist(),
+    }
+    # Remove LaB6 to avoid confusion
+    del r["payload"]["phases"]["LaB6"]
+
+    br = build_project(r, tmp_path)
+    names = {m.parameter_name for m in br.manifest}
+    # Tetragonal: a=b (group), c independent; all angles fixed at 90
+    assert "0::a" in names  # representative for (a,b) group
+    assert "0::c" in names  # independent
+    assert "0::b" not in names  # tied to a
+    assert "0::gamma" not in names  # fixed by symmetry
+    assert any("fixed by symmetry" in w for w in br.warnings)  # gamma warning

@@ -20,13 +20,10 @@ from powderline.easydiff.conversions import (
     lorentz_broadening_to_ed,
     zero_to_ed,
 )
+from powderline.easydiff.errors import EasyDiffractionTranslationError
 from powderline.easydiff.policy import check_unsupported, param_flag, param_value
-
-
-def _is_cubic(space_group_name):
-    """Check if space group is cubic (b, c constrained to a; angles fixed at 90)."""
-    # Cubic space groups contain "m -3" in H-M notation
-    return "m -3" in space_group_name or "m-3" in space_group_name
+from powderline.topas.errors import TopasTranslationError
+from powderline.topas.symmetry import cell_constraints
 
 
 @dataclass
@@ -291,38 +288,79 @@ def build_project(recipe: dict, workdir) -> BuildResult:
                 "", "", "background", 1.0
             ))
 
-    # Unit cell axes per phase - respect symmetry constraints
+    # Unit cell axes per phase - use gemmi-backed symmetry constraints
     cell_params_to_add = []
     for i, (phase_name, slug) in enumerate(phase_slugs.items()):
         phase_data = payload["phases"][phase_name]
         cell_pz = phase_data["parameterization"]["unit_cell"]
         model = structures[i]
         sg_name = phase_data["structure"]["space_group"]
-        is_cubic = _is_cubic(sg_name)
 
-        axis_map = {
+        # Get symmetry rules
+        try:
+            rules = cell_constraints(sg_name)
+        except TopasTranslationError as e:
+            raise EasyDiffractionTranslationError(str(e)) from e
+
+        length_map = {
             "a": "length_a",
             "b": "length_b",
-            "c": "length_c",
+            "c": "length_c"
+        }
+        angle_map = {
             "alpha": "angle_alpha",
             "beta": "angle_beta",
             "gamma": "angle_gamma"
         }
 
-        for axis, attr in axis_map.items():
-            spec = cell_pz[axis]
+        # Handle length groups: free only the first axis in each group
+        for length_group in rules.length_groups:
+            # Check if any axis in this group is flagged
+            flagged_in_group = [ax for ax in length_group if param_flag(cell_pz[ax])]
+            if not flagged_in_group:
+                continue
+
+            # Free only the representative (first in group)
+            rep_axis = length_group[0]
+            param = getattr(model.cell, length_map[rep_axis])
+            param.free = True
+            rep_spec = cell_pz[rep_axis]
+            if rep_spec[2] is not None:
+                param.fit_min = rep_spec[2]
+            if rep_spec[3] is not None:
+                param.fit_max = rep_spec[3]
+            cell_params_to_add.append((
+                param, f"{i}::{rep_axis}", f"phase_{i}_cell_{rep_axis}",
+                phase_name, i
+            ))
+
+            # Warn for other flagged axes in the group
+            for ax in flagged_in_group:
+                if ax != rep_axis:
+                    warnings.append(
+                        f"cell axis '{ax}' is tied to '{rep_axis}' by symmetry; "
+                        f"refine flag folded into '{rep_axis}'"
+                    )
+
+        # Handle fixed angles: warn if flagged
+        for angle in rules.fixed_angles:
+            if param_flag(cell_pz[angle]):
+                warnings.append(
+                    f"cell angle '{angle}' is fixed by symmetry; refine flag ignored"
+                )
+
+        # Handle free angles: free normally
+        for angle in rules.free_angles:
+            spec = cell_pz[angle]
             if param_flag(spec):
-                # Skip symmetry-constrained axes for cubic
-                if is_cubic and axis in ["b", "c", "alpha", "beta", "gamma"]:
-                    continue
-                param = getattr(model.cell, attr)
+                param = getattr(model.cell, angle_map[angle])
                 param.free = True
                 if spec[2] is not None:
                     param.fit_min = spec[2]
                 if spec[3] is not None:
                     param.fit_max = spec[3]
                 cell_params_to_add.append((
-                    param, f"{i}::{axis}", f"phase_{i}_cell_{axis}",
+                    param, f"{i}::{angle}", f"phase_{i}_cell_{angle}",
                     phase_name, i
                 ))
 
