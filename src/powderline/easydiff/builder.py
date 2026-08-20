@@ -108,9 +108,12 @@ def build_project(recipe: dict, workdir) -> BuildResult:
 
     for phase_name, phase_data in payload["phases"].items():
         slug = datablock_slug(phase_name)
-        # Uniquify on collision
-        if slug in used_slugs:
-            slug = slug + "_2"
+        # Uniquify on collision with incrementing suffix
+        original_slug = slug
+        suffix = 2
+        while slug in used_slugs:
+            slug = f"{original_slug}_{suffix}"
+            suffix += 1
         used_slugs.add(slug)
         phase_slugs[phase_name] = slug
 
@@ -324,11 +327,13 @@ def build_project(recipe: dict, workdir) -> BuildResult:
             rep_axis = length_group[0]
             param = getattr(model.cell, length_map[rep_axis])
             param.free = True
-            rep_spec = cell_pz[rep_axis]
-            if rep_spec[2] is not None:
-                param.fit_min = rep_spec[2]
-            if rep_spec[3] is not None:
-                param.fit_max = rep_spec[3]
+
+            # Use bounds and value override from the first flagged axis
+            bounds_spec = cell_pz[flagged_in_group[0]]
+            if bounds_spec[2] is not None:
+                param.fit_min = bounds_spec[2]
+            if bounds_spec[3] is not None:
+                param.fit_max = bounds_spec[3]
             cell_params_to_add.append((
                 param, f"{i}::{rep_axis}", f"phase_{i}_cell_{rep_axis}",
                 phase_name, i

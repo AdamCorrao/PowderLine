@@ -118,3 +118,56 @@ def test_tetragonal_symmetry(tmp_path):
     assert "0::b" not in names  # tied to a
     assert "0::gamma" not in names  # fixed by symmetry
     assert any("fixed by symmetry" in w for w in br.warnings)  # gamma warning
+
+
+def test_slug_collision_with_three_phases(tmp_path):
+    """Three phases with identical base slugs get distinct suffixes."""
+    r = base_recipe()
+    # Create three phases that all map to "lab6"
+    for name in ["Lab6", "LAB6"]:
+        r["payload"]["phases"][name] = {
+            "structure": {
+                "phase_name": name,
+                "space_group": "P m -3 m",
+                "unit_cell": {"a": 4.15, "b": 4.15, "c": 4.15,
+                              "alpha": 90.0, "beta": 90.0, "gamma": 90.0},
+                "atoms": {"La": {"element": "La", "x": 0.0, "y": 0.0, "z": 0.0,
+                                 "occupancy": 1.0, "Uiso": 0.01, "ADP": "Uiso"}}
+            },
+            "parameterization": {
+                "atoms": {"La": {k: [None, False, None, None]
+                                 for k in ("x", "y", "z", "occupancy", "Uiso")}},
+                "scale": [1, True, None, None],
+                "unit_cell": {k: [None, False, None, None]
+                              for k in ("a", "b", "c", "alpha", "beta", "gamma")},
+            },
+        }
+    tth = np.linspace(1.0, 15.0, 200)
+    r["payload"]["xrd_data"] = {
+        "tth": tth.tolist(),
+        "Itth": (100 + 10 * np.exp(-((tth - 5) ** 2))).tolist(),
+        "Itth_weights": (np.ones_like(tth) / 100.0).tolist(),
+    }
+
+    br = build_project(r, tmp_path)
+    slugs = set(br.phase_slugs.values())
+    # All three should have distinct slugs
+    assert slugs == {"lab6", "lab6_2", "lab6_3"}
+    assert len(br.phase_slugs) == 3
+
+
+def test_bounds_from_non_representative_axis(tmp_path):
+    """Bounds from a non-representative axis are used when it's the only flagged one."""
+    r = rich_recipe()
+    # Flag only 'b' with bounds, not 'a' (cubic: b tied to a)
+    r["payload"]["phases"]["LaB6"]["parameterization"]["unit_cell"]["a"] = [None, False, None, None]
+    r["payload"]["phases"]["LaB6"]["parameterization"]["unit_cell"]["b"] = [None, True, 4.0, 5.0]
+
+    br = build_project(r, tmp_path)
+    names = {m.parameter_name for m in br.manifest}
+    # Should free "a" (representative) with bounds from "b"
+    assert "0::a" in names
+    assert "0::b" not in names
+    a_entry = next(m for m in br.manifest if m.parameter_name == "0::a")
+    assert a_entry.parameter.fit_min == pytest.approx(4.0)
+    assert a_entry.parameter.fit_max == pytest.approx(5.0)
