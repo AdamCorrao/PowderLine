@@ -233,12 +233,9 @@ recipes. Fixed anisotropic ADP values are not modeled and are dropped with a war
 profile with fixed FCJ axial-divergence asymmetry (CrysFML calculator; hkl peak lists
 are recovered with a post-fit CrysPy calculation). On the identical LaB6 recipe,
 GSAS-II reaches Rwp 6.01% vs easydiffraction 9.63% (both χ² < 1); the remaining gap
-comes from background peaks (not modeled) and residual profile differences, so Rwp is
-still not an apples-to-apples metric across engines. Run the head-to-head yourself:
-
-```bash
-pixi run -e easydiff python examples/example_engine_comparison/compare_engines.py
-```
+comes from background peaks (not modeled) and residual profile differences, so
+**compare lattice parameters, not Rwp, across engines** — Rwp is not an
+apples-to-apples metric.
 
 For the engine architecture and how to add a backend, see the
 **Adding a Refinement Engine** section of the [developer guide](DEVELOPMENT.md).

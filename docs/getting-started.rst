@@ -55,8 +55,7 @@ A third engine, open-source `easydiffraction
 (``pixi install -e easydiff``; easydiffraction needs Python ≥3.12, the default
 environment is untouched). It consumes the same recipes and returns the same
 result dictionary — see the integration guide's easydiffraction section for
-its v1 capability list and the ``examples/example_engine_comparison/`` demo
-for a head-to-head against GSAS-II.
+its v1 capability list.
 
 ``engine="topas"`` returns the same result dictionary as the GSAS-II engine
 (plus ``rwp``/``r_exp``/``gof``). All 8 real example recipes translate and have

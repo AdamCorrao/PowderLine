@@ -67,7 +67,8 @@ Python ≥3.12):
   are rejected loudly. Nonzero SH/L auto-selects the TCH profile with fixed FCJ
   asymmetry (CrysFML calculator; hkl lists harvested post-fit via CrysPy). Rwp is
   still NOT comparable to GSAS-II (no background peaks; profile details differ):
-  LaB6 9.63% vs 6.01% — see `examples/example_engine_comparison/`.
+  LaB6 9.63% vs 6.01% (head-to-head demo lives in the private PowderLine-devkit,
+  `dossiers/easydiffraction/example_engine_comparison/`).
 
 The 6-name public API is in `src/powderline/__init__.py` `__all__`:
 `run`, `validate`, `load_recipe_asset`, `validate_simulation_mode_parameters`,
@@ -81,8 +82,9 @@ The 6-name public API is in `src/powderline/__init__.py` `__all__`:
   (`--output DIR`, `--validate-only`, `--verbose`); no GSAS-II required.
 - `pixi install -e easydiff` then `pixi run -e easydiff python ...` — the
   optional easydiffraction environment (Python ≥3.12 + easydiffraction + GSAS-II;
-  the default env is untouched). Engine comparison demo:
-  `pixi run -e easydiff python examples/example_engine_comparison/compare_engines.py`.
+  the default env is untouched). The GSAS-II-vs-easydiffraction head-to-head demo
+  is a dev artifact and lives in the private PowderLine-devkit
+  (`dossiers/easydiffraction/example_engine_comparison/`).
 - `pixi run test` — full pytest suite (run from the repo root).
 - `pixi run gsas-server start|status|stop|restart` — manage the persistent GSAS-II server.
 - `pixi run mp-simulate --material-id mp-2680` — simulate a pattern from

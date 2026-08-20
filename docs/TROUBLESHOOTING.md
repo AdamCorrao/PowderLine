@@ -240,8 +240,7 @@ data.** Some gap is expected — SH/L axial-divergence asymmetry IS modeled (fix
 FCJ via the Thompson-Cox-Hastings profile when SH/L is nonzero), but background
 peaks are not, and profile details differ. LaB6 reference: 9.63% vs 6.01%, both
 below the nominal noise floor (χ² < 1: integrated-detector weights overestimate
-σ). Compare lattice parameters, not Rwp, across engines (see
-`examples/example_engine_comparison/`).
+σ). Compare lattice parameters, not Rwp, across engines.
 
 ---
 
