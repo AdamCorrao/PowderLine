@@ -473,9 +473,9 @@ class SizeBroadening(BaseModel):
 - Persistent FastAPI server keeping GSAS-II loaded in memory, and the HTTP client that talks to it (with in-process subprocess fallback)
 - **Role**: Execution backends for `run()`'s `server`/`auto` modes
 
-**src/powderline/topas/ + src/powderline/engine.py**:
-- TOPAS v7 translation path — recipe → `.inp`/`.xye` (writer, conversions, gemmi-backed symmetry), `tc.exe` runner, results round-trip into the standardized tables, standalone `topas-kicker` CLI — plus the engine dispatcher behind `powderline.run(recipe, output_dir, engine="gsasii"|"topas")`. Imports **zero** GSAS-II; the `gsasii` branch is a transparent pass-through to `kicker.run`.
-- **Role**: Alternate refinement engine + engine dispatch
+**src/powderline/topas/ + src/powderline/easydiff/ + src/powderline/engine.py**:
+- Alternate translation engines — TOPAS v7 (recipe → `.inp`/`.xye`, `tc.exe` runner, results round-trip; standalone `topas-kicker` CLI) and easydiffraction (recipe → easydiffraction `Project`, lmfit fit) — plus the engine dispatcher behind `powderline.run(recipe, output_dir, engine="gsasii"|"topas"|"easydiffraction")`. Both alternate paths import **zero** GSAS-II; the `gsasii` branch is a transparent pass-through to `kicker.run`.
+- **Role**: Alternate refinement engines + engine dispatch
 
 **tests/**:
 - `test_example_LaB6_regression.py`: End-to-end regression test with exact output matching
@@ -488,6 +488,45 @@ Phase 1 keeps all implementation in `kicker.py` intentionally:
 - Easy to understand complete workflow in one file
 - Refactoring to modules planned for Phase 2 when API stabilizes
 - Comments saying "upstream" or "will be handled elsewhere" refer to future refactoring
+
+### Adding a Refinement Engine
+
+PowderLine's engine seam makes new backends cheap to add. The dispatcher
+(`src/powderline/engine.py`) is a small `_ENGINES` tuple plus one lazy-import
+branch per engine; every engine returns the **same result-dict shape**, locked
+by `tests/test_api.py`. The TOPAS (`src/powderline/topas/`) and easydiffraction
+(`src/powderline/easydiff/`) subpackages are the two reference implementations.
+
+The established pattern:
+
+1. **New subpackage** `src/powderline/<engine>/` holding all engine logic:
+   translation (`builder`/`writer`), execution (`runner`), result parsing, unit
+   conversions, and a `run_<engine>_recipe(recipe, output_dir, ...)` adapter that
+   returns the locked result dict.
+2. **One lazy-import branch** in `powderline/engine.py` (add the name to
+   `_ENGINES`). Import the engine module only inside that branch so machines
+   without the engine's dependencies can still use the others.
+3. **No schema changes** — engines translate the existing `GSASII_*` recipes;
+   they do not define their own recipe format.
+4. **Reject unsupported features loudly** — a recipe feature the engine cannot
+   represent raises a translation error (or, if it's a *fixed* unmappable value,
+   is dropped with a recorded warning). Never silently ignore a refine flag.
+5. **Optional pixi feature/environment** if the engine needs dependencies the
+   default environment shouldn't carry (e.g. easydiffraction needs Python ≥3.12,
+   so it lives in the optional `easydiff` environment).
+6. **Keep it GSAS-II-free** if it can be — the alternate engines import zero
+   GSAS-II, a property enforced by subprocess import-block tests.
+
+**Simulation-mode semantics across engines.** The GSAS-II engine treats
+`refinement_cycles == 1` as simulation and *rejects* any refine flag set in that
+mode (`validate_simulation_mode_parameters` in `kicker.py`). The alternate
+engines (TOPAS, easydiffraction) instead treat "no parameters flagged for
+refinement" as simulation and do not enforce the `cycles == 1` lock. For
+well-formed recipes the behavior matches; the two definitions only diverge on
+inconsistent input (`cycles == 1` *with* a stray refine flag), which GSAS-II
+refuses and the alternate engines would run. Uniform input-contract enforcement
+across all engines is a tracked follow-up (see the PowderLine-devkit
+easydiffraction dossier).
 
 ### Schema Design: Why `extra='allow'`?
 

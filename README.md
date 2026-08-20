@@ -146,8 +146,6 @@ a Windows machine with `tc.exe` installed. The TOPAS path imports zero GSAS-II.
 result = powderline.run(recipe, Path("output/"), engine="topas")
 ```
 
-See [the engine survey](docs/engine-survey.md) for detailed capabilities.
-
 ### easydiffraction (optional)
 
 Open-source Rietveld engine. Requires the optional `easydiff` pixi environment
@@ -178,8 +176,11 @@ lattice parameters agree to well under 0.001 Å — see the runnable head-to-hea
 The remaining Rwp gap comes from background peaks (not modeled) and residual
 profile-model differences, so Rwp is still not an apples-to-apples metric across engines.
 
-See the [design spec](docs/superpowers/specs/2026-08-19-easydiffraction-engine-design.md)
-and [engine survey](docs/engine-survey.md) for full details.
+For the engine architecture and how to add a backend, see
+[Adding a Refinement Engine](docs/DEVELOPMENT.md#adding-a-refinement-engine).
+The full design dossier and backend survey live in the private
+[PowderLine-devkit](https://github.com/NSLS2/PowderLine-devkit) (maintainers can
+request access).
 
 ## Documentation
 

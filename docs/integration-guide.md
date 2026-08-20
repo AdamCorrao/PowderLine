@@ -240,8 +240,10 @@ still not an apples-to-apples metric across engines. Run the head-to-head yourse
 pixi run -e easydiff python examples/example_engine_comparison/compare_engines.py
 ```
 
-See the [design spec](superpowers/specs/2026-08-19-easydiffraction-engine-design.md)
-and [engine survey](engine-survey.md) for full details.
+For the engine architecture and how to add a backend, see the
+**Adding a Refinement Engine** section of the [developer guide](DEVELOPMENT.md).
+The full design dossier and backend survey live in the private
+[PowderLine-devkit](https://github.com/NSLS2/PowderLine-devkit).
 
 ---
 
