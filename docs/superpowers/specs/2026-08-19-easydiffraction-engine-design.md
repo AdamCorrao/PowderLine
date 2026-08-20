@@ -26,8 +26,10 @@ import powderline
 result = powderline.run(recipe, output_dir, engine="easydiffraction")
 ```
 
-- The recipe is an unmodified `GSASII_Rietveld` recipe (`schema_version`
-  0.25.x). No new `schema_name`, no payload changes. The engine *translates*
+- The recipe is an unmodified `GSASII_Rietveld` recipe (current
+  `schema_version`, 0.26.0 at time of writing — the engine keys on
+  `schema_name` only and does not pin the version). No new `schema_name`,
+  no payload changes. The engine *translates*
   the recipe, exactly as `engine="topas"` does.
 - The return value is the locked standardized dict (see "Result contract").
 - Standardized report files (`refined_parameters.csv`, `fit_profile.txt`,
