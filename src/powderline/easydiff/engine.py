@@ -331,9 +331,10 @@ def run_easydiffraction_recipe(
             print(f"[easydiff] warning: {w}")
 
     # Everything past this point wrapped in try/except — runtime failures return success=False
-    try:
-        is_simulation = not br.manifest
+    is_simulation = not br.manifest
+    method = "easydiffraction_simulation" if is_simulation else "easydiffraction"
 
+    try:
         if is_simulation:
             # No refinement, just calculate pattern
             br.project.analysis.calculate()
@@ -341,7 +342,6 @@ def run_easydiffraction_recipe(
             rwp = None
             r_exp = None
             gof = None
-            method = "easydiffraction_simulation"
         else:
             # Fit sequence
             br.project.analysis.minimizer.type = "lmfit (leastsq)"
@@ -358,7 +358,6 @@ def run_easydiffraction_recipe(
             rwp = rwp_fraction_to_percent(rwp_frac)
             r_exp = rwp_fraction_to_percent(rexp_frac)
             gof = gof_val
-            method = "easydiffraction"
 
             arrays = br.experiment.data.fit_data_arrays()
 
@@ -383,7 +382,7 @@ def run_easydiffraction_recipe(
         elapsed = time.time() - t0
         return _result_dict(
             success=False,
-            method="easydiffraction",
+            method=method,
             output_dir=output_dir,
             elapsed=elapsed,
             error=str(exc),

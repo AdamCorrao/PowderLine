@@ -35,6 +35,9 @@ def _iparm_current(iparm1: dict, key: str, default=0.0):
 
 
 def check_unsupported(recipe: dict) -> list[str]:
+    from powderline.topas.symmetry import cell_constraints
+    from powderline.topas.errors import TopasTranslationError
+
     warnings: list[str] = []
     schema_name = recipe.get("schema_name")
     if schema_name != "GSASII_Rietveld":
@@ -95,8 +98,38 @@ def check_unsupported(recipe: dict) -> list[str]:
         warnings.append("background peaks ignored (no background-peaks concept)")
 
     for phase_name, phase in (payload.get("phases") or {}).items():
+        # Validate space group
+        structure = phase.get("structure", {}) or {}
+        sg_name = structure.get("space_group")
+        if sg_name:
+            try:
+                cell_constraints(sg_name)
+            except TopasTranslationError as exc:
+                raise EasyDiffractionTranslationError(str(exc)) from exc
+
         pz = phase.get("parameterization") or {}
+        # Check Uaniso
         for atom_name, atom in (pz.get("atoms") or {}).items():
+            uaniso = atom.get("Uaniso")
+            if isinstance(uaniso, dict):
+                # Check if any component is flagged for refinement
+                flagged_components = [k for k in ["u11", "u22", "u33", "u12", "u13", "u23"]
+                                      if param_flag(uaniso.get(k))]
+                if flagged_components:
+                    raise EasyDiffractionTranslationError(
+                        f"anisotropic ADPs ({phase_name}/{atom_name}) flagged for refinement; "
+                        "easydiffraction supports only isotropic ADPs (Uiso)"
+                    )
+                # Check for fixed non-null values
+                has_values = any(
+                    isinstance(uaniso.get(k), (list, tuple)) and len(uaniso[k]) >= 1 and uaniso[k][0] is not None
+                    for k in ["u11", "u22", "u33", "u12", "u13", "u23"]
+                )
+                if has_values:
+                    warnings.append(
+                        f"atom {phase_name}/{atom_name}: anisotropic ADPs not mapped (Uaniso ignored)"
+                    )
+
             for key in ("x", "y", "z", "occupancy", "Uiso"):
                 if param_flag(atom.get(key)):
                     raise EasyDiffractionTranslationError(

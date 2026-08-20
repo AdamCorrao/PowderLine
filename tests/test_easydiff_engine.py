@@ -71,3 +71,50 @@ def test_unique_run_ids(tmp_path):
     r1 = run_easydiffraction_recipe(rich_recipe(), tmp_path / "a")
     r2 = run_easydiffraction_recipe(rich_recipe(), tmp_path / "b")
     assert uuid.UUID(r1["run_id"]) != uuid.UUID(r2["run_id"])
+
+
+def test_output_files_cross_platform(tmp_path):
+    """output_files uses Path().name for cross-platform compatibility."""
+    from pathlib import Path
+    result = run_easydiffraction_recipe(rich_recipe(), tmp_path)
+    assert result["success"] is True
+    # Extract just filenames to verify no "/" in names
+    for path_str in result["output_files"]:
+        filename = Path(path_str).name
+        assert "/" not in filename
+        assert "\\" not in filename
+
+
+def test_post_build_fit_failure(tmp_path, monkeypatch):
+    """Fit failure after build returns success=False with error/traceback."""
+    from unittest.mock import MagicMock
+    import powderline.easydiff.builder as builder_module
+
+    original_build = builder_module.build_project
+
+    def mock_build(recipe, workdir):
+        br = original_build(recipe, workdir)
+        # Store original fit method
+        original_fit = br.project.analysis.fit
+
+        def failing_fit():
+            raise RuntimeError("Simulated fit failure for testing")
+
+        # Bypass easydiffraction's guards using object.__setattr__
+        object.__setattr__(br.project.analysis, 'fit', failing_fit)
+        return br
+
+    monkeypatch.setattr(builder_module, "build_project", mock_build)
+
+    result = run_easydiffraction_recipe(rich_recipe(), tmp_path)
+
+    # Should have all 17 keys
+    assert set(result) == RESULT_KEYS
+    assert result["success"] is False
+    assert result["method"] == "easydiffraction"
+    assert isinstance(result["refined_parameters"], pd.DataFrame)
+    assert isinstance(result["fit_profile"], pd.DataFrame)
+    assert isinstance(result["error"], str) and len(result["error"]) > 0
+    assert "Simulated fit failure" in result["error"]
+    assert isinstance(result["traceback"], str) and len(result["traceback"]) > 0
+    assert "RuntimeError" in result["traceback"]

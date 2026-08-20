@@ -145,3 +145,38 @@ def test_peak_broadening_with_value_warns():
         "size_broadening": {"model": "isotropic", "isotropic_size": [50.0, False, None, None]},
     }
     assert any("peak_broadening" in w for w in check_unsupported(r))
+
+
+def test_uaniso_flagged_raises():
+    r = base_recipe()
+    r["payload"]["phases"]["LaB6"]["parameterization"]["atoms"]["La"]["Uaniso"] = {
+        "u11": [0.01, True, None, None],
+        "u22": [0.01, False, None, None],
+        "u33": [0.01, False, None, None],
+        "u12": [0.0, False, None, None],
+        "u13": [0.0, False, None, None],
+        "u23": [0.0, False, None, None],
+    }
+    with pytest.raises(EasyDiffractionTranslationError, match="anisotropic ADPs.*flagged"):
+        check_unsupported(r)
+
+
+def test_uaniso_fixed_warns():
+    r = base_recipe()
+    r["payload"]["phases"]["LaB6"]["parameterization"]["atoms"]["La"]["Uaniso"] = {
+        "u11": [0.01, False, None, None],
+        "u22": [0.01, False, None, None],
+        "u33": [0.01, False, None, None],
+        "u12": [0.0, False, None, None],
+        "u13": [0.0, False, None, None],
+        "u23": [0.0, False, None, None],
+    }
+    warnings = check_unsupported(r)
+    assert any("anisotropic ADPs not mapped" in w and "LaB6/La" in w for w in warnings)
+
+
+def test_unknown_space_group_raises():
+    r = base_recipe()
+    r["payload"]["phases"]["LaB6"]["structure"]["space_group"] = "NOT A GROUP"
+    with pytest.raises(EasyDiffractionTranslationError, match="NOT A GROUP"):
+        check_unsupported(r)

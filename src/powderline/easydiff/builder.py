@@ -86,7 +86,7 @@ def build_project(recipe: dict, workdir) -> BuildResult:
     tth = np.array(xrd["tth"])
     itth = np.array(xrd["Itth"])
     weights = np.array(xrd["Itth_weights"])
-    fit_range = payload["fit_range"]
+    fit_range = payload.get("fit_range")
 
     mask, sigma = crop_and_sigma(tth, itth, weights, fit_range)
 
@@ -120,7 +120,13 @@ def build_project(recipe: dict, workdir) -> BuildResult:
 
         # Space group
         struct = phase_data["structure"]
-        model.space_group.name_h_m = struct["space_group"]
+        sg_name = struct["space_group"]
+        try:
+            model.space_group.name_h_m = sg_name
+        except Exception as exc:
+            raise EasyDiffractionTranslationError(
+                f"easydiffraction rejected space group {sg_name!r}: {exc}"
+            ) from exc
 
         # Unit cell - use initial values from structure
         uc = struct["unit_cell"]
@@ -144,7 +150,13 @@ def build_project(recipe: dict, workdir) -> BuildResult:
             # Set Uiso explicitly (default is Biso)
             site = model.atom_sites[label]
             site.adp_type = "Uiso"
-            site.adp_iso = atom_data["Uiso"]
+            uiso_val = atom_data.get("Uiso")
+            if uiso_val is not None:
+                site.adp_iso = uiso_val
+            else:
+                warnings.append(
+                    f"atom {label}: no Uiso value; easydiffraction default ADP used"
+                )
 
         structures.append(model)
 
@@ -161,14 +173,19 @@ def build_project(recipe: dict, workdir) -> BuildResult:
     # 5. Instrument parameters
     inst = payload["instrument"]
     iparm = inst["initialization"][0]  # Iparm1 is first element of initialization
-    inst_pz = inst["parameterization"]
+    inst_pz = inst.get("parameterization") or {}
 
-    # Wavelength
-    wavelength = iparm["Lam"][1]
+    # Wavelength - value override takes precedence over Iparm
+    wavelength_spec = inst_pz.get("wavelength")
+    if wavelength_spec is not None and wavelength_spec[0] is not None:
+        wavelength = wavelength_spec[0]
+    else:
+        wavelength = iparm["Lam"][1]
     expt.instrument.setup_wavelength = wavelength
 
     # Zero (4-tuple override takes precedence)
-    zero_spec = inst_pz["corrections"]["zero_shift"]
+    corrections = inst_pz.get("corrections") or {}
+    zero_spec = corrections.get("zero_shift")
     if zero_spec is not None and zero_spec[0] is not None:
         zero_val = zero_to_ed(zero_spec[0])
     else:
@@ -176,10 +193,10 @@ def build_project(recipe: dict, workdir) -> BuildResult:
     expt.instrument.calib_twotheta_offset = zero_val
 
     # Broadening - Gauss
-    bz = inst_pz["broadening"]
+    bz = inst_pz.get("broadening") or {}
     for key in ["U", "V", "W"]:
-        spec = bz[key]
-        if spec[0] is not None:
+        spec = bz.get(key)
+        if spec is not None and spec[0] is not None:
             val = gauss_broadening_to_ed(spec[0])
         else:
             val = gauss_broadening_to_ed(iparm[key][1])
@@ -187,8 +204,8 @@ def build_project(recipe: dict, workdir) -> BuildResult:
 
     # Broadening - Lorentz
     for key in ["X", "Y"]:
-        spec = bz[key]
-        if spec[0] is not None:
+        spec = bz.get(key)
+        if spec is not None and spec[0] is not None:
             val = lorentz_broadening_to_ed(spec[0])
         else:
             val = lorentz_broadening_to_ed(iparm[key][1])
@@ -206,23 +223,42 @@ def build_project(recipe: dict, workdir) -> BuildResult:
 
     # 6. Linked structures
     for i, (phase_name, slug) in enumerate(phase_slugs.items()):
-        scale_spec = payload["phases"][phase_name]["parameterization"]["scale"]
+        phase_pz = payload["phases"][phase_name].get("parameterization") or {}
+        scale_spec = phase_pz.get("scale")
         scale_val = param_value(scale_spec, default=1.0)
         expt.linked_structures.create(structure_id=slug, scale=scale_val)
 
     # 7. Background
-    bg = payload["background"]["chebyshev"]
-    expt.background.type = "chebyshev"
-    for k, c in enumerate(bg["coefficients"]):
-        expt.background.create(id=str(k), order=k, coef=c)
+    background = payload.get("background") or {}
+    bg = background.get("chebyshev")
+    if bg is not None:
+        expt.background.type = "chebyshev"
+        for k, c in enumerate(bg["coefficients"]):
+            expt.background.create(id=str(k), order=k, coef=c)
+    else:
+        warnings.append("no background model in recipe; none applied")
 
     # 8. Set free parameters (before building project)
     # Track which ones to add to manifest (check after project build for unit_cell)
     pending_params = []
 
+    # Wavelength
+    wavelength_spec = inst_pz.get("wavelength")
+    if wavelength_spec is not None and param_flag(wavelength_spec):
+        param = expt.instrument.setup_wavelength
+        param.free = True
+        if wavelength_spec[2] is not None:
+            param.fit_min = wavelength_spec[2]
+        if wavelength_spec[3] is not None:
+            param.fit_max = wavelength_spec[3]
+        pending_params.append((
+            param, ":0:Lam", "wavelength",
+            "", "", "instrument", 1.0
+        ))
+
     # Broadening U/V/W
     for key in ["U", "V", "W"]:
-        spec = bz[key]
+        spec = bz.get(key)
         if param_flag(spec):
             param = getattr(expt.peak, f"broad_gauss_{key.lower()}")
             param.free = True
@@ -238,7 +274,7 @@ def build_project(recipe: dict, workdir) -> BuildResult:
 
     # Broadening X/Y
     for key in ["X", "Y"]:
-        spec = bz[key]
+        spec = bz.get(key)
         if param_flag(spec):
             param = getattr(expt.peak, f"broad_lorentz_{key.lower()}")
             param.free = True
@@ -252,7 +288,7 @@ def build_project(recipe: dict, workdir) -> BuildResult:
             ))
 
     # Zero shift
-    zero_spec = inst_pz["corrections"]["zero_shift"]
+    zero_spec = corrections.get("zero_shift")
     if zero_spec is not None and param_flag(zero_spec):
         param = expt.instrument.calib_twotheta_offset
         param.free = True
@@ -267,7 +303,8 @@ def build_project(recipe: dict, workdir) -> BuildResult:
 
     # Scale per phase
     for i, (phase_name, slug) in enumerate(phase_slugs.items()):
-        scale_spec = payload["phases"][phase_name]["parameterization"]["scale"]
+        phase_pz = payload["phases"][phase_name].get("parameterization") or {}
+        scale_spec = phase_pz.get("scale")
         if param_flag(scale_spec):
             param = expt.linked_structures[slug].scale
             param.free = True
@@ -281,7 +318,7 @@ def build_project(recipe: dict, workdir) -> BuildResult:
             ))
 
     # Background coefficients
-    if bg["refine_flag"]:
+    if bg is not None and bg.get("refine_flag"):
         for k in range(len(bg["coefficients"])):
             param = expt.background[str(k)].coef
             param.free = True
@@ -294,7 +331,8 @@ def build_project(recipe: dict, workdir) -> BuildResult:
     cell_params_to_add = []
     for i, (phase_name, slug) in enumerate(phase_slugs.items()):
         phase_data = payload["phases"][phase_name]
-        cell_pz = phase_data["parameterization"]["unit_cell"]
+        phase_pz = phase_data.get("parameterization") or {}
+        cell_pz = phase_pz.get("unit_cell") or {}
         model = structures[i]
         sg_name = phase_data["structure"]["space_group"]
 

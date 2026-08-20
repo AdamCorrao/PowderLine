@@ -191,3 +191,45 @@ def test_data_outside_fit_range(tmp_path):
     # Verify .xye file has exactly mask.sum() rows
     xye_data = np.loadtxt(tmp_path / "easydiff_data.xye")
     assert xye_data.shape[0] == br.mask.sum()
+
+
+def test_wavelength_override_value(tmp_path):
+    """Wavelength override in parameterization takes precedence over Iparm."""
+    r = base_recipe()
+    r["payload"]["instrument"]["parameterization"]["wavelength"] = [1.54, False, None, None]
+    br = build_project(r, tmp_path)
+    assert br.wavelength == pytest.approx(1.54)
+    assert br.experiment.instrument.setup_wavelength.value == pytest.approx(1.54)
+
+
+def test_wavelength_refine_flag(tmp_path):
+    """Wavelength refine flag frees setup_wavelength and appears in manifest."""
+    r = rich_recipe()
+    r["payload"]["instrument"]["parameterization"]["wavelength"] = [None, True, 0.1, 2.0]
+    br = build_project(r, tmp_path)
+    names = {m.parameter_name for m in br.manifest}
+    assert ":0:Lam" in names
+    lam_entry = next(m for m in br.manifest if m.parameter_name == ":0:Lam")
+    assert lam_entry.category == "instrument"
+    assert lam_entry.parameter.free is True
+    assert lam_entry.parameter.fit_min == pytest.approx(0.1)
+    assert lam_entry.parameter.fit_max == pytest.approx(2.0)
+
+
+def test_uiso_none_handled(tmp_path):
+    """Builder handles Uiso=None without crashing and warns."""
+    r = base_recipe()
+    r["payload"]["phases"]["LaB6"]["structure"]["atoms"]["La"]["Uiso"] = None
+    br = build_project(r, tmp_path)
+    assert any("no Uiso value" in w and "La" in w for w in br.warnings)
+
+
+def test_minimal_recipe_no_background(tmp_path):
+    """Minimal recipe with no background, no inst parameterization, succeeds."""
+    r = base_recipe()
+    r["payload"]["background"] = None
+    r["payload"]["instrument"]["parameterization"] = None
+    br = build_project(r, tmp_path)
+    assert any("no background model" in w for w in br.warnings)
+    # No parameters freed from missing blocks
+    assert all(":0:Back" not in m.parameter_name for m in br.manifest)

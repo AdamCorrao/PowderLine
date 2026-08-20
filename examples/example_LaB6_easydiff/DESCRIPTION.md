@@ -19,4 +19,4 @@ output_dir = "output"
 result = run(recipe, output_dir, engine="easydiffraction")
 ```
 
-Expected refinement quality: Rwp ~19.8% (higher than GSAS-II due to missing spherical harmonics and asymmetry modeling), lattice parameter `a` refined to ~4.1575 Å (NIST SRM 660 reference: 4.15682 Å).
+Expected refinement quality: Rwp ~19.8% (higher than GSAS-II due to missing SH/L axial-divergence asymmetry model and background peaks), lattice parameter `a` refined to ~4.1575 Å (NIST SRM 660 reference: 4.15682 Å).
