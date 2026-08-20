@@ -1,8 +1,9 @@
 # CLAUDE.md — PowderLine
 
 Automated powder X-ray diffraction Rietveld refinements using GSAS-II. A JSON "recipe"
-(schema **0.26.0**) describes the refinement; `powderline.run()` drives GSAS-II and returns
-standardized tables. Example-driven: real refinement cases drive schema evolution.
+(schema **0.26.0**) describes the refinement; `powderline.run()` drives GSAS-II — or
+TOPAS / easydiffraction via `engine=` — and returns standardized tables.
+Example-driven: real refinement cases drive schema evolution.
 
 ## Architecture (`src/powderline/`)
 
@@ -40,10 +41,31 @@ TOPAS v7 INP generation (`src/powderline/topas/`, **imports zero GSAS-II**):
   `--run`/`--no-run`, `--topas-dir`/`--topas-version`, `--validate-only`,
   `--parse-results <results.csv>`.
 - `engine.py` (TOPAS adapter) + `src/powderline/engine.py` (dispatcher) — power
-  `powderline.run(recipe, output_dir, engine="gsasii"|"topas")`. `engine="topas"`
-  returns the same result dict as GSAS-II (plus `rwp`/`r_exp`/`gof`) and imports
-  no GSAS-II; `engine="gsasii"` (default) is a transparent pass-through to the
-  GSAS-II `kicker.run` (imported lazily).
+  `powderline.run(recipe, output_dir, engine="gsasii"|"topas"|"easydiffraction")`.
+  `engine="topas"` returns the same result dict as GSAS-II (plus
+  `rwp`/`r_exp`/`gof`) and imports no GSAS-II; `engine="gsasii"` (default) is a
+  transparent pass-through to the GSAS-II `kicker.run` (imported lazily).
+
+easydiffraction engine (`src/powderline/easydiff/`, **imports zero GSAS-II**;
+requires the optional `easydiff` pixi environment — easydiffraction needs
+Python ≥3.12):
+- `conversions.py` — GSAS-II↔easydiffraction unit/convention math (U/V/W σ²
+  centideg² ↔ Caglioti FWHM² deg², X/Y/Zero centideg↔deg, Rwp fraction↔percent,
+  lowercase datablock slugs, fit-range/weight masking).
+- `policy.py` — the pre-flight "honesty rule": fixed-unmappable recipe features
+  are dropped with a recorded warning; anything *flagged for refinement* that
+  can't be represented raises `errors.EasyDiffractionTranslationError`. Also
+  validates space groups via `topas.symmetry.cell_constraints`. Powers
+  `validate_only` with **no easydiffraction import**.
+- `builder.py` — recipe dict → easydiffraction `Project` + a manifest mapping
+  every freed parameter back to GSAS-II naming/units (`scale_to_recipe`); cell
+  symmetry enforced via gemmi `cell_constraints` (library does NOT police it).
+- `engine.py` — adapter: build → lmfit fit (or `calculate()` for simulation) →
+  same standardized result dict + report files as the other engines. v1 refines
+  cell/scale/wavelength/Chebyshev-background/U-V-W-X-Y/zero; atom-level flags,
+  Kα doublets, refined Z/polarization/axial-divergence/background-peaks and SPF
+  are rejected loudly. Rwp is NOT comparable to GSAS-II (no SH/L asymmetry, no
+  background peaks) — see `examples/example_engine_comparison/`.
 
 The 6-name public API is in `src/powderline/__init__.py` `__all__`:
 `run`, `validate`, `load_recipe_asset`, `validate_simulation_mode_parameters`,
@@ -55,6 +77,10 @@ The 6-name public API is in `src/powderline/__init__.py` `__all__`:
   `--output DIR`, `--use-server`/`--no-server`).
 - `pixi run topas-kicker <recipe.json>` — generate a TOPAS v7 `.inp` + `.xye`
   (`--output DIR`, `--validate-only`, `--verbose`); no GSAS-II required.
+- `pixi install -e easydiff` then `pixi run -e easydiff python ...` — the
+  optional easydiffraction environment (Python ≥3.12 + easydiffraction + GSAS-II;
+  the default env is untouched). Engine comparison demo:
+  `pixi run -e easydiff python examples/example_engine_comparison/compare_engines.py`.
 - `pixi run test` — full pytest suite (run from the repo root).
 - `pixi run gsas-server start|status|stop|restart` — manage the persistent GSAS-II server.
 - `pixi run mp-simulate --material-id mp-2680` — simulate a pattern from

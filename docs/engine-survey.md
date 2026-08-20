@@ -101,7 +101,7 @@ model maps awkwardly onto our recipes. Wait for a concrete need.
 
 ## Recommended order
 
-1. **EasyDiffraction** (in progress) — proves the engine seam end-to-end with
+1. **EasyDiffraction** (implemented 2026-08-20; see `examples/example_engine_comparison/`) — proves the engine seam end-to-end with
    zero external binaries.
 2. **BGMN** — biggest scientific complement (QPA, FPA profiles), open source,
    Linux-native; needs packaging work.

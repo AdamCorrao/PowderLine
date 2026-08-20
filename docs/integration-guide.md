@@ -223,14 +223,20 @@ result = powderline.run(recipe, "output", engine="easydiffraction")
 ```
 
 **v1 capabilities:** translates unmodified `GSASII_Rietveld` recipes; supports unit-cell,
-scale, Chebyshev background, Caglioti U/V/W + Lorentzian X/Y broadening, zero-shift
-refinement; multi-phase; simulation mode (no refinement flags set). Rejects loudly
-(translation error) atom-level refinement flags, Kα₁/Kα₂ two-wavelength recipes,
-refined Z / polarization / axial divergence / background peaks, and SPF recipes.
+scale, wavelength, Chebyshev background, Caglioti U/V/W + Lorentzian X/Y broadening,
+and zero-shift refinement; multi-phase; simulation mode (no refinement flags set).
+Rejects loudly (translation error) atom-level refinement flags, Kα₁/Kα₂ two-wavelength
+recipes, refined Z / polarization / axial divergence / background peaks, and SPF
+recipes. Fixed anisotropic ADP values are not modeled and are dropped with a warning.
 
 **Known limitation:** Rwp values are NOT directly comparable to GSAS-II — easydiffraction
-does not model axial-divergence / SH-L asymmetry or background peaks. Example: LaB6
-19.77% here vs 6.53% GSAS-II on the same data.
+does not model axial-divergence / SH-L asymmetry or background peaks. On the identical
+LaB6 recipe, GSAS-II reaches Rwp 6.01% vs easydiffraction 19.77%, while the refined
+lattice parameters agree to 0.0003 Å. Run the head-to-head yourself:
+
+```bash
+pixi run -e easydiff python examples/example_engine_comparison/compare_engines.py
+```
 
 See the [design spec](superpowers/specs/2026-08-19-easydiffraction-engine-design.md)
 and [engine survey](engine-survey.md) for full details.

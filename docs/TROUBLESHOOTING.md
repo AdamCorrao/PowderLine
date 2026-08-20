@@ -200,6 +200,48 @@ ModuleNotFoundError: No module named 'GSASII'
 
 ---
 
+## easydiffraction Engine Not Installed
+
+**Error:**
+```
+ImportError: easydiffraction is not installed. Install PowderLine's optional
+engine environment: `pixi install -e easydiff` ...
+```
+
+**Cause:** `engine="easydiffraction"` was requested but the optional `easydiff`
+pixi environment is not installed (easydiffraction needs Python ≥3.12, so it
+lives in its own environment; the default environment is unaffected).
+
+**Solution:**
+```bash
+pixi install -e easydiff
+pixi run -e easydiff python your_script.py
+```
+
+---
+
+## easydiffraction Rejects My Recipe (EasyDiffractionTranslationError)
+
+**Error:** `EasyDiffractionTranslationError: ... is flagged for refinement but ...`
+
+**Cause:** This is intentional, not a bug. The easydiffraction engine refuses —
+rather than silently ignores — refinement flags it cannot represent: atom-level
+flags (coordinates, occupancies, ADPs), Kα₁/Kα₂ two-wavelength recipes, and
+refined Z / polarization / axial divergence / background peaks. Fixed
+(non-refined) unmappable values are dropped with a recorded warning instead.
+
+**Solution:** Set the offending refine flags to `false` (see the message for
+which parameter), or run the recipe with `engine="gsasii"`, which supports all
+recipe features. `examples/example_LaB6_easydiff/` shows a stock recipe adapted
+for this engine.
+
+Related: **Rwp from easydiffraction is much higher than GSAS-II on the same
+data.** Expected — its profile model has no SH/L axial-divergence asymmetry and
+no background peaks. Compare lattice parameters, not Rwp, across engines (see
+`examples/example_engine_comparison/`).
+
+---
+
 ## PowderLine Module Import Error
 
 **Error:**

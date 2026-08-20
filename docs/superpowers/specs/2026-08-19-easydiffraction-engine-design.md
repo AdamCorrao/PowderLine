@@ -2,7 +2,10 @@
 
 **Date:** 2026-08-19 (rev 2, after critical review against schema.py, test_api.py,
 the LaB6 example recipe, and the easydiffraction source)
-**Status:** Approved design, pre-implementation
+**Status:** Implemented (2026-08-20, branch `feat/easydiffraction-engine`) —
+kept as the design record; where implementation details evolved during review
+(wavelength mapping, Uaniso policy, tolerant builder access, space-group
+pre-flight), the code and `docs/integration-guide.md` are authoritative.
 **Baseline:** public `NSLS2/PowderLine` at `46ffe4a` (v0.1.0). Note: origin/main
 is 2 commits ahead (`827124f`, mp-api compatibility fix — unrelated to engines);
 rebase the feature branch onto origin/main before opening a PR.
