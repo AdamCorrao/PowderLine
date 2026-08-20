@@ -64,7 +64,9 @@ def run(
             topas_version=topas_version,
         )
     if engine == "easydiffraction":
-        # GSAS-II-free; module-level import so tests can monkeypatch the function
+        # GSAS-II-free; lazy import so this dispatcher loads without
+        # easydiffraction installed. Bind the module (not the function) so tests
+        # can monkeypatch ``run_easydiffraction_recipe`` on it.
         from powderline.easydiff import engine as _easydiff_engine
 
         return _easydiff_engine.run_easydiffraction_recipe(
