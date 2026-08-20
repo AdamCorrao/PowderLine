@@ -1,0 +1,14 @@
+parameter_name,descriptive_name,phase_name,phase_idx,atom_name,atom_idx,value,esd,category
+:0:U,instrument_broadening_U,,,,,204.04213367071253,33.30550361039676,instrument_broadening
+:0:V,instrument_broadening_V,,,,,9.764157251171742,2.8100093792597836,instrument_broadening
+:0:W,instrument_broadening_W,,,,,0.6145852432997041,0.06698573455257853,instrument_broadening
+:0:X,instrument_broadening_X,,,,,-24.439710597524314,1.1354561142654864,instrument_broadening
+:0:Y,instrument_broadening_Y,,,,,1.3756867806993982,0.04841986064328997,instrument_broadening
+0:0:Scale,phase_0_scale_factor,LaB6,0,,,4.5792520189810214e-06,2.772338960563912e-08,scale
+:0:Back;0,background_coefficient_0,,,,,30.816295445172,0.20632299516385796,background
+:0:Back;1,background_coefficient_1,,,,,2.8769616678858414,0.33144559914555877,background
+:0:Back;2,background_coefficient_2,,,,,-0.32434839799765397,0.29480609488529336,background
+:0:Back;3,background_coefficient_3,,,,,-1.0083108640518021,0.28881482250756685,background
+:0:Back;4,background_coefficient_4,,,,,0.4240309244388855,0.2531278447131147,background
+:0:Back;5,background_coefficient_5,,,,,-0.08659762989676345,0.25185080893796097,background
+0::a,phase_0_cell_a,LaB6,0,,,4.157466680956517,5.265882757643343e-05,unit_cell

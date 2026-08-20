@@ -1,0 +1,18 @@
+parameter_name,descriptive_name,category,value_gsasii,value_easydiffraction,esd_gsasii,esd_easydiffraction
+rwp,weighted profile R (%),fit_statistics,6.00596572598052,19.7697,,
+gof,goodness of fit,fit_statistics,,2.51895,,
+cell_a,LaB6 cubic lattice parameter (A),unit_cell,4.1571922508,4.15747,2.13167e-05,5.26588e-05
+0:0:Scale,phase_0_scale_factor,scale,3.776544e-02,4.57925e-06,6.62954669e-05,2.77234e-08
+0::A0,phase_0_reciprocal_metric_tensor_A11,reciprocal_metric_tensor,5.786284e-02,,5.93401587e-07,
+0::a,phase_0_cell_a,unit_cell,,4.15747,,5.26588e-05
+:0:Back;0,background_coefficient_0,background,3.001913e+01,30.8163,6.21912440e-02,0.206323
+:0:Back;1,background_coefficient_1,background,1.341768e+00,2.87696,9.94024497e-02,0.331446
+:0:Back;2,background_coefficient_2,background,1.133582e+00,-0.324348,9.05161265e-02,0.294806
+:0:Back;3,background_coefficient_3,background,-1.427290e+00,-1.00831,8.86344956e-02,0.288815
+:0:Back;4,background_coefficient_4,background,5.558719e-01,0.424031,7.73982777e-02,0.253128
+:0:Back;5,background_coefficient_5,background,3.241936e-01,-0.0865976,7.63847689e-02,0.251851
+:0:U,instrument_broadening_U,instrument_broadening,1.688504e+01,204.042,7.60967407e+00,33.3055
+:0:V,instrument_broadening_V,instrument_broadening,1.519327e+01,9.76416,8.75780536e-01,2.81001
+:0:W,instrument_broadening_W,instrument_broadening,6.145774e-01,0.614585,2.35057514e-02,0.0669857
+:0:X,instrument_broadening_X,instrument_broadening,8.966535e-01,-24.4397,1.58191007e-02,1.13546
+:0:Y,instrument_broadening_Y,instrument_broadening,-1.664680e+01,1.37569,3.61647507e-01,0.0484199
