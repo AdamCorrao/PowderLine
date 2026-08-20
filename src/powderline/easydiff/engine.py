@@ -361,6 +361,21 @@ def run_easydiffraction_recipe(
 
             arrays = br.experiment.data.fit_data_arrays()
 
+        # Harvest hkl reflections when the fitting calculator can't provide
+        # them (TCH profile runs on CrysFML, which has no refln support).
+        # Reflection positions and F^2 depend on the refined structure, not
+        # the peak shape, so a one-off CrysPy calculation on the converged
+        # model recovers the list. Must run AFTER fit_data_arrays(): the
+        # swap-back changes the calculated pattern, so freeze copies first.
+        if br.experiment.refln is None:
+            arrays = {k: np.array(v) for k, v in arrays.items()}
+            try:
+                br.experiment.peak.type = "cwl-pseudo-voigt"
+                br.experiment.calculator.type = "cryspy"
+                br.project.analysis.calculate()
+            except Exception as exc:  # peak lists stay empty; not fatal
+                br.warnings.append(f"hkl harvest via CrysPy failed: {exc}")
+
         # Write reports
         _write_reports(br, arrays, output_dir)
 

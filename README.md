@@ -169,11 +169,14 @@ Rejects loudly (translation error) atom-level refinement flags, Kα₁/Kα₂ tw
 recipes, refined Z / polarization / axial divergence / background peaks, and SPF
 recipes. Fixed anisotropic ADP values are not modeled and are dropped with a warning.
 
-**Known limitation:** Rwp values are NOT directly comparable to GSAS-II — easydiffraction
-does not model axial-divergence / SH-L asymmetry or background peaks. On the identical
-LaB6 recipe, GSAS-II reaches Rwp 6.01% vs easydiffraction 19.77%, while the refined
-lattice parameters agree to 0.0003 Å — see the runnable head-to-head in
+**Profile model:** a nonzero `SH/L` automatically selects the Thompson–Cox–Hastings
+profile with fixed FCJ axial-divergence asymmetry (CrysFML calculator; hkl peak lists
+are recovered with a post-fit CrysPy calculation). On the identical LaB6 recipe,
+GSAS-II reaches Rwp 6.01% vs easydiffraction 9.63% (both χ² < 1), and the refined
+lattice parameters agree to well under 0.001 Å — see the runnable head-to-head in
 [`examples/example_engine_comparison/`](examples/example_engine_comparison/DESCRIPTION.md).
+The remaining Rwp gap comes from background peaks (not modeled) and residual
+profile-model differences, so Rwp is still not an apples-to-apples metric across engines.
 
 See the [design spec](docs/superpowers/specs/2026-08-19-easydiffraction-engine-design.md)
 and [engine survey](docs/engine-survey.md) for full details.

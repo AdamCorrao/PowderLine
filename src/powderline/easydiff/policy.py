@@ -71,7 +71,9 @@ def check_unsupported(recipe: dict) -> list[str]:
     if param_flag(corrections.get("axial_divergence")):
         raise EasyDiffractionTranslationError(
             "axial_divergence is flagged for refinement; the easydiffraction engine "
-            "uses a pseudo-Voigt profile without an axial-divergence model"
+            "models SH/L as a FIXED Thompson-Cox-Hastings/FCJ asymmetry but does "
+            "not support refining it (the two FCJ parameters are degenerate at "
+            "typical values and destroy ESD estimation)"
         )
 
     z_val = _iparm_current(iparm1, "Z", 0.0)
@@ -82,8 +84,9 @@ def check_unsupported(recipe: dict) -> list[str]:
     shl = _iparm_current(iparm1, "SH/L", 0.0)
     if shl:
         warnings.append(
-            f"axial divergence SH/L={shl} not modeled (pseudo-Voigt profile); "
-            "low-angle peak shapes will differ from GSAS-II"
+            f"SH/L={shl} modeled via the Thompson-Cox-Hastings profile with "
+            "fixed FCJ asymmetry (CrysFML calculator); hkl peak lists are "
+            "harvested with a post-fit CrysPy calculation"
         )
 
     background = payload.get("background") or {}

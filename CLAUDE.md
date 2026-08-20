@@ -64,8 +64,10 @@ Python ≥3.12):
   same standardized result dict + report files as the other engines. v1 refines
   cell/scale/wavelength/Chebyshev-background/U-V-W-X-Y/zero; atom-level flags,
   Kα doublets, refined Z/polarization/axial-divergence/background-peaks and SPF
-  are rejected loudly. Rwp is NOT comparable to GSAS-II (no SH/L asymmetry, no
-  background peaks) — see `examples/example_engine_comparison/`.
+  are rejected loudly. Nonzero SH/L auto-selects the TCH profile with fixed FCJ
+  asymmetry (CrysFML calculator; hkl lists harvested post-fit via CrysPy). Rwp is
+  still NOT comparable to GSAS-II (no background peaks; profile details differ):
+  LaB6 9.63% vs 6.01% — see `examples/example_engine_comparison/`.
 
 The 6-name public API is in `src/powderline/__init__.py` `__all__`:
 `run`, `validate`, `load_recipe_asset`, `validate_simulation_mode_parameters`,

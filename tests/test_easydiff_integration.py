@@ -1,7 +1,7 @@
 """End-to-end: LaB6 example recipe refined by the easydiffraction engine.
 
-Spike-verified expectations: Rwp ~19.8% (no SH/L asymmetry / background peaks,
-so much higher than GSAS-II's 6.53%), cell a -> 4.1575 +/- 0.0001 vs NIST 4.15682.
+Spike-verified expectations: Rwp ~9.6% (TCH/FCJ asymmetry from SH/L; residual gap
+vs GSAS-II is background peaks + profile details), cell a -> 4.1575 +/- 0.0001 vs NIST 4.15682.
 """
 import json
 from pathlib import Path
@@ -28,7 +28,7 @@ def test_refinement_succeeds_with_sane_rwp(lab6_result):
     result, _ = lab6_result
     assert result["success"] is True, result["error"]
     assert result["method"] == "easydiffraction"
-    assert 5.0 < result["rwp"] < 30.0          # percent; spike: ~19.8
+    assert 5.0 < result["rwp"] < 15.0          # percent; TCH spike: ~9.6
     assert result["gof"] is not None and result["gof"] < 10.0
 
 
@@ -43,7 +43,7 @@ def test_lattice_parameter_close_to_nist(lab6_result):
 def test_report_files_written(lab6_result):
     result, out = lab6_result
     for name in ("refined_parameters.csv", "fit_profile.txt",
-                 "LaB6_unit_cell_report.csv"):
+                 "LaB6_unit_cell_report.csv", "LaB6_peak_list_report.csv"):
         assert (out / name).exists(), name
     assert len(result["fit_profile"]) == 4096  # full original grid, padded
 

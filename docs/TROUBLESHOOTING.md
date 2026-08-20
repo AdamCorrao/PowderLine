@@ -236,8 +236,11 @@ recipe features. `examples/example_LaB6_easydiff/` shows a stock recipe adapted
 for this engine.
 
 Related: **Rwp from easydiffraction is much higher than GSAS-II on the same
-data.** Expected — its profile model has no SH/L axial-divergence asymmetry and
-no background peaks. Compare lattice parameters, not Rwp, across engines (see
+data.** Some gap is expected — SH/L axial-divergence asymmetry IS modeled (fixed
+FCJ via the Thompson-Cox-Hastings profile when SH/L is nonzero), but background
+peaks are not, and profile details differ. LaB6 reference: 9.63% vs 6.01%, both
+below the nominal noise floor (χ² < 1: integrated-detector weights overestimate
+σ). Compare lattice parameters, not Rwp, across engines (see
 `examples/example_engine_comparison/`).
 
 ---

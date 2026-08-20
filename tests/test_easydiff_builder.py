@@ -233,3 +233,30 @@ def test_minimal_recipe_no_background(tmp_path):
     assert any("no background model" in w for w in br.warnings)
     # No parameters freed from missing blocks
     assert all(":0:Back" not in m.parameter_name for m in br.manifest)
+
+
+def test_tch_profile_selected_when_shl_nonzero(tmp_path):
+    # SH/L != 0 -> CrysFML calculator + Thompson-Cox-Hastings profile with
+    # FCJ asymmetry seeded (fixed) from SH/L; peak values must be applied
+    # AFTER the profile swap (the swap resets the peak category).
+    r = rich_recipe()
+    r["payload"]["instrument"]["initialization"][0]["SH/L"] = [0.0005, 0.0005, False]
+    br = build_project(r, tmp_path)
+    e = br.experiment
+    assert str(e.calculator.type) == "crysfml"
+    assert str(e.peak.type) == "cwl-thompson-cox-hastings"
+    assert e.peak.asym_fcj_1.value == pytest.approx(0.0005)
+    assert e.peak.asym_fcj_2.value == pytest.approx(0.0005)
+    assert e.peak.asym_fcj_1.free is False
+    assert e.peak.asym_fcj_2.free is False
+    assert e.peak.broad_gauss_u.value == pytest.approx(18.7 * GAUSS_CDEG2_TO_DEG2)
+    assert e.peak.broad_gauss_u.free is True  # rich_recipe flags U
+    assert any("Thompson-Cox-Hastings" in w for w in br.warnings)
+
+
+def test_pseudo_voigt_kept_when_shl_zero(tmp_path):
+    br = build_project(rich_recipe(), tmp_path)  # fixture SH/L is 0.0
+    e = br.experiment
+    assert str(e.calculator.type) == "cryspy"
+    assert str(e.peak.type) == "cwl-pseudo-voigt"
+    assert not any("Thompson" in w for w in br.warnings)

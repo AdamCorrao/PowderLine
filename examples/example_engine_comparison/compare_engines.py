@@ -155,9 +155,11 @@ def main() -> None:
         )
     print(f"{'NIST SRM 660':>16}:  a = 4.15682 A (reference)")
     print(
-        "\nNotes: the Rwp gap is expected -- easydiffraction's pseudo-Voigt profile has\n"
-        "no SH/L axial-divergence asymmetry and no background peaks, both of which the\n"
-        "GSAS-II model includes. Scale factors use different normalizations and are not\n"
+        "\nNotes: easydiffraction models the SH/L axial-divergence asymmetry with a\n"
+        "Thompson-Cox-Hastings profile (fixed FCJ parameters, CrysFML calculator); the\n"
+        "remaining Rwp gap vs GSAS-II comes from background peaks (not modeled) and\n"
+        "residual profile differences. Both engines reach chi2 < 1 because the recipe\n"
+        "weights overestimate sigma (integrated 2D-detector data). Scale factors are not\n"
         "comparable between engines; the lattice parameter is the meaningful cross-check.\n"
         f"\nWrote {csv_path}\nWrote {png_path}"
     )

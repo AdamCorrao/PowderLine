@@ -175,6 +175,26 @@ def build_project(recipe: dict, workdir) -> BuildResult:
     iparm = inst["initialization"][0]  # Iparm1 is first element of initialization
     inst_pz = inst.get("parameterization") or {}
 
+    # Profile selection: nonzero SH/L needs the Thompson-Cox-Hastings profile
+    # (FCJ axial-divergence correction), available only from the CrysFML
+    # calculator. Two ordering constraints: the calculator must be switched
+    # before the profile (the setter validates against the active calculator),
+    # and the whole selection must precede every peak-parameter assignment
+    # below, because switching peak.type REPLACES the peak category and
+    # resets its values. FCJ parameters stay FIXED at the SH/L seed: freeing
+    # them is degenerate at typical values and destroys ESD estimation.
+    shl_entry = iparm.get("SH/L")
+    shl = (
+        shl_entry[1]
+        if isinstance(shl_entry, (list, tuple)) and len(shl_entry) >= 2
+        else 0.0
+    )
+    if shl:
+        expt.calculator.type = "crysfml"
+        expt.peak.type = "cwl-thompson-cox-hastings"
+        expt.peak.asym_fcj_1 = shl
+        expt.peak.asym_fcj_2 = shl
+
     # Wavelength - value override takes precedence over Iparm
     wavelength_spec = inst_pz.get("wavelength")
     if wavelength_spec is not None and wavelength_spec[0] is not None:

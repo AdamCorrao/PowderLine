@@ -23,17 +23,21 @@ and `output/comparison.png` (two-panel observed/calculated/difference plot).
 | | Rwp | cell a (Å) |
 |---|---|---|
 | GSAS-II | 6.01 % | 4.15719 ± 0.00002 |
-| easydiffraction | 19.77 % | 4.15747 ± 0.00005 |
+| easydiffraction | 9.63 % | 4.15754 ± 0.00003 |
 | NIST SRM 660 | — | 4.15682 |
 
 ## How to read the comparison
 
 - **The lattice parameter is the meaningful cross-check.** The engines agree to
-  0.0003 Å (≈70 ppm) on independent implementations of the same physics.
-- **The Rwp gap is expected, not a bug.** easydiffraction's pseudo-Voigt profile
-  has no SH/L axial-divergence asymmetry model and no background peaks; the
-  GSAS-II model includes both. The residual panel makes this visible — the
-  largest easydiffraction misfit is the asymmetric low-angle peak at 2θ ≈ 2.3°.
+  0.0004 Å (≈85 ppm) on independent implementations of the same physics.
+- **Both fits are statistically excellent.** The recipe's nonzero SH/L makes the
+  easydiffraction engine select the Thompson–Cox–Hastings profile with fixed FCJ
+  axial-divergence asymmetry (CrysFML calculator), and both engines reach
+  reduced χ² < 1 — the recipe weights overestimate σ, as is typical for
+  azimuthally integrated 2D-detector data.
+- **The remaining Rwp gap is expected, not a bug.** GSAS-II additionally models
+  background peaks, and profile details differ; Rwp is still not an
+  apples-to-apples metric across engines.
 - **Scale factors are not comparable** between engines (different intensity
   normalizations); they are reported but should not be cross-read.
 - Broadening parameters (U/V/W/X/Y) are reported in GSAS-II conventions by both
