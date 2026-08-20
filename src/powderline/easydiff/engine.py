@@ -35,6 +35,16 @@ def _num(x):
     return getattr(x, "value", x)
 
 
+def _write_report(path, text) -> None:
+    """Write a report file deterministically across platforms.
+
+    UTF-8 encoding (never the Windows cp1252 default, which would choke on any
+    non-ASCII phase name) and LF newlines on every OS (``newline=""`` disables
+    the Windows CRLF translation), matching the GSAS-II report writers.
+    """
+    path.write_text(text, encoding="utf-8", newline="")
+
+
 def _validate_only_result(recipe) -> dict:
     """Slim summary matching the GSAS-II ``validate_only`` shape (no run_id)."""
     payload = recipe.get("payload", {})
@@ -83,7 +93,8 @@ def _write_reports(build_result, arrays, output_dir) -> None:
         "parameter_name", "descriptive_name", "phase_name", "phase_idx",
         "atom_name", "atom_idx", "value", "esd", "category"
     ])
-    (output_dir / "refined_parameters.csv").write_text(refined_df.to_csv(index=False))
+    _write_report(output_dir / "refined_parameters.csv",
+                  refined_df.to_csv(index=False, lineterminator="\n"))
 
     # fit_profile.txt — scatter masked arrays back to full grid
     full_calc = np.zeros(len(br.tth))
@@ -109,8 +120,9 @@ def _write_reports(build_result, arrays, output_dir) -> None:
     }
     profile_df = pd.DataFrame(profile_rows)
 
-    # Tab-separated %.8f format matching GSAS-II
-    with (output_dir / "fit_profile.txt").open("w") as f:
+    # Tab-separated %.8f format matching GSAS-II. UTF-8 + LF on every platform
+    # (newline="\n" disables the Windows CRLF translation) for deterministic output.
+    with (output_dir / "fit_profile.txt").open("w", encoding="utf-8", newline="\n") as f:
         # Header
         f.write("\t".join(profile_df.columns) + "\n")
         # Data rows
@@ -142,7 +154,8 @@ def _write_reports(build_result, arrays, output_dir) -> None:
             })
 
         cell_df = pd.DataFrame(cell_rows)
-        (output_dir / f"{recipe_name}_unit_cell_report.csv").write_text(cell_df.to_csv(index=False))
+        _write_report(output_dir / f"{recipe_name}_unit_cell_report.csv",
+                      cell_df.to_csv(index=False, lineterminator="\n"))
 
     # Per-phase peak_list_report.csv (only if refln exists)
     if br.experiment.refln is not None:
@@ -163,7 +176,8 @@ def _write_reports(build_result, arrays, output_dir) -> None:
                 "F_calc_squared": refln.f_squared_calc[mask],
             }
             peak_df = pd.DataFrame(peak_rows)
-            (output_dir / f"{recipe_name}_peak_list_report.csv").write_text(peak_df.to_csv(index=False))
+            _write_report(output_dir / f"{recipe_name}_peak_list_report.csv",
+                          peak_df.to_csv(index=False, lineterminator="\n"))
 
 
 def _result_dict(*, success, method, output_dir, build_result=None, arrays=None,
