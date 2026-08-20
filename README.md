@@ -125,6 +125,54 @@ pixi run kicker <recipe.json> --no-server   # force an isolated one-shot subproc
 pixi run mp-simulate --material-id mp-2680 --output patterns/
 ```
 
+## 4. Refinement Engines
+
+PowderLine supports three refinement engines that all consume the same recipe format:
+
+### GSAS-II (default)
+
+The primary engine, installed automatically with `pixi install`. All workflow types
+and refinement flags are supported.
+
+### TOPAS v7 (optional)
+
+Bruker's commercial refinement package. PowderLine generates a TOPAS `.inp` + `.xye`
+from unmodified `GSASII_Rietveld` and `GSASII_SPF` recipes; running the `.inp` requires
+a Windows machine with `tc.exe` installed. The TOPAS path imports zero GSAS-II.
+
+```python
+result = powderline.run(recipe, Path("output/"), engine="topas")
+```
+
+See [the engine survey](docs/engine-survey.md) for detailed capabilities.
+
+### easydiffraction (optional)
+
+Open-source Rietveld engine. Requires the optional `easydiff` pixi environment
+(easydiffraction needs Python ≥3.12; the default environment stays at ≥3.10):
+
+```bash
+pixi install -e easydiff
+```
+
+```python
+import powderline
+result = powderline.run(recipe, "output", engine="easydiffraction")
+```
+
+**v1 capabilities:** translates unmodified `GSASII_Rietveld` recipes; supports unit-cell,
+scale, Chebyshev background, Caglioti U/V/W + Lorentzian X/Y broadening, zero-shift
+refinement; multi-phase; simulation mode (no refinement flags set). Rejects loudly
+(translation error) atom-level refinement flags, Kα₁/Kα₂ two-wavelength recipes,
+refined Z / polarization / axial divergence / background peaks, and SPF recipes.
+
+**Known limitation:** Rwp values are NOT directly comparable to GSAS-II — easydiffraction
+does not model axial-divergence / SH-L asymmetry or background peaks. Example: LaB6
+19.77% here vs 6.53% GSAS-II on the same data.
+
+See the [design spec](docs/superpowers/specs/2026-08-19-easydiffraction-engine-design.md)
+and [engine survey](docs/engine-survey.md) for full details.
+
 ## Documentation
 
 - **[Quickstart](docs/quickstart.md)** — clone → install → run → read the output.
