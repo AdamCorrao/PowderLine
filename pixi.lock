@@ -408,7 +408,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/xmltodict-0.14.2-pyhd8ed1ab_1.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/zarr-3.3.0-pyhc364b38_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/zipp-4.1.0-pyhcf101f3_0.conda
-      - conda_source: gsas-ii[37b1691c] @ git+https://github.com/tacaswell/gsas-ii?rev=enh%2Fpixi_pkg#e0910fc19bdd829a10f0204e3e4f4eaa38ad5e0f
+      - conda_source: gsas-ii[c612d310] @ git+https://github.com/tacaswell/gsas-ii?rev=enh%2Fpixi_pkg#e0910fc19bdd829a10f0204e3e4f4eaa38ad5e0f
       - pypi: ./
       osx-arm64:
       - conda: https://conda.anaconda.org/conda-forge/noarch/_python_abi3_support-1.0-hd8ed1ab_3.conda
@@ -721,7 +721,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zlib-1.3.2-h8088a28_3.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zlib-ng-2.3.3-h31dac16_1.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zstd-1.5.7-hf451053_7.conda
-      - conda_source: gsas-ii[b7826f26] @ git+https://github.com/tacaswell/gsas-ii?rev=enh%2Fpixi_pkg#e0910fc19bdd829a10f0204e3e4f4eaa38ad5e0f
+      - conda_source: gsas-ii[4cc191fc] @ git+https://github.com/tacaswell/gsas-ii?rev=enh%2Fpixi_pkg#e0910fc19bdd829a10f0204e3e4f4eaa38ad5e0f
       - pypi: ./
       win-64:
       - conda: https://conda.anaconda.org/conda-forge/noarch/_python_abi3_support-1.0-hd8ed1ab_3.conda
@@ -1033,7 +1033,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/win-64/zlib-1.3.2-hfd05255_3.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/zlib-ng-2.3.3-h0261ad2_1.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/zstd-1.5.7-h534d264_7.conda
-      - conda_source: gsas-ii[f45c8f76] @ git+https://github.com/tacaswell/gsas-ii?rev=enh%2Fpixi_pkg#e0910fc19bdd829a10f0204e3e4f4eaa38ad5e0f
+      - conda_source: gsas-ii[757c8b7f] @ git+https://github.com/tacaswell/gsas-ii?rev=enh%2Fpixi_pkg#e0910fc19bdd829a10f0204e3e4f4eaa38ad5e0f
       - pypi: ./
   easydiff:
     channels:
@@ -1435,7 +1435,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/xraydb-4.5.8-pyhd8ed1ab_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/zarr-3.3.0-pyhc364b38_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/zipp-4.1.0-pyhcf101f3_0.conda
-      - conda_source: gsas-ii[3f6bb945] @ git+https://github.com/tacaswell/gsas-ii?rev=enh%2Fpixi_pkg#e0910fc19bdd829a10f0204e3e4f4eaa38ad5e0f
+      - conda_source: gsas-ii[6e030bcb] @ git+https://github.com/tacaswell/gsas-ii?rev=enh%2Fpixi_pkg#e0910fc19bdd829a10f0204e3e4f4eaa38ad5e0f
       - pypi: ./
       - pypi: https://files.pythonhosted.org/packages/0a/43/8e55ae7538ba5f28ccb3c845c6dd4549cf7016d5992e5326512519107cdd/yarl-1.24.5-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/10/cb/f2ad4230dc2eb1a74edf38f1a38b9b52277f75bef262d8908e60d957e13c/blinker-1.9.0-py3-none-any.whl
@@ -1787,7 +1787,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zlib-1.3.2-h8088a28_3.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zlib-ng-2.3.3-h31dac16_1.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zstd-1.5.7-hf451053_7.conda
-      - conda_source: gsas-ii[30efad84] @ git+https://github.com/tacaswell/gsas-ii?rev=enh%2Fpixi_pkg#e0910fc19bdd829a10f0204e3e4f4eaa38ad5e0f
+      - conda_source: gsas-ii[2aac3dd1] @ git+https://github.com/tacaswell/gsas-ii?rev=enh%2Fpixi_pkg#e0910fc19bdd829a10f0204e3e4f4eaa38ad5e0f
       - pypi: ./
       - pypi: https://files.pythonhosted.org/packages/0c/ab/6e5080ee374f875296c4243c381bbdef97a9ac39c6e3ce1d5f7d42cb78d6/frozenlist-1.8.0-cp313-cp313-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/10/cb/f2ad4230dc2eb1a74edf38f1a38b9b52277f75bef262d8908e60d957e13c/blinker-1.9.0-py3-none-any.whl
@@ -2138,7 +2138,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/win-64/zlib-1.3.2-hfd05255_3.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/zlib-ng-2.3.3-h0261ad2_1.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/zstd-1.5.7-h534d264_7.conda
-      - conda_source: gsas-ii[d367dd92] @ git+https://github.com/tacaswell/gsas-ii?rev=enh%2Fpixi_pkg#e0910fc19bdd829a10f0204e3e4f4eaa38ad5e0f
+      - conda_source: gsas-ii[9f4a2ba7] @ git+https://github.com/tacaswell/gsas-ii?rev=enh%2Fpixi_pkg#e0910fc19bdd829a10f0204e3e4f4eaa38ad5e0f
       - pypi: ./
       - pypi: https://files.pythonhosted.org/packages/10/cb/f2ad4230dc2eb1a74edf38f1a38b9b52277f75bef262d8908e60d957e13c/blinker-1.9.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/1b/fb/f844344b239344f9bac398c5cc30305fd473ae0cdc2eee5b8ad61ea678f0/crysfml-0.8.0-cp313-cp313-win_amd64.whl
@@ -16811,7 +16811,7 @@ packages:
     - zstd >=1.5.7,<1.6.0a0
   size: 387535
   timestamp: 1786599623274
-- conda_source: gsas-ii[30efad84] @ git+https://github.com/tacaswell/gsas-ii?rev=enh%2Fpixi_pkg#e0910fc19bdd829a10f0204e3e4f4eaa38ad5e0f
+- conda_source: gsas-ii[2aac3dd1] @ git+https://github.com/tacaswell/gsas-ii?rev=enh%2Fpixi_pkg#e0910fc19bdd829a10f0204e3e4f4eaa38ad5e0f
   version: 2.0.0
   build: h60d57d3_0
   subdir: osx-arm64
@@ -16915,163 +16915,7 @@ packages:
   - conda: https://conda.anaconda.org/conda-forge/osx-arm64/tk-8.6.13-hd3d0363_3.conda
   - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zlib-1.3.2-h8088a28_3.conda
   - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zstd-1.5.7-hf451053_7.conda
-- conda_source: gsas-ii[37b1691c] @ git+https://github.com/tacaswell/gsas-ii?rev=enh%2Fpixi_pkg#e0910fc19bdd829a10f0204e3e4f4eaa38ad5e0f
-  version: 2.0.0
-  build: hb0f4dca_0
-  subdir: linux-64
-  variants:
-    target_platform: linux-64
-  depends:
-  - numpy >=2.2.1,<2.5.0
-  - numpy >=1.23,<3
-  - scipy >=1.15.0,<2
-  - pycifrw >=4.4.0
-  - wxpython >=4.2.2,<5
-  - matplotlib-base >=3.10.0,<4
-  - pyopengl >=3.1.6,<4
-  - h5py >=3.12.1,<4
-  - pillow >=11.1.0,<12
-  - requests >=2.32.3,<3
-  - imageio >=2.36.1,<3
-  - zarr >=2.18.3,<4
-  - xmltodict >=0.14.2,<0.15
-  - seekpath >=2.1.0,<3
-  - pybaselines >=1.2.0,<2
-  - libgcc-ng
-  - libgfortran5
-  - python >=3.10
-  - python_abi 3.13.* *_cp313
-  host_packages:
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/_openmp_mutex-4.5-20_gnu.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/binutils_impl_linux-64-2.46.1-default_hfdba357_102.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/bzip2-1.0.8-hda65f42_10.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/conda-gcc-specs-16.1.0-h5a3cd76_1.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/cython-3.2.9-py313hc80a56d_0.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/gcc-16.1.0-hc6a0c74_1.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/gcc_impl_linux-64-16.1.0-h5fcb69b_1.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/gfortran-16.1.0-hd47ba16_1.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/gfortran_impl_linux-64-16.1.0-h08e1a1a_1.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/icu-78.3-py310h44b86e0_2.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/ld_impl_linux-64-2.46.1-default_hbd61a6d_102.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/libblas-3.11.0-9_h4a7cf45_openblas.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/libcblas-3.11.0-9_h0358290_openblas.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/libexpat-2.8.1-hecca717_1.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/libffi-3.7.0-h3435931_0.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/libgcc-16.1.0-ha9f2e26_1.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/libgfortran-16.1.0-h69a702a_1.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/libgfortran5-16.1.0-h79bb938_1.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/libgomp-16.1.0-he0feb66_1.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/liblapack-3.11.0-9_h47877c9_openblas.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/liblzma-5.8.3-hb03c661_1.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/libmpdec-4.0.0-hb03c661_2.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/libopenblas-0.3.34-pthreads_h94d23a6_0.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/libsanitizer-16.1.0-hf2715c6_1.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/libsqlite-3.53.4-h13e7031_1.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/libstdcxx-16.1.0-h934c35e_1.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/libuuid-2.42.2-h5347b49_0.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/libzlib-1.3.2-h25fd6f3_3.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/ncurses-6.6-hdb14827_1.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/ninja-1.13.2-h171cf75_1.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/numpy-2.4.6-py313hf6604e3_0.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/openssl-3.6.3-h35e630c_1.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/pkg-config-0.29.2-h7c397b8_1011.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/python-3.13.15-hb101c97_101_cp313.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/readline-8.3-hd6e31c0_1.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/tk-8.6.13-noxft_hd70dff1_3.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/zstd-1.5.7-hb78ec9c_7.conda
-  - conda: https://conda.anaconda.org/conda-forge/noarch/ca-certificates-2026.7.22-hbd8a1cb_0.conda
-  - conda: https://conda.anaconda.org/conda-forge/noarch/kernel-headers_linux-64-4.18.0-he073ed8_9.conda
-  - conda: https://conda.anaconda.org/conda-forge/noarch/libgcc-devel_linux-64-16.1.0-h59071f9_101.conda
-  - conda: https://conda.anaconda.org/conda-forge/noarch/libstdcxx-devel_linux-64-16.1.0-h41cdd0d_101.conda
-  - conda: https://conda.anaconda.org/conda-forge/noarch/meson-1.12.0-pyhcf101f3_0.conda
-  - conda: https://conda.anaconda.org/conda-forge/noarch/meson-python-0.17.1-pyh70fd9c4_1.conda
-  - conda: https://conda.anaconda.org/conda-forge/noarch/packaging-26.3-pyhc364b38_0.conda
-  - conda: https://conda.anaconda.org/conda-forge/noarch/pip-24.3.1-pyh145f28c_2.conda
-  - conda: https://conda.anaconda.org/conda-forge/noarch/pyproject-metadata-0.9.1-pyhd8ed1ab_0.conda
-  - conda: https://conda.anaconda.org/conda-forge/noarch/python_abi-3.13-8_cp313.conda
-  - conda: https://conda.anaconda.org/conda-forge/noarch/sysroot_linux-64-2.28-h4ee821c_9.conda
-  - conda: https://conda.anaconda.org/conda-forge/noarch/tomli-2.4.1-pyhcf101f3_0.conda
-  - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2026c-h151e31d_0.conda
-  - conda: https://conda.anaconda.org/conda-forge/noarch/wheel-0.45.1-pyhd8ed1ab_1.conda
-- conda_source: gsas-ii[3f6bb945] @ git+https://github.com/tacaswell/gsas-ii?rev=enh%2Fpixi_pkg#e0910fc19bdd829a10f0204e3e4f4eaa38ad5e0f
-  version: 2.0.0
-  build: hb0f4dca_0
-  subdir: linux-64
-  variants:
-    target_platform: linux-64
-  depends:
-  - numpy >=2.2.1,<2.5.0
-  - numpy >=1.23,<3
-  - scipy >=1.15.0,<2
-  - pycifrw >=4.4.0
-  - wxpython >=4.2.2,<5
-  - matplotlib-base >=3.10.0,<4
-  - pyopengl >=3.1.6,<4
-  - h5py >=3.12.1,<4
-  - pillow >=11.1.0,<12
-  - requests >=2.32.3,<3
-  - imageio >=2.36.1,<3
-  - zarr >=2.18.3,<4
-  - xmltodict >=0.14.2,<0.15
-  - seekpath >=2.1.0,<3
-  - pybaselines >=1.2.0,<2
-  - libgcc-ng
-  - libgfortran5
-  - python >=3.10
-  - python_abi 3.13.* *_cp313
-  host_packages:
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/_openmp_mutex-4.5-20_gnu.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/binutils_impl_linux-64-2.46.1-default_hfdba357_102.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/bzip2-1.0.8-hda65f42_10.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/conda-gcc-specs-16.1.0-h5a3cd76_2.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/cython-3.2.9-py313hc80a56d_0.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/gcc-16.1.0-hc6a0c74_2.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/gcc_impl_linux-64-16.1.0-hceef32b_2.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/gfortran-16.1.0-hc6a0c74_2.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/gfortran_impl_linux-64-16.1.0-h08e1a1a_2.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/icu-78.3-py310h44b86e0_2.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/ld_impl_linux-64-2.46.1-default_hbd61a6d_102.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/libblas-3.11.0-9_h4a7cf45_openblas.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/libcblas-3.11.0-9_h0358290_openblas.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/libexpat-2.8.1-hecca717_1.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/libffi-3.7.0-h3435931_0.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/libgcc-16.1.0-ha9f2e26_2.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/libgfortran-16.1.0-h69a702a_2.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/libgfortran5-16.1.0-h79bb938_2.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/libgomp-16.1.0-he0feb66_2.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/liblapack-3.11.0-9_h47877c9_openblas.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/liblzma-5.8.3-hb03c661_1.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/libmpdec-4.0.0-hb03c661_2.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/libopenblas-0.3.34-pthreads_h94d23a6_0.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/libsanitizer-16.1.0-hf2715c6_2.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/libsqlite-3.53.4-h13e7031_1.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/libstdcxx-16.1.0-h934c35e_2.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/libuuid-2.42.2-h5347b49_0.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/libzlib-1.3.2-h25fd6f3_3.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/ncurses-6.6-hdb14827_1.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/ninja-1.13.2-h171cf75_1.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/numpy-2.4.6-py313hf6604e3_0.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/openssl-3.6.3-h35e630c_1.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/pkg-config-0.29.2-h7c397b8_1011.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/python-3.13.15-hb101c97_101_cp313.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/readline-8.3-hd6e31c0_1.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/tk-8.6.13-noxft_hd70dff1_3.conda
-  - conda: https://conda.anaconda.org/conda-forge/linux-64/zstd-1.5.7-hb78ec9c_7.conda
-  - conda: https://conda.anaconda.org/conda-forge/noarch/ca-certificates-2026.7.22-hbd8a1cb_0.conda
-  - conda: https://conda.anaconda.org/conda-forge/noarch/kernel-headers_linux-64-4.18.0-he073ed8_9.conda
-  - conda: https://conda.anaconda.org/conda-forge/noarch/libgcc-devel_linux-64-16.1.0-h59071f9_102.conda
-  - conda: https://conda.anaconda.org/conda-forge/noarch/libstdcxx-devel_linux-64-16.1.0-h41cdd0d_102.conda
-  - conda: https://conda.anaconda.org/conda-forge/noarch/meson-1.12.0-pyhcf101f3_0.conda
-  - conda: https://conda.anaconda.org/conda-forge/noarch/meson-python-0.17.1-pyh70fd9c4_1.conda
-  - conda: https://conda.anaconda.org/conda-forge/noarch/packaging-26.3-pyhc364b38_0.conda
-  - conda: https://conda.anaconda.org/conda-forge/noarch/pip-24.3.1-pyh145f28c_2.conda
-  - conda: https://conda.anaconda.org/conda-forge/noarch/pyproject-metadata-0.9.1-pyhd8ed1ab_0.conda
-  - conda: https://conda.anaconda.org/conda-forge/noarch/python_abi-3.13-8_cp313.conda
-  - conda: https://conda.anaconda.org/conda-forge/noarch/sysroot_linux-64-2.28-h4ee821c_9.conda
-  - conda: https://conda.anaconda.org/conda-forge/noarch/tomli-2.4.1-pyhcf101f3_0.conda
-  - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2026c-h151e31d_0.conda
-  - conda: https://conda.anaconda.org/conda-forge/noarch/wheel-0.45.1-pyhd8ed1ab_1.conda
-- conda_source: gsas-ii[b7826f26] @ git+https://github.com/tacaswell/gsas-ii?rev=enh%2Fpixi_pkg#e0910fc19bdd829a10f0204e3e4f4eaa38ad5e0f
+- conda_source: gsas-ii[4cc191fc] @ git+https://github.com/tacaswell/gsas-ii?rev=enh%2Fpixi_pkg#e0910fc19bdd829a10f0204e3e4f4eaa38ad5e0f
   version: 2.0.0
   build: h60d57d3_0
   subdir: osx-arm64
@@ -17175,7 +17019,176 @@ packages:
   - conda: https://conda.anaconda.org/conda-forge/osx-arm64/tk-8.6.13-hd3d0363_3.conda
   - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zlib-1.3.2-h8088a28_3.conda
   - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zstd-1.5.7-hf451053_7.conda
-- conda_source: gsas-ii[d367dd92] @ git+https://github.com/tacaswell/gsas-ii?rev=enh%2Fpixi_pkg#e0910fc19bdd829a10f0204e3e4f4eaa38ad5e0f
+- conda_source: gsas-ii[6e030bcb] @ git+https://github.com/tacaswell/gsas-ii?rev=enh%2Fpixi_pkg#e0910fc19bdd829a10f0204e3e4f4eaa38ad5e0f
+  version: 2.0.0
+  build: hb0f4dca_0
+  subdir: linux-64
+  variants:
+    target_platform: linux-64
+  depends:
+  - numpy >=2.2.1,<2.5.0
+  - numpy >=1.23,<3
+  - scipy >=1.15.0,<2
+  - pycifrw >=4.4.0
+  - wxpython >=4.2.2,<5
+  - matplotlib-base >=3.10.0,<4
+  - pyopengl >=3.1.6,<4
+  - h5py >=3.12.1,<4
+  - pillow >=11.1.0,<12
+  - requests >=2.32.3,<3
+  - imageio >=2.36.1,<3
+  - zarr >=2.18.3,<4
+  - xmltodict >=0.14.2,<0.15
+  - seekpath >=2.1.0,<3
+  - pybaselines >=1.2.0,<2
+  - libgcc-ng
+  - libgfortran5
+  - python >=3.10
+  - python_abi 3.13.* *_cp313
+  host_packages:
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/_openmp_mutex-4.5-20_gnu.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/binutils_impl_linux-64-2.46.1-default_hfdba357_102.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/bzip2-1.0.8-hda65f42_10.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/conda-gcc-specs-16.1.0-h5a3cd76_2.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/cython-3.2.9-py313hc80a56d_0.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/gcc-16.1.0-hc6a0c74_2.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/gcc_impl_linux-64-16.1.0-hceef32b_2.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/gfortran-16.1.0-hc6a0c74_2.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/gfortran_impl_linux-64-16.1.0-h08e1a1a_2.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/icu-78.3-py310h44b86e0_2.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/ld_impl_linux-64-2.46.1-default_hbd61a6d_102.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/libblas-3.11.0-9_h4a7cf45_openblas.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/libcblas-3.11.0-9_h0358290_openblas.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/libexpat-2.8.1-hecca717_1.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/libffi-3.7.0-h3435931_0.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/libgcc-16.1.0-ha9f2e26_2.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/libgfortran-16.1.0-h69a702a_2.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/libgfortran5-16.1.0-h79bb938_2.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/libgomp-16.1.0-he0feb66_2.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/liblapack-3.11.0-9_h47877c9_openblas.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/liblzma-5.8.3-hb03c661_1.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/libmpdec-4.0.0-hb03c661_2.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/libopenblas-0.3.34-pthreads_h94d23a6_0.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/libsanitizer-16.1.0-hf2715c6_2.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/libsqlite-3.53.4-h13e7031_1.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/libstdcxx-16.1.0-h934c35e_2.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/libuuid-2.42.2-h5347b49_0.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/libzlib-1.3.2-h25fd6f3_3.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/ncurses-6.6-hdb14827_1.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/ninja-1.13.2-h171cf75_1.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/numpy-2.4.6-py313hf6604e3_0.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/openssl-3.6.3-h35e630c_1.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/pkg-config-0.29.2-h7c397b8_1011.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/python-3.13.15-hb101c97_101_cp313.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/readline-8.3-hd6e31c0_1.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/tk-8.6.13-noxft_hd70dff1_3.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/zstd-1.5.7-hb78ec9c_7.conda
+  - conda: https://conda.anaconda.org/conda-forge/noarch/ca-certificates-2026.7.22-hbd8a1cb_0.conda
+  - conda: https://conda.anaconda.org/conda-forge/noarch/kernel-headers_linux-64-4.18.0-he073ed8_9.conda
+  - conda: https://conda.anaconda.org/conda-forge/noarch/libgcc-devel_linux-64-16.1.0-h59071f9_102.conda
+  - conda: https://conda.anaconda.org/conda-forge/noarch/libstdcxx-devel_linux-64-16.1.0-h41cdd0d_102.conda
+  - conda: https://conda.anaconda.org/conda-forge/noarch/meson-1.12.0-pyhcf101f3_0.conda
+  - conda: https://conda.anaconda.org/conda-forge/noarch/meson-python-0.17.1-pyh70fd9c4_1.conda
+  - conda: https://conda.anaconda.org/conda-forge/noarch/packaging-26.3-pyhc364b38_0.conda
+  - conda: https://conda.anaconda.org/conda-forge/noarch/pip-24.3.1-pyh145f28c_2.conda
+  - conda: https://conda.anaconda.org/conda-forge/noarch/pyproject-metadata-0.9.1-pyhd8ed1ab_0.conda
+  - conda: https://conda.anaconda.org/conda-forge/noarch/python_abi-3.13-8_cp313.conda
+  - conda: https://conda.anaconda.org/conda-forge/noarch/sysroot_linux-64-2.28-h4ee821c_9.conda
+  - conda: https://conda.anaconda.org/conda-forge/noarch/tomli-2.4.1-pyhcf101f3_0.conda
+  - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2026c-h151e31d_0.conda
+  - conda: https://conda.anaconda.org/conda-forge/noarch/wheel-0.45.1-pyhd8ed1ab_1.conda
+- conda_source: gsas-ii[757c8b7f] @ git+https://github.com/tacaswell/gsas-ii?rev=enh%2Fpixi_pkg#e0910fc19bdd829a10f0204e3e4f4eaa38ad5e0f
+  version: 2.0.0
+  build: h9490d1a_0
+  subdir: win-64
+  variants:
+    target_platform: win-64
+  depends:
+  - numpy >=2.2.1,<2.5.0
+  - numpy >=1.23,<3
+  - scipy >=1.15.0,<2
+  - pycifrw >=4.4.0
+  - wxpython >=4.2.2,<5
+  - matplotlib-base >=3.10.0,<4
+  - pyopengl >=3.1.6,<4
+  - h5py >=3.12.1,<4
+  - pillow >=11.1.0,<12
+  - requests >=2.32.3,<3
+  - imageio >=2.36.1,<3
+  - zarr >=2.18.3,<4
+  - xmltodict >=0.14.2,<0.15
+  - seekpath >=2.1.0,<3
+  - pybaselines >=1.2.0,<2
+  - libgcc
+  - libgfortran5
+  - libwinpthread
+  - python >=3.10
+  - python_abi 3.13.* *_cp313
+  host_packages:
+  - conda: https://conda.anaconda.org/conda-forge/noarch/ca-certificates-2026.7.22-h4c7d964_0.conda
+  - conda: https://conda.anaconda.org/conda-forge/noarch/libgcc-devel_win-64-16.1.0-hecf7705_101.conda
+  - conda: https://conda.anaconda.org/conda-forge/noarch/libstdcxx-devel_win-64-16.1.0-hc76ffd0_101.conda
+  - conda: https://conda.anaconda.org/conda-forge/noarch/m2w64-sysroot_win-64-12.0.0.r4.gg4f2fc60ca-hd8ed1ab_10.conda
+  - conda: https://conda.anaconda.org/conda-forge/noarch/meson-1.12.0-pyhcf101f3_0.conda
+  - conda: https://conda.anaconda.org/conda-forge/noarch/meson-python-0.17.1-pyh70fd9c4_1.conda
+  - conda: https://conda.anaconda.org/conda-forge/noarch/mingw-w64-ucrt-x86_64-crt-git-12.0.0.r4.gg4f2fc60ca-hd8ed1ab_10.conda
+  - conda: https://conda.anaconda.org/conda-forge/noarch/mingw-w64-ucrt-x86_64-headers-git-12.0.0.r4.gg4f2fc60ca-hd8ed1ab_10.conda
+  - conda: https://conda.anaconda.org/conda-forge/noarch/mingw-w64-ucrt-x86_64-windows-default-manifest-6.4-he206cdd_7.conda
+  - conda: https://conda.anaconda.org/conda-forge/noarch/mingw-w64-ucrt-x86_64-winpthreads-git-12.0.0.r4.gg4f2fc60ca-hd8ed1ab_10.conda
+  - conda: https://conda.anaconda.org/conda-forge/noarch/packaging-26.3-pyhc364b38_0.conda
+  - conda: https://conda.anaconda.org/conda-forge/noarch/pip-24.3.1-pyh145f28c_2.conda
+  - conda: https://conda.anaconda.org/conda-forge/noarch/pyproject-metadata-0.9.1-pyhd8ed1ab_0.conda
+  - conda: https://conda.anaconda.org/conda-forge/noarch/python_abi-3.13-8_cp313.conda
+  - conda: https://conda.anaconda.org/conda-forge/noarch/tomli-2.4.1-pyhcf101f3_0.conda
+  - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2026c-h151e31d_0.conda
+  - conda: https://conda.anaconda.org/conda-forge/noarch/wheel-0.45.1-pyhd8ed1ab_1.conda
+  - conda: https://conda.anaconda.org/conda-forge/win-64/_openmp_mutex-4.5-20_gnu.conda
+  - conda: https://conda.anaconda.org/conda-forge/win-64/binutils_impl_win-64-2.46.1-default_ha84baeb_102.conda
+  - conda: https://conda.anaconda.org/conda-forge/win-64/bzip2-1.0.8-h0ad9c76_10.conda
+  - conda: https://conda.anaconda.org/conda-forge/win-64/conda-gcc-specs-16.1.0-h851ee6d_1.conda
+  - conda: https://conda.anaconda.org/conda-forge/win-64/cython-3.2.9-py313h560b0a0_0.conda
+  - conda: https://conda.anaconda.org/conda-forge/win-64/gcc-16.1.0-hb5e953d_1.conda
+  - conda: https://conda.anaconda.org/conda-forge/win-64/gcc_impl_win-64-16.1.0-hf72cc1b_1.conda
+  - conda: https://conda.anaconda.org/conda-forge/win-64/gfortran-16.1.0-h1f05005_1.conda
+  - conda: https://conda.anaconda.org/conda-forge/win-64/gfortran_impl_win-64-16.1.0-he32c876_1.conda
+  - conda: https://conda.anaconda.org/conda-forge/win-64/ld_impl_win-64-2.46.1-default_hfd38196_102.conda
+  - conda: https://conda.anaconda.org/conda-forge/win-64/libblas-3.11.0-9_h8455456_mkl.conda
+  - conda: https://conda.anaconda.org/conda-forge/win-64/libcblas-3.11.0-9_h2a3cdd5_mkl.conda
+  - conda: https://conda.anaconda.org/conda-forge/win-64/libexpat-2.8.1-hac47afa_1.conda
+  - conda: https://conda.anaconda.org/conda-forge/win-64/libffi-3.7.0-h3d046cb_0.conda
+  - conda: https://conda.anaconda.org/conda-forge/win-64/libgcc-16.1.0-h110b43a_1.conda
+  - conda: https://conda.anaconda.org/conda-forge/win-64/libgfortran5-16.1.0-h94075d5_1.conda
+  - conda: https://conda.anaconda.org/conda-forge/win-64/libglib-2.88.3-he810d59_1.conda
+  - conda: https://conda.anaconda.org/conda-forge/win-64/libgomp-16.1.0-h8ee18e1_1.conda
+  - conda: https://conda.anaconda.org/conda-forge/win-64/libhwloc-2.13.0-default_h049141e_1000.conda
+  - conda: https://conda.anaconda.org/conda-forge/win-64/libiconv-1.18-hc1393d2_3.conda
+  - conda: https://conda.anaconda.org/conda-forge/win-64/libintl-0.22.5-h5728263_3.conda
+  - conda: https://conda.anaconda.org/conda-forge/win-64/liblapack-3.11.0-9_hf9ab0e9_mkl.conda
+  - conda: https://conda.anaconda.org/conda-forge/win-64/liblzma-5.8.3-hfd05255_1.conda
+  - conda: https://conda.anaconda.org/conda-forge/win-64/libmpdec-4.0.0-hfd05255_2.conda
+  - conda: https://conda.anaconda.org/conda-forge/win-64/libsqlite-3.53.4-hf5d6505_1.conda
+  - conda: https://conda.anaconda.org/conda-forge/win-64/libstdcxx-16.1.0-hae5796f_1.conda
+  - conda: https://conda.anaconda.org/conda-forge/win-64/libwinpthread-12.0.0.r4.gg4f2fc60ca-h57928b3_10.conda
+  - conda: https://conda.anaconda.org/conda-forge/win-64/libxml2-16-2.15.3-h692994f_0.conda
+  - conda: https://conda.anaconda.org/conda-forge/win-64/libxml2-2.15.3-hbc0d294_0.conda
+  - conda: https://conda.anaconda.org/conda-forge/win-64/libzlib-1.3.2-hfd05255_3.conda
+  - conda: https://conda.anaconda.org/conda-forge/win-64/llvm-openmp-22.1.8-h4fa8253_0.conda
+  - conda: https://conda.anaconda.org/conda-forge/win-64/m2-conda-epoch-20250515-0_x86_64.conda
+  - conda: https://conda.anaconda.org/conda-forge/win-64/mkl-2026.1.0-hac47afa_234.conda
+  - conda: https://conda.anaconda.org/conda-forge/win-64/ninja-1.13.2-h477610d_1.conda
+  - conda: https://conda.anaconda.org/conda-forge/win-64/numpy-2.4.6-py313ha8dc839_0.conda
+  - conda: https://conda.anaconda.org/conda-forge/win-64/openssl-3.6.3-hf411b9b_1.conda
+  - conda: https://conda.anaconda.org/conda-forge/win-64/pcre2-10.47-hd2b5f0e_0.conda
+  - conda: https://conda.anaconda.org/conda-forge/win-64/pkg-config-0.29.2-hffdb5b9_1011.conda
+  - conda: https://conda.anaconda.org/conda-forge/win-64/python-3.13.15-h254dcb4_101_cp313.conda
+  - conda: https://conda.anaconda.org/conda-forge/win-64/tbb-2023.0.0-hd3d4ead_2.conda
+  - conda: https://conda.anaconda.org/conda-forge/win-64/tk-8.6.13-h967ab96_3.conda
+  - conda: https://conda.anaconda.org/conda-forge/win-64/ucrt-10.0.26100.0-h57928b3_0.conda
+  - conda: https://conda.anaconda.org/conda-forge/win-64/vc-14.5-ha367084_41.conda
+  - conda: https://conda.anaconda.org/conda-forge/win-64/vc14_runtime-14.51.36247-habf1de7_41.conda
+  - conda: https://conda.anaconda.org/conda-forge/win-64/vcomp14-14.51.36247-habf1de7_41.conda
+  - conda: https://conda.anaconda.org/conda-forge/win-64/zstd-1.5.7-h534d264_7.conda
+- conda_source: gsas-ii[9f4a2ba7] @ git+https://github.com/tacaswell/gsas-ii?rev=enh%2Fpixi_pkg#e0910fc19bdd829a10f0204e3e4f4eaa38ad5e0f
   version: 2.0.0
   build: h9490d1a_0
   subdir: win-64
@@ -17267,12 +17280,12 @@ packages:
   - conda: https://conda.anaconda.org/conda-forge/win-64/vc14_runtime-14.51.36247-habf1de7_41.conda
   - conda: https://conda.anaconda.org/conda-forge/win-64/vcomp14-14.51.36247-habf1de7_41.conda
   - conda: https://conda.anaconda.org/conda-forge/win-64/zstd-1.5.7-h534d264_7.conda
-- conda_source: gsas-ii[f45c8f76] @ git+https://github.com/tacaswell/gsas-ii?rev=enh%2Fpixi_pkg#e0910fc19bdd829a10f0204e3e4f4eaa38ad5e0f
+- conda_source: gsas-ii[c612d310] @ git+https://github.com/tacaswell/gsas-ii?rev=enh%2Fpixi_pkg#e0910fc19bdd829a10f0204e3e4f4eaa38ad5e0f
   version: 2.0.0
-  build: h9490d1a_0
-  subdir: win-64
+  build: hb0f4dca_0
+  subdir: linux-64
   variants:
-    target_platform: win-64
+    target_platform: linux-64
   depends:
   - numpy >=2.2.1,<2.5.0
   - numpy >=1.23,<3
@@ -17289,75 +17302,62 @@ packages:
   - xmltodict >=0.14.2,<0.15
   - seekpath >=2.1.0,<3
   - pybaselines >=1.2.0,<2
-  - libgcc
+  - libgcc-ng
   - libgfortran5
-  - libwinpthread
   - python >=3.10
   - python_abi 3.13.* *_cp313
   host_packages:
-  - conda: https://conda.anaconda.org/conda-forge/noarch/ca-certificates-2026.7.22-h4c7d964_0.conda
-  - conda: https://conda.anaconda.org/conda-forge/noarch/libgcc-devel_win-64-16.1.0-hecf7705_101.conda
-  - conda: https://conda.anaconda.org/conda-forge/noarch/libstdcxx-devel_win-64-16.1.0-hc76ffd0_101.conda
-  - conda: https://conda.anaconda.org/conda-forge/noarch/m2w64-sysroot_win-64-12.0.0.r4.gg4f2fc60ca-hd8ed1ab_10.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/_openmp_mutex-4.5-20_gnu.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/binutils_impl_linux-64-2.46.1-default_hfdba357_102.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/bzip2-1.0.8-hda65f42_10.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/conda-gcc-specs-16.1.0-h5a3cd76_1.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/cython-3.2.9-py313hc80a56d_0.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/gcc-16.1.0-hc6a0c74_1.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/gcc_impl_linux-64-16.1.0-h5fcb69b_1.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/gfortran-16.1.0-hd47ba16_1.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/gfortran_impl_linux-64-16.1.0-h08e1a1a_1.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/icu-78.3-py310h44b86e0_2.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/ld_impl_linux-64-2.46.1-default_hbd61a6d_102.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/libblas-3.11.0-9_h4a7cf45_openblas.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/libcblas-3.11.0-9_h0358290_openblas.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/libexpat-2.8.1-hecca717_1.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/libffi-3.7.0-h3435931_0.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/libgcc-16.1.0-ha9f2e26_1.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/libgfortran-16.1.0-h69a702a_1.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/libgfortran5-16.1.0-h79bb938_1.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/libgomp-16.1.0-he0feb66_1.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/liblapack-3.11.0-9_h47877c9_openblas.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/liblzma-5.8.3-hb03c661_1.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/libmpdec-4.0.0-hb03c661_2.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/libopenblas-0.3.34-pthreads_h94d23a6_0.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/libsanitizer-16.1.0-hf2715c6_1.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/libsqlite-3.53.4-h13e7031_1.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/libstdcxx-16.1.0-h934c35e_1.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/libuuid-2.42.2-h5347b49_0.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/libzlib-1.3.2-h25fd6f3_3.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/ncurses-6.6-hdb14827_1.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/ninja-1.13.2-h171cf75_1.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/numpy-2.4.6-py313hf6604e3_0.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/openssl-3.6.3-h35e630c_1.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/pkg-config-0.29.2-h7c397b8_1011.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/python-3.13.15-hb101c97_101_cp313.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/readline-8.3-hd6e31c0_1.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/tk-8.6.13-noxft_hd70dff1_3.conda
+  - conda: https://conda.anaconda.org/conda-forge/linux-64/zstd-1.5.7-hb78ec9c_7.conda
+  - conda: https://conda.anaconda.org/conda-forge/noarch/ca-certificates-2026.7.22-hbd8a1cb_0.conda
+  - conda: https://conda.anaconda.org/conda-forge/noarch/kernel-headers_linux-64-4.18.0-he073ed8_9.conda
+  - conda: https://conda.anaconda.org/conda-forge/noarch/libgcc-devel_linux-64-16.1.0-h59071f9_101.conda
+  - conda: https://conda.anaconda.org/conda-forge/noarch/libstdcxx-devel_linux-64-16.1.0-h41cdd0d_101.conda
   - conda: https://conda.anaconda.org/conda-forge/noarch/meson-1.12.0-pyhcf101f3_0.conda
   - conda: https://conda.anaconda.org/conda-forge/noarch/meson-python-0.17.1-pyh70fd9c4_1.conda
-  - conda: https://conda.anaconda.org/conda-forge/noarch/mingw-w64-ucrt-x86_64-crt-git-12.0.0.r4.gg4f2fc60ca-hd8ed1ab_10.conda
-  - conda: https://conda.anaconda.org/conda-forge/noarch/mingw-w64-ucrt-x86_64-headers-git-12.0.0.r4.gg4f2fc60ca-hd8ed1ab_10.conda
-  - conda: https://conda.anaconda.org/conda-forge/noarch/mingw-w64-ucrt-x86_64-windows-default-manifest-6.4-he206cdd_7.conda
-  - conda: https://conda.anaconda.org/conda-forge/noarch/mingw-w64-ucrt-x86_64-winpthreads-git-12.0.0.r4.gg4f2fc60ca-hd8ed1ab_10.conda
   - conda: https://conda.anaconda.org/conda-forge/noarch/packaging-26.3-pyhc364b38_0.conda
   - conda: https://conda.anaconda.org/conda-forge/noarch/pip-24.3.1-pyh145f28c_2.conda
   - conda: https://conda.anaconda.org/conda-forge/noarch/pyproject-metadata-0.9.1-pyhd8ed1ab_0.conda
   - conda: https://conda.anaconda.org/conda-forge/noarch/python_abi-3.13-8_cp313.conda
+  - conda: https://conda.anaconda.org/conda-forge/noarch/sysroot_linux-64-2.28-h4ee821c_9.conda
   - conda: https://conda.anaconda.org/conda-forge/noarch/tomli-2.4.1-pyhcf101f3_0.conda
   - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2026c-h151e31d_0.conda
   - conda: https://conda.anaconda.org/conda-forge/noarch/wheel-0.45.1-pyhd8ed1ab_1.conda
-  - conda: https://conda.anaconda.org/conda-forge/win-64/_openmp_mutex-4.5-20_gnu.conda
-  - conda: https://conda.anaconda.org/conda-forge/win-64/binutils_impl_win-64-2.46.1-default_ha84baeb_102.conda
-  - conda: https://conda.anaconda.org/conda-forge/win-64/bzip2-1.0.8-h0ad9c76_10.conda
-  - conda: https://conda.anaconda.org/conda-forge/win-64/conda-gcc-specs-16.1.0-h851ee6d_1.conda
-  - conda: https://conda.anaconda.org/conda-forge/win-64/cython-3.2.9-py313h560b0a0_0.conda
-  - conda: https://conda.anaconda.org/conda-forge/win-64/gcc-16.1.0-hb5e953d_1.conda
-  - conda: https://conda.anaconda.org/conda-forge/win-64/gcc_impl_win-64-16.1.0-hf72cc1b_1.conda
-  - conda: https://conda.anaconda.org/conda-forge/win-64/gfortran-16.1.0-h1f05005_1.conda
-  - conda: https://conda.anaconda.org/conda-forge/win-64/gfortran_impl_win-64-16.1.0-he32c876_1.conda
-  - conda: https://conda.anaconda.org/conda-forge/win-64/ld_impl_win-64-2.46.1-default_hfd38196_102.conda
-  - conda: https://conda.anaconda.org/conda-forge/win-64/libblas-3.11.0-9_h8455456_mkl.conda
-  - conda: https://conda.anaconda.org/conda-forge/win-64/libcblas-3.11.0-9_h2a3cdd5_mkl.conda
-  - conda: https://conda.anaconda.org/conda-forge/win-64/libexpat-2.8.1-hac47afa_1.conda
-  - conda: https://conda.anaconda.org/conda-forge/win-64/libffi-3.7.0-h3d046cb_0.conda
-  - conda: https://conda.anaconda.org/conda-forge/win-64/libgcc-16.1.0-h110b43a_1.conda
-  - conda: https://conda.anaconda.org/conda-forge/win-64/libgfortran5-16.1.0-h94075d5_1.conda
-  - conda: https://conda.anaconda.org/conda-forge/win-64/libglib-2.88.3-he810d59_1.conda
-  - conda: https://conda.anaconda.org/conda-forge/win-64/libgomp-16.1.0-h8ee18e1_1.conda
-  - conda: https://conda.anaconda.org/conda-forge/win-64/libhwloc-2.13.0-default_h049141e_1000.conda
-  - conda: https://conda.anaconda.org/conda-forge/win-64/libiconv-1.18-hc1393d2_3.conda
-  - conda: https://conda.anaconda.org/conda-forge/win-64/libintl-0.22.5-h5728263_3.conda
-  - conda: https://conda.anaconda.org/conda-forge/win-64/liblapack-3.11.0-9_hf9ab0e9_mkl.conda
-  - conda: https://conda.anaconda.org/conda-forge/win-64/liblzma-5.8.3-hfd05255_1.conda
-  - conda: https://conda.anaconda.org/conda-forge/win-64/libmpdec-4.0.0-hfd05255_2.conda
-  - conda: https://conda.anaconda.org/conda-forge/win-64/libsqlite-3.53.4-hf5d6505_1.conda
-  - conda: https://conda.anaconda.org/conda-forge/win-64/libstdcxx-16.1.0-hae5796f_1.conda
-  - conda: https://conda.anaconda.org/conda-forge/win-64/libwinpthread-12.0.0.r4.gg4f2fc60ca-h57928b3_10.conda
-  - conda: https://conda.anaconda.org/conda-forge/win-64/libxml2-16-2.15.3-h692994f_0.conda
-  - conda: https://conda.anaconda.org/conda-forge/win-64/libxml2-2.15.3-hbc0d294_0.conda
-  - conda: https://conda.anaconda.org/conda-forge/win-64/libzlib-1.3.2-hfd05255_3.conda
-  - conda: https://conda.anaconda.org/conda-forge/win-64/llvm-openmp-22.1.8-h4fa8253_0.conda
-  - conda: https://conda.anaconda.org/conda-forge/win-64/m2-conda-epoch-20250515-0_x86_64.conda
-  - conda: https://conda.anaconda.org/conda-forge/win-64/mkl-2026.1.0-hac47afa_234.conda
-  - conda: https://conda.anaconda.org/conda-forge/win-64/ninja-1.13.2-h477610d_1.conda
-  - conda: https://conda.anaconda.org/conda-forge/win-64/numpy-2.4.6-py313ha8dc839_0.conda
-  - conda: https://conda.anaconda.org/conda-forge/win-64/openssl-3.6.3-hf411b9b_1.conda
-  - conda: https://conda.anaconda.org/conda-forge/win-64/pcre2-10.47-hd2b5f0e_0.conda
-  - conda: https://conda.anaconda.org/conda-forge/win-64/pkg-config-0.29.2-hffdb5b9_1011.conda
-  - conda: https://conda.anaconda.org/conda-forge/win-64/python-3.13.15-h254dcb4_101_cp313.conda
-  - conda: https://conda.anaconda.org/conda-forge/win-64/tbb-2023.0.0-hd3d4ead_2.conda
-  - conda: https://conda.anaconda.org/conda-forge/win-64/tk-8.6.13-h967ab96_3.conda
-  - conda: https://conda.anaconda.org/conda-forge/win-64/ucrt-10.0.26100.0-h57928b3_0.conda
-  - conda: https://conda.anaconda.org/conda-forge/win-64/vc-14.5-ha367084_41.conda
-  - conda: https://conda.anaconda.org/conda-forge/win-64/vc14_runtime-14.51.36247-habf1de7_41.conda
-  - conda: https://conda.anaconda.org/conda-forge/win-64/vcomp14-14.51.36247-habf1de7_41.conda
-  - conda: https://conda.anaconda.org/conda-forge/win-64/zstd-1.5.7-h534d264_7.conda
 - pypi: ./
   name: powderline
   requires_dist:
