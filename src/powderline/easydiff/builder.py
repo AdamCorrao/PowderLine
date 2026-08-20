@@ -1,0 +1,371 @@
+"""Recipe → easydiffraction Project + free-parameter manifest.
+
+Translates PowderLine GSAS-II recipe into an easydiffraction Project ready for fitting.
+Converts units (cdeg² → deg², cdeg → deg), sets initial values from Iparm1, and builds
+a manifest of all free parameters with their scaling factors for round-trip conversion.
+
+API surface consumed by the easydiff engine (Task 4).
+"""
+from dataclasses import dataclass
+from pathlib import Path
+
+import numpy as np
+
+from powderline.easydiff.conversions import (
+    CDEG_TO_DEG,
+    GAUSS_CDEG2_TO_DEG2,
+    crop_and_sigma,
+    datablock_slug,
+    gauss_broadening_to_ed,
+    lorentz_broadening_to_ed,
+    zero_to_ed,
+)
+from powderline.easydiff.policy import check_unsupported, param_flag, param_value
+
+
+def _is_cubic(space_group_name):
+    """Check if space group is cubic (b, c constrained to a; angles fixed at 90)."""
+    # Cubic space groups contain "m -3" in H-M notation
+    return "m -3" in space_group_name or "m-3" in space_group_name
+
+
+@dataclass
+class ManifestEntry:
+    parameter: object
+    parameter_name: str
+    descriptive_name: str
+    phase_name: str = ""
+    phase_idx: object = ""
+    atom_name: str = ""
+    atom_idx: object = ""
+    category: str = ""
+    scale_to_recipe: float = 1.0
+
+
+@dataclass
+class BuildResult:
+    project: object
+    experiment: object
+    phase_slugs: dict
+    manifest: list
+    warnings: list
+    tth: np.ndarray
+    itth: np.ndarray
+    weights: np.ndarray
+    mask: np.ndarray
+    wavelength: float
+
+
+def build_project(recipe: dict, workdir) -> BuildResult:
+    """Build easydiffraction Project from recipe.
+
+    Args:
+        recipe: GSAS-II recipe dict
+        workdir: Path-like for easydiff_data.xye output
+
+    Returns:
+        BuildResult with fit-ready project + manifest
+
+    Raises:
+        ImportError: if easydiffraction not installed
+        EasyDiffractionTranslationError: if recipe has unsupported features
+    """
+    try:
+        from easydiffraction import StructureFactory, ExperimentFactory, Project
+    except ImportError as exc:
+        raise ImportError(
+            "easydiffraction is not installed. Install PowderLine's optional engine "
+            "environment: `pixi install -e easydiff` and run via `pixi run -e easydiff ...`"
+        ) from exc
+
+    workdir = Path(workdir)
+
+    # 1. Check for unsupported features
+    warnings = check_unsupported(recipe)
+
+    # 2. Prepare data
+    payload = recipe["payload"]
+    xrd = payload["xrd_data"]
+    tth = np.array(xrd["tth"])
+    itth = np.array(xrd["Itth"])
+    weights = np.array(xrd["Itth_weights"])
+    fit_range = payload["fit_range"]
+
+    mask, sigma = crop_and_sigma(tth, itth, weights, fit_range)
+
+    # Write masked data
+    masked_tth = tth[mask]
+    masked_itth = itth[mask]
+    masked_sigma = sigma[mask]
+    data_path = workdir / "easydiff_data.xye"
+    np.savetxt(
+        data_path,
+        np.column_stack([masked_tth, masked_itth, masked_sigma]),
+        fmt="%.6f"
+    )
+
+    # 3. Build structures per phase
+    structures = []
+    phase_slugs = {}
+    used_slugs = set()
+
+    for phase_name, phase_data in payload["phases"].items():
+        slug = datablock_slug(phase_name)
+        # Uniquify on collision
+        if slug in used_slugs:
+            slug = slug + "_2"
+        used_slugs.add(slug)
+        phase_slugs[phase_name] = slug
+
+        model = StructureFactory.from_scratch(name=slug)
+
+        # Space group
+        struct = phase_data["structure"]
+        model.space_group.name_h_m = struct["space_group"]
+
+        # Unit cell - use initial values from structure
+        uc = struct["unit_cell"]
+        model.cell.length_a = uc["a"]
+        model.cell.length_b = uc["b"]
+        model.cell.length_c = uc["c"]
+        model.cell.angle_alpha = uc["alpha"]
+        model.cell.angle_beta = uc["beta"]
+        model.cell.angle_gamma = uc["gamma"]
+
+        # Atoms
+        for label, atom_data in struct["atoms"].items():
+            model.atom_sites.create(
+                id=label,
+                type_symbol=atom_data["element"],
+                fract_x=atom_data["x"],
+                fract_y=atom_data["y"],
+                fract_z=atom_data["z"],
+                occupancy=atom_data["occupancy"]
+            )
+            # Set Uiso explicitly (default is Biso)
+            site = model.atom_sites[label]
+            site.adp_type = "Uiso"
+            site.adp_iso = atom_data["Uiso"]
+
+        structures.append(model)
+
+    # 4. Build experiment
+    expt = ExperimentFactory.from_data_path(
+        name="powderline",
+        data_path=str(data_path),
+        sample_form="powder",
+        beam_mode="constant wavelength",
+        radiation_probe="xray",
+        scattering_type="bragg"
+    )
+
+    # 5. Instrument parameters
+    inst = payload["instrument"]
+    iparm = inst["initialization"][0]  # Iparm1 is first element of initialization
+    inst_pz = inst["parameterization"]
+
+    # Wavelength
+    wavelength = iparm["Lam"][1]
+    expt.instrument.setup_wavelength = wavelength
+
+    # Zero (4-tuple override takes precedence)
+    zero_spec = inst_pz["corrections"]["zero_shift"]
+    if zero_spec is not None and zero_spec[0] is not None:
+        zero_val = zero_to_ed(zero_spec[0])
+    else:
+        zero_val = zero_to_ed(iparm["Zero"][1])
+    expt.instrument.calib_twotheta_offset = zero_val
+
+    # Broadening - Gauss
+    bz = inst_pz["broadening"]
+    for key in ["U", "V", "W"]:
+        spec = bz[key]
+        if spec[0] is not None:
+            val = gauss_broadening_to_ed(spec[0])
+        else:
+            val = gauss_broadening_to_ed(iparm[key][1])
+        setattr(expt.peak, f"broad_gauss_{key.lower()}", val)
+
+    # Broadening - Lorentz
+    for key in ["X", "Y"]:
+        spec = bz[key]
+        if spec[0] is not None:
+            val = lorentz_broadening_to_ed(spec[0])
+        else:
+            val = lorentz_broadening_to_ed(iparm[key][1])
+        setattr(expt.peak, f"broad_lorentz_{key.lower()}", val)
+
+    # Polarization (may not exist)
+    try:
+        polariz_spec = inst_pz.get("polarization")
+        if polariz_spec is not None and polariz_spec[0] is not None:
+            expt.instrument.setup_polarization_coefficient = polariz_spec[0]
+        else:
+            expt.instrument.setup_polarization_coefficient = iparm["Polariz."][1]
+    except (KeyError, AttributeError) as e:
+        warnings.append(f"Could not set polarization_coefficient: {e}")
+
+    # 6. Linked structures
+    for i, (phase_name, slug) in enumerate(phase_slugs.items()):
+        scale_spec = payload["phases"][phase_name]["parameterization"]["scale"]
+        scale_val = param_value(scale_spec, default=1.0)
+        expt.linked_structures.create(structure_id=slug, scale=scale_val)
+
+    # 7. Background
+    bg = payload["background"]["chebyshev"]
+    expt.background.type = "chebyshev"
+    for k, c in enumerate(bg["coefficients"]):
+        expt.background.create(id=str(k), order=k, coef=c)
+
+    # 8. Set free parameters (before building project)
+    # Track which ones to add to manifest (check after project build for unit_cell)
+    pending_params = []
+
+    # Broadening U/V/W
+    for key in ["U", "V", "W"]:
+        spec = bz[key]
+        if param_flag(spec):
+            param = getattr(expt.peak, f"broad_gauss_{key.lower()}")
+            param.free = True
+            # Set bounds if present
+            if spec[2] is not None:
+                param.fit_min = gauss_broadening_to_ed(spec[2])
+            if spec[3] is not None:
+                param.fit_max = gauss_broadening_to_ed(spec[3])
+            pending_params.append((
+                param, f":0:{key}", f"instrument_broadening_{key}",
+                "", "", "instrument_broadening", 1.0 / GAUSS_CDEG2_TO_DEG2
+            ))
+
+    # Broadening X/Y
+    for key in ["X", "Y"]:
+        spec = bz[key]
+        if param_flag(spec):
+            param = getattr(expt.peak, f"broad_lorentz_{key.lower()}")
+            param.free = True
+            if spec[2] is not None:
+                param.fit_min = lorentz_broadening_to_ed(spec[2])
+            if spec[3] is not None:
+                param.fit_max = lorentz_broadening_to_ed(spec[3])
+            pending_params.append((
+                param, f":0:{key}", f"instrument_broadening_{key}",
+                "", "", "instrument_broadening", 1.0 / CDEG_TO_DEG
+            ))
+
+    # Zero shift
+    zero_spec = inst_pz["corrections"]["zero_shift"]
+    if zero_spec is not None and param_flag(zero_spec):
+        param = expt.instrument.calib_twotheta_offset
+        param.free = True
+        if zero_spec[2] is not None:
+            param.fit_min = zero_to_ed(zero_spec[2])
+        if zero_spec[3] is not None:
+            param.fit_max = zero_to_ed(zero_spec[3])
+        pending_params.append((
+            param, ":0:Zero", "zero_shift",
+            "", "", "corrections", 1.0 / CDEG_TO_DEG
+        ))
+
+    # Scale per phase
+    for i, (phase_name, slug) in enumerate(phase_slugs.items()):
+        scale_spec = payload["phases"][phase_name]["parameterization"]["scale"]
+        if param_flag(scale_spec):
+            param = expt.linked_structures[slug].scale
+            param.free = True
+            if scale_spec[2] is not None:
+                param.fit_min = scale_spec[2]
+            if scale_spec[3] is not None:
+                param.fit_max = scale_spec[3]
+            pending_params.append((
+                param, f"{i}:0:Scale", f"phase_{i}_scale_factor",
+                phase_name, i, "scale", 1.0
+            ))
+
+    # Background coefficients
+    if bg["refine_flag"]:
+        for k in range(len(bg["coefficients"])):
+            param = expt.background[str(k)].coef
+            param.free = True
+            pending_params.append((
+                param, f":0:Back;{k}", f"background_coefficient_{k}",
+                "", "", "background", 1.0
+            ))
+
+    # Unit cell axes per phase - respect symmetry constraints
+    cell_params_to_add = []
+    for i, (phase_name, slug) in enumerate(phase_slugs.items()):
+        phase_data = payload["phases"][phase_name]
+        cell_pz = phase_data["parameterization"]["unit_cell"]
+        model = structures[i]
+        sg_name = phase_data["structure"]["space_group"]
+        is_cubic = _is_cubic(sg_name)
+
+        axis_map = {
+            "a": "length_a",
+            "b": "length_b",
+            "c": "length_c",
+            "alpha": "angle_alpha",
+            "beta": "angle_beta",
+            "gamma": "angle_gamma"
+        }
+
+        for axis, attr in axis_map.items():
+            spec = cell_pz[axis]
+            if param_flag(spec):
+                # Skip symmetry-constrained axes for cubic
+                if is_cubic and axis in ["b", "c", "alpha", "beta", "gamma"]:
+                    continue
+                param = getattr(model.cell, attr)
+                param.free = True
+                if spec[2] is not None:
+                    param.fit_min = spec[2]
+                if spec[3] is not None:
+                    param.fit_max = spec[3]
+                cell_params_to_add.append((
+                    param, f"{i}::{axis}", f"phase_{i}_cell_{axis}",
+                    phase_name, i
+                ))
+
+    # 9. Build project
+    project = Project()
+    for model in structures:
+        project.structures.add(model)
+    project.experiments.add(expt)
+
+    # Build manifest
+    manifest = []
+    for param, pname, dname, phase, pidx, cat, scale in pending_params:
+        manifest.append(ManifestEntry(
+            parameter=param,
+            parameter_name=pname,
+            descriptive_name=dname,
+            phase_name=phase,
+            phase_idx=pidx,
+            category=cat,
+            scale_to_recipe=scale
+        ))
+
+    # Add unit cell parameters
+    for param, pname, dname, phase, pidx in cell_params_to_add:
+        manifest.append(ManifestEntry(
+            parameter=param,
+            parameter_name=pname,
+            descriptive_name=dname,
+            phase_name=phase,
+            phase_idx=pidx,
+            category="unit_cell",
+            scale_to_recipe=1.0
+        ))
+
+    return BuildResult(
+        project=project,
+        experiment=expt,
+        phase_slugs=phase_slugs,
+        manifest=manifest,
+        warnings=warnings,
+        tth=tth,
+        itth=itth,
+        weights=weights,
+        mask=mask,
+        wavelength=wavelength
+    )
