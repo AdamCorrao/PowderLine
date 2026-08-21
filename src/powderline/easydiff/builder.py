@@ -375,8 +375,9 @@ def build_project(recipe: dict, workdir) -> BuildResult:
 
         # Handle length groups: free only the first axis in each group
         for length_group in rules.length_groups:
-            # Check if any axis in this group is flagged
-            flagged_in_group = [ax for ax in length_group if param_flag(cell_pz[ax])]
+            # Check if any axis in this group is flagged (schema 0.26 allows a
+            # subset of unit_cell parameters -- absent means fixed)
+            flagged_in_group = [ax for ax in length_group if param_flag(cell_pz.get(ax))]
             if not flagged_in_group:
                 continue
 
@@ -386,7 +387,8 @@ def build_project(recipe: dict, workdir) -> BuildResult:
             param.free = True
 
             # Use bounds and value override from the first flagged axis
-            bounds_spec = cell_pz[flagged_in_group[0]]
+            # (present by construction: it carried the flag)
+            bounds_spec = cell_pz.get(flagged_in_group[0])
             if bounds_spec[2] is not None:
                 param.fit_min = bounds_spec[2]
             if bounds_spec[3] is not None:
@@ -406,14 +408,14 @@ def build_project(recipe: dict, workdir) -> BuildResult:
 
         # Handle fixed angles: warn if flagged
         for angle in rules.fixed_angles:
-            if param_flag(cell_pz[angle]):
+            if param_flag(cell_pz.get(angle)):
                 warnings.append(
                     f"cell angle '{angle}' is fixed by symmetry; refine flag ignored"
                 )
 
         # Handle free angles: free normally
         for angle in rules.free_angles:
-            spec = cell_pz[angle]
+            spec = cell_pz.get(angle)
             if param_flag(spec):
                 param = getattr(model.cell, angle_map[angle])
                 param.free = True

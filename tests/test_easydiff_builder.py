@@ -260,3 +260,23 @@ def test_pseudo_voigt_kept_when_shl_zero(tmp_path):
     assert str(e.calculator.type) == "cryspy"
     assert str(e.peak.type) == "cwl-pseudo-voigt"
     assert not any("Thompson" in w for w in br.warnings)
+
+
+def test_partial_unit_cell_parameterization(tmp_path):
+    """Schema 0.26: 'listing only the parameters you wish to refine is
+    equivalent to listing all six' — a subset dict must not KeyError."""
+    r = rich_recipe()
+    r["payload"]["phases"]["LaB6"]["parameterization"]["unit_cell"] = {
+        "a": [None, True, None, None],
+    }
+    br = build_project(r, tmp_path)
+    assert "0::a" in {m.parameter_name for m in br.manifest}
+
+
+def test_partial_unit_cell_angle_only(tmp_path):
+    r = rich_recipe()
+    r["payload"]["phases"]["LaB6"]["parameterization"]["unit_cell"] = {
+        "gamma": [None, True, None, None],   # symmetry-fixed on cubic -> warn
+    }
+    br = build_project(r, tmp_path)
+    assert any("gamma" in w for w in br.warnings)

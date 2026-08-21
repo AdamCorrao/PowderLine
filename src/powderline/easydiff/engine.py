@@ -63,6 +63,45 @@ def _validate_only_result(recipe) -> dict:
     }
 
 
+def _unit_cell_rows(phase_struct) -> list[dict]:
+    """cell_a..cell_gamma + cell_volume rows (GSAS-II/TOPAS report parity).
+
+    Shared by the on-disk report and the in-memory result dict so the two
+    cannot drift. The volume ESD is first-order propagation in quadrature
+    from the six cell parameters' uncertainties (uncorrelated approximation;
+    GSAS-II propagates with the covariance matrix, so ESDs can differ
+    slightly while values match).
+    """
+    cell = phase_struct.cell
+    names = ["cell_a", "cell_b", "cell_c", "cell_alpha", "cell_beta", "cell_gamma"]
+    attrs = ["length_a", "length_b", "length_c",
+             "angle_alpha", "angle_beta", "angle_gamma"]
+    values, esds, rows = [], [], []
+    for name, attr in zip(names, attrs):
+        param = getattr(cell, attr)
+        value = float(_num(param.value))
+        esd = float(_num(param.uncertainty if param.uncertainty is not None else 0.0))
+        values.append(value)
+        esds.append(esd)
+        rows.append({"parameter": name, "value": value, "esd": esd})
+
+    def _volume(p):
+        a, b, c, al, be, ga = p
+        ca, cb, cg = (np.cos(np.radians(x)) for x in (al, be, ga))
+        arg = 1.0 - ca * ca - cb * cb - cg * cg + 2.0 * ca * cb * cg
+        return a * b * c * float(np.sqrt(max(arg, 0.0)))
+
+    vol = _volume(values)
+    var = 0.0
+    for i, esd in enumerate(esds):
+        if esd:
+            perturbed = list(values)
+            perturbed[i] += esd
+            var += (_volume(perturbed) - vol) ** 2
+    rows.append({"parameter": "cell_volume", "value": vol, "esd": float(np.sqrt(var))})
+    return rows
+
+
 def _write_reports(build_result, arrays, output_dir) -> None:
     """Write standardized GSAS-II-matching report files to output_dir."""
     from .builder import BuildResult
@@ -137,23 +176,7 @@ def _write_reports(build_result, arrays, output_dir) -> None:
         except (KeyError, AttributeError):
             continue
 
-        cell = phase_struct.cell
-        cell_params = ["cell_a", "cell_b", "cell_c", "cell_alpha", "cell_beta", "cell_gamma"]
-        cell_attrs = ["length_a", "length_b", "length_c", "angle_alpha", "angle_beta", "angle_gamma"]
-
-        cell_rows = []
-        for param_name, attr_name in zip(cell_params, cell_attrs):
-            param = getattr(cell, attr_name)
-            value = _num(param.value)
-            esd_raw = param.uncertainty if param.uncertainty is not None else 0.0
-            esd = _num(esd_raw)
-            cell_rows.append({
-                "parameter": param_name,
-                "value": value,
-                "esd": esd,
-            })
-
-        cell_df = pd.DataFrame(cell_rows)
+        cell_df = pd.DataFrame(_unit_cell_rows(phase_struct))
         _write_report(output_dir / f"{recipe_name}_unit_cell_report.csv",
                       cell_df.to_csv(index=False, lineterminator="\n"))
 
@@ -252,23 +275,7 @@ def _result_dict(*, success, method, output_dir, build_result=None, arrays=None,
             except (KeyError, AttributeError):
                 continue
 
-            cell = phase_struct.cell
-            cell_attrs = ["length_a", "length_b", "length_c", "angle_alpha", "angle_beta", "angle_gamma"]
-            cell_params = ["cell_a", "cell_b", "cell_c", "cell_alpha", "cell_beta", "cell_gamma"]
-
-            cell_rows = []
-            for param_name, attr_name in zip(cell_params, cell_attrs):
-                param = getattr(cell, attr_name)
-                value = _num(param.value)
-                esd_raw = param.uncertainty if param.uncertainty is not None else 0.0
-                esd = _num(esd_raw)
-                cell_rows.append({
-                    "parameter": param_name,
-                    "value": value,
-                    "esd": esd,
-                })
-
-            unit_cell_data[recipe_name] = pd.DataFrame(cell_rows)
+            unit_cell_data[recipe_name] = pd.DataFrame(_unit_cell_rows(phase_struct))
 
         # Build peak_list_data
         if build_result.experiment.refln is not None:

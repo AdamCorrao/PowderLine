@@ -45,6 +45,11 @@ def test_synthetic_fit_result_contract(tmp_path):
     assert list(result["fit_profile"].columns) == PROFILE_COLUMNS
     assert len(result["fit_profile"]) == 200  # full grid
     assert "LaB6" in result["unit_cell_data"]
+    uc = result["unit_cell_data"]["LaB6"]
+    # GSAS-II/TOPAS parity: unit-cell reports carry a cell_volume row
+    vol = uc.loc[uc["parameter"] == "cell_volume", "value"]
+    assert not vol.empty
+    assert float(vol.iloc[0]) == pytest.approx(4.157 ** 3, rel=0.02)  # cubic V=a^3
     assert isinstance(result["spf_peaks"], pd.DataFrame) and result["spf_peaks"].empty
     assert result["error"] is None
     out_names = {os.path.basename(p) for p in result["output_files"]}

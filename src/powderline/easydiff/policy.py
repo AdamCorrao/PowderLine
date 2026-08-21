@@ -115,9 +115,11 @@ def check_unsupported(recipe: dict) -> list[str]:
         for atom_name, atom in (pz.get("atoms") or {}).items():
             uaniso = atom.get("Uaniso")
             if isinstance(uaniso, dict):
-                # Check if any component is flagged for refinement
-                flagged_components = [k for k in ["u11", "u22", "u33", "u12", "u13", "u23"]
-                                      if param_flag(uaniso.get(k))]
+                # Schema keys are uppercase (U11..U23); match case-insensitively
+                # so lowercase variants cannot slip past the honesty rule.
+                comps = {str(k).upper(): v for k, v in uaniso.items()}
+                keys = ["U11", "U22", "U33", "U12", "U13", "U23"]
+                flagged_components = [k for k in keys if param_flag(comps.get(k))]
                 if flagged_components:
                     raise EasyDiffractionTranslationError(
                         f"anisotropic ADPs ({phase_name}/{atom_name}) flagged for refinement; "
@@ -125,8 +127,8 @@ def check_unsupported(recipe: dict) -> list[str]:
                     )
                 # Check for fixed non-null values
                 has_values = any(
-                    isinstance(uaniso.get(k), (list, tuple)) and len(uaniso[k]) >= 1 and uaniso[k][0] is not None
-                    for k in ["u11", "u22", "u33", "u12", "u13", "u23"]
+                    isinstance(comps.get(k), (list, tuple)) and len(comps[k]) >= 1 and comps[k][0] is not None
+                    for k in keys
                 )
                 if has_values:
                     warnings.append(
