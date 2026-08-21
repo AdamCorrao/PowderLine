@@ -74,3 +74,13 @@ GSAS-II = { git = "https://github.com/tacaswell/GSAS-II", rev = "enh/pixi_pkg" }
 
 [pypi-dependencies]
 powderline = { path = ".", editable = true }
+
+[feature.easydiff.dependencies]
+python = ">=3.12"                 # easydiffraction floor; default env stays >=3.10
+"diffpy.pdffit2" = "*"            # from conda-forge: its PyPI sdist needs GSL to build
+
+[feature.easydiff.pypi-dependencies]
+easydiffraction = ">=0.20.1,<0.21"
+
+[environments]
+easydiff = ["easydiff"]

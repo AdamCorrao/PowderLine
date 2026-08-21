@@ -21,8 +21,10 @@ and single-peak fits without hand-driving GSAS-II.
 - **Refine what you need:** unit cell, atom coordinates, occupancies, isotropic and
   anisotropic displacement parameters, background, and peak broadening — each
   parameter individually flagged.
-- **Two engines, one recipe:** GSAS-II by default, or Bruker TOPAS v7
-  (`engine="topas"`) — the TOPAS path imports zero GSAS-II.
+- **Three engines, one recipe:** GSAS-II by default, Bruker TOPAS v7
+  (`engine="topas"`), or open-source easydiffraction
+  (`engine="easydiffraction"`) — the TOPAS and easydiffraction paths import
+  zero GSAS-II.
 - **Materials Project integration:** simulate a pattern from a crystal structure.
 - **Standardized outputs:** fixed-filename CSV/TXT reports plus a GSAS-II `.gpx`.
 
@@ -124,6 +126,60 @@ pixi run kicker <recipe.json> --no-server   # force an isolated one-shot subproc
 ```bash
 pixi run mp-simulate --material-id mp-2680 --output patterns/
 ```
+
+## 4. Refinement Engines
+
+PowderLine supports three refinement engines that all consume the same recipe format:
+
+### GSAS-II (default)
+
+The primary engine, installed automatically with `pixi install`. All workflow types
+and refinement flags are supported.
+
+### TOPAS v7 (optional)
+
+Bruker's commercial refinement package. PowderLine generates a TOPAS `.inp` + `.xye`
+from unmodified `GSASII_Rietveld` and `GSASII_SPF` recipes; running the `.inp` requires
+a Windows machine with `tc.exe` installed. The TOPAS path imports zero GSAS-II.
+
+```python
+result = powderline.run(recipe, Path("output/"), engine="topas")
+```
+
+### easydiffraction (optional)
+
+Open-source Rietveld engine. Requires the optional `easydiff` pixi environment
+(easydiffraction needs Python ≥3.12; the default environment stays at ≥3.10):
+
+```bash
+pixi install -e easydiff
+```
+
+```python
+import powderline
+result = powderline.run(recipe, "output", engine="easydiffraction")
+```
+
+**v1 capabilities:** translates unmodified `GSASII_Rietveld` recipes; supports unit-cell,
+scale, wavelength, Chebyshev background, Caglioti U/V/W + Lorentzian X/Y broadening,
+and zero-shift refinement; multi-phase; simulation mode (no refinement flags set).
+Rejects loudly (translation error) atom-level refinement flags, Kα₁/Kα₂ two-wavelength
+recipes, refined Z / polarization / axial divergence / background peaks, and SPF
+recipes. Fixed anisotropic ADP values are not modeled and are dropped with a warning.
+
+**Profile model:** a nonzero `SH/L` automatically selects the Thompson–Cox–Hastings
+profile with fixed FCJ axial-divergence asymmetry (CrysFML calculator; hkl peak lists
+are recovered with a post-fit CrysPy calculation). On the identical LaB6 recipe,
+GSAS-II reaches Rwp 6.01% vs easydiffraction 9.63% (both χ² < 1), and the refined
+lattice parameters agree to well under 0.001 Å. The remaining Rwp gap comes from
+background peaks (not modeled) and residual profile-model differences, so **compare
+lattice parameters, not Rwp, across engines** — Rwp is not an apples-to-apples metric.
+
+For the engine architecture and how to add a backend, see
+[Adding a Refinement Engine](docs/DEVELOPMENT.md#adding-a-refinement-engine).
+The full design dossier and backend survey live in the private
+[PowderLine-devkit](https://github.com/NSLS2/PowderLine-devkit) (maintainers can
+request access).
 
 ## Documentation
 

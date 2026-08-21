@@ -8,6 +8,10 @@
 #   - _dev/            the private devkit checkout (dossiers, agent context,
 #                      private regression data)
 #   - *.gpx            GSAS-II binary project files (large, regenerable)
+#   - fort.*           Fortran scratch dumps (e.g. GSAS-II fort.NN reflection lists)
+#   - dev-doc scaffold under docs/ — design dossiers, plans, specs, and AI-agent
+#     scratch (docs/superpowers/, docs/plans/, docs/specs/, docs/dev/) belong in
+#     the private devkit, NOT in the public docs/ tree.
 #   - data-like files added OUTSIDE the sanctioned locations (examples/,
 #     tests/data/, docs/) — raw patterns and instrument files belong out of
 #     git; examples embed their data inside input.json instead.
@@ -26,6 +30,13 @@ for f in $staged; do
             fail=1 ;;
         *.gpx)
             echo "pre-commit: BLOCKED '$f' — GSAS-II .gpx binaries are regenerable and stay out of git." >&2
+            fail=1 ;;
+        fort.*)
+            echo "pre-commit: BLOCKED '$f' — Fortran scratch dump (fort.*) is a run artifact; keep it out of git." >&2
+            fail=1 ;;
+        docs/superpowers/*|docs/plans/*|docs/specs/*|docs/dev/*)
+            echo "pre-commit: BLOCKED '$f' — dev-doc scaffold (design dossiers, plans, specs, agent scratch)." >&2
+            echo "            These belong in the private PowderLine-devkit, not the public docs/ tree." >&2
             fail=1 ;;
         examples/*|tests/data/*|docs/*)
             : ;;  # sanctioned locations for committed reference data

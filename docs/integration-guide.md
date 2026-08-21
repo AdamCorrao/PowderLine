@@ -207,6 +207,43 @@ at your local clone.
 
 ---
 
+## Using the easydiffraction Engine (Optional)
+
+PowderLine supports the open-source easydiffraction Rietveld engine via
+`engine="easydiffraction"`. This requires the optional `easydiff` pixi environment
+(easydiffraction needs Python ≥3.12; the default environment stays at ≥3.10):
+
+```bash
+pixi install -e easydiff
+```
+
+```python
+import powderline
+result = powderline.run(recipe, "output", engine="easydiffraction")
+```
+
+**v1 capabilities:** translates unmodified `GSASII_Rietveld` recipes; supports unit-cell,
+scale, wavelength, Chebyshev background, Caglioti U/V/W + Lorentzian X/Y broadening,
+and zero-shift refinement; multi-phase; simulation mode (no refinement flags set).
+Rejects loudly (translation error) atom-level refinement flags, Kα₁/Kα₂ two-wavelength
+recipes, refined Z / polarization / axial divergence / background peaks, and SPF
+recipes. Fixed anisotropic ADP values are not modeled and are dropped with a warning.
+
+**Profile model:** a nonzero `SH/L` automatically selects the Thompson–Cox–Hastings
+profile with fixed FCJ axial-divergence asymmetry (CrysFML calculator; hkl peak lists
+are recovered with a post-fit CrysPy calculation). On the identical LaB6 recipe,
+GSAS-II reaches Rwp 6.01% vs easydiffraction 9.63% (both χ² < 1); the remaining gap
+comes from background peaks (not modeled) and residual profile differences, so
+**compare lattice parameters, not Rwp, across engines** — Rwp is not an
+apples-to-apples metric.
+
+For the engine architecture and how to add a backend, see the
+**Adding a Refinement Engine** section of the [developer guide](DEVELOPMENT.md).
+The full design dossier and backend survey live in the private
+[PowderLine-devkit](https://github.com/NSLS2/PowderLine-devkit).
+
+---
+
 ## Future: conda-forge Distribution
 
 When PowderLine is published to conda-forge, the editable path dependency becomes a
