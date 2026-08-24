@@ -2865,7 +2865,7 @@ def _refine_with_message(proj) -> tuple[bool, str]:
             msg = rvals.get('msg', '') if isinstance(rvals, dict) else ''
             msg = msg.replace('**** ERROR: Refinement failed ****', '').strip()
             return bool(ok), msg
-    except Exception:
+    except (ImportError, AttributeError, KeyError, TypeError):
         pass  # GSAS-II internals changed: fall back to the plain call below
 
     proj.refine()
