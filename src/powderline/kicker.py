@@ -117,9 +117,9 @@ def is_template_file(recipe_dict: dict, input_path: Path) -> tuple[bool, str | N
         input_path: Path to the JSON file
 
     Returns:
-        (is_template, reason): is_template is True if this appears to be a template,
-                              reason explains why it was detected as a template.
-                              If not a template, returns (False, None).
+        tuple[bool, str | None]: A 2-tuple ``(is_template, reason)``. ``is_template``
+        is True if this appears to be a template, and ``reason`` explains why it
+        was detected as a template. If not a template, returns ``(False, None)``.
 
     Examples:
         >>> is_template_file({}, Path("example_template/input.json"))
@@ -2154,7 +2154,8 @@ def calculate_cell_esds_from_A_matrix(phase_idx: int, proj: Any, phase_name: str
         phase_name: Name of the phase
 
     Returns:
-        List of 7 ESDs: [esd_a, esd_b, esd_c, esd_alpha, esd_beta, esd_gamma, esd_volume]
+        list[float | None]: The 7 ESDs, in order
+        ``[esd_a, esd_b, esd_c, esd_alpha, esd_beta, esd_gamma, esd_volume]``.
 
     Raises:
         RuntimeError: If covariance data is unavailable or the ESD calculation fails.
@@ -2207,8 +2208,8 @@ def extract_refined_params_from_project(proj: Any, verbose: bool = False) -> Dic
         verbose: If True, print progress messages.
 
     Returns:
-        Dictionary mapping parameter names to {"value": float, "esd": float}
-        Returns empty dict if no covariance data available.
+        dict: Mapping of parameter names to ``{"value": float, "esd": float}``.
+        Returns an empty dict if no covariance data is available.
 
     Raises:
         RuntimeError: If ComputeDepESD fails (dependent parameter ESDs cannot be calculated).
@@ -2999,8 +3000,9 @@ def _extract_fit_profile(hist: Any, output_dir: Path) -> dict:
         output_dir: Directory to write ``fit_profile.txt``.
 
     Returns:
-        Column-oriented dict (JSON-serializable) with keys: two_theta,
-        y_obs, y_weights, y_calc, y_diff, y_bkg, q_values, d_spacings.
+        dict: Column-oriented data (JSON-serializable) with keys ``two_theta``,
+        ``y_obs``, ``y_weights``, ``y_calc``, ``y_diff``, ``y_bkg``, ``q_values``,
+        ``d_spacings``.
     """
     two_theta = hist.getdata(datatype="X")
     q_values = hist.getdata(datatype="Q")

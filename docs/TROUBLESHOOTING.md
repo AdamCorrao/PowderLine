@@ -103,7 +103,7 @@ schema_version
 **Solution:**
 Add `"schema_version": "0.26.0"` at the top level of your recipe JSON:
 
-```json
+```javascript
 {
   "schema_name": "GSASII_Rietveld",
   "schema_version": "0.26.0",
@@ -290,7 +290,7 @@ Check that:
 
 **Solution:**
 1. **Check XRD data format** (embedded arrays in JSON payload):
-   ```json
+   ```javascript
    "xrd_data": {
      "tth": [10.0, 10.1, 10.2, ...],
      "Itth": [1234.5, 1230.2, 1228.9, ...],
@@ -470,7 +470,7 @@ phases.0.parameterization.unit_cell.a
    ```
 
    3. Check nesting matches the payload structure:
-   ```json
+   ```javascript
    {
      "schema_name": "GSASII_Rietveld",
      "payload": {
@@ -520,7 +520,7 @@ schema_name
 
 **Solution:**
 Add `schema_name` at the top level (keeping `schema_version`):
-```json
+```javascript
 {
   "schema_name": "GSASII_Rietveld",  // Required: "GSASII_Rietveld" or "GSASII_SPF"
   "schema_version": "0.26.0",
@@ -551,7 +551,7 @@ payload
 
 **Solution:**
 Wrap all recipe fields inside `payload`:
-```json
+```javascript
 // OLD (Schema 0.24):
 {
   "schema_version": "0.24",
@@ -589,7 +589,7 @@ refinement_controls
 
 **Solution:**
 Add `refinement_controls` inside `payload` with `refinement_cycles`:
-```json
+```javascript
 {
   "schema_name": "GSASII_Rietveld",
   "schema_version": "0.26.0",
@@ -623,7 +623,7 @@ payload
 
 **Solution:**
 Add `schema_name`, update `schema_version`, and move all recipe fields inside `payload`:
-```json
+```javascript
 // OLD (Schema 0.24) - fields at top level:
 {
   "schema_version": "0.24",
@@ -658,7 +658,7 @@ Schema 0.25 removed the `sample_name` and `recipe_description` fields; output fi
 ### Complete Migration Example
 
 **Before (Schema 0.24):**
-```json
+```javascript
 {
   "schema_version": "0.24",
   "sample_name": "LaB6_test",
@@ -672,7 +672,7 @@ Schema 0.25 removed the `sample_name` and `recipe_description` fields; output fi
 ```
 
 **After (Schema 0.26.0):**
-```json
+```javascript
 {
   "schema_name": "GSASII_Rietveld",
   "schema_version": "0.26.0",
@@ -1141,7 +1141,7 @@ Peak 10 at 2θ=67.890° - Status: NaN_failed
 
 **Example Recipes:**
 
-```json
+```javascript
 // Rietveld refinement (structural analysis)
 {
   "schema_name": "GSASII_Rietveld",

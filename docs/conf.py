@@ -53,13 +53,35 @@ intersphinx_mapping = {
     'python': ('https://docs.python.org/3', None),
     'numpy': ('https://numpy.org/doc/stable/', None),
     'pandas': ('https://pandas.pydata.org/pandas-docs/stable/', None),
+    'pydantic': ('https://docs.pydantic.dev/latest/', None),
 }
 
 templates_path = ['_templates']
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store', 'dev']  # dev/ = in-repo development dossiers, not user-facing docs
 
-# Treat missing cross-reference targets as errors, not warnings
+# Treat missing cross-reference targets as warnings (not silently ignored)
 nitpicky = True
+
+# RefinementParameter fields are `Annotated[tuple[...], PlainSerializer(...)]`.
+# Sphinx's type-hint renderer expands the PlainSerializer repr into bogus
+# sub-references (its keyword args and the fully-expanded Annotated/list/dict
+# forms) that can never resolve to real objects. Silence just those synthetic
+# targets; genuine unresolved references still warn normally.
+nitpick_ignore_regex = [
+    ('py:class', r'^func=.*$'),
+    ('py:class', r'^return_type=.*$'),
+    ('py:class', r'^when_used=.*$'),
+    ('py:class', r'.*PlainSerializer.*'),
+    ('py:obj', r'.*PlainSerializer.*'),
+    ('py:class', r'^ConfigDict$'),
+]
+
+# pandas' public docs index `pandas.DataFrame`, but runtime type hints resolve
+# to its internal module path; the pandas intersphinx inventory has no entry
+# for the latter, so it can never resolve.
+nitpick_ignore = [
+    ('py:class', 'pandas.core.frame.DataFrame'),
+]
 
 # MyST parser settings for Markdown support
 myst_enable_extensions = [
@@ -67,6 +89,10 @@ myst_enable_extensions = [
     "colon_fence",  # ::: fences
     "dollarmath",   # $$...$$ math blocks (e.g. Rwp formula in DEVELOPMENT.md)
 ]
+# Auto-generate GitHub-style heading anchors (up to H4) so in-page TOC links
+# like `[Root Causes Summary](#1-root-causes-summary)` in cross-platform-guide.md
+# resolve instead of raising 'myst.xref_missing'.
+myst_heading_anchors = 4
 source_suffix = {
     '.rst': 'restructuredtext',
     '.md': 'markdown',

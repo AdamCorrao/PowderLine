@@ -15,7 +15,6 @@ __pycache__/
 
 # Sphinx documentation builds
 docs/_build/
-docs/_static/
 docs/_templates/
 
 # Configuration files with API keys (untracked)

@@ -48,7 +48,7 @@ All recipes use a three-key structure:
 
 The `payload` contains all refinement parameters organized by concern:
 
-```json
+```javascript
 "payload": {
   "xrd_data": {...},           // Required: Diffraction pattern
   "instrument": {...},         // Required: Beamline/instrument config
@@ -265,11 +265,11 @@ Parameterization (refinement settings):
 **Anisotropic Displacement Parameters:**
 If using `ADP="Uaniso"`, all 6 anisotropic U values (U11, U22, U33, U12, U13, U23) must be provided in both structure and parameterization:
 
-```json
+```javascript
 "atoms": {
   "Li": {
     "ADP": "Uaniso",
-    "Uiso": 0.01,  # Can provide both - ADP dictates which is used
+    "Uiso": 0.01,  // Can provide both - ADP dictates which is used
     "Uaniso": {
       "U11": 0.012, "U22": 0.011, "U33": 0.010,
       "U12": 0.001, "U13": 0.001, "U23": 0.001
@@ -1053,7 +1053,7 @@ This enables refining individual peaks with direct control over position, intens
 - **Extended output**: Generates `single_peaks_report.txt` with refined parameters plus calculated FWHM and integral breadths
 
 **JSON Structure:**
-```json
+```javascript
 // use_instrument_profile lives in refinement_controls.single_peak_fitting_mode
 // (false = direct width refinement), not inside single_peaks:
 "single_peaks": {
