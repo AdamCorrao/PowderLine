@@ -1,19 +1,17 @@
 # Known issues & documented failure routes
 
-**Repo-wide register.** Curated list of behaviors we have *discovered and
-understood* but are (for now) choosing not to prevent, plus quirks a developer
-must keep in mind. Each has a stable `KI-NN` id that development docs, plans,
-and PR bodies reference (e.g. "pass-through per KI-01"). This is a **development
-doc**, not a substitute for GitHub issues — keep entries terse and durable
-(breadcrumbs for when an issue recurs or a related one appears), and prune ones
-that become obsolete.
+**Repo-wide register.** This page is a register of known, deliberately-deferred
+behaviors and documented failure routes: behaviors we have *discovered and
+understood* but are (for now) choosing not to prevent, plus quirks worth keeping
+in mind. Each entry carries a stable `KI-NN` id — a permanent identifier
+(e.g. `KI-01`) that is referenced from code, tests, and docs (e.g. "pass-through
+per KI-01") so a behavior can be pointed to from a single canonical place.
 
 **Scope.** Entries describe bugs, tripping hazards, codebase/convention
-oddities, and in general issues that need a development branch (refactoring,
-chores/cleanup, new features) or a standing decision. **Small transient
-issues do not belong here** — e.g. doc-sweep leftovers or other nits found
-during review are flagged to the user and fixed *before* the PR is prepared,
-not registered (keeps the register and dev history lean).
+oddities, and in general issues that need dedicated development work
+(refactoring, cleanup, new features) or a standing decision. **Small transient
+issues do not belong here** — e.g. doc-sweep leftovers or other nits are fixed
+directly rather than registered (keeps the register lean).
 
 **Conventions:**
 - IDs are permanent and never reused. Add new issues with the next free
@@ -26,17 +24,11 @@ not registered (keeps the register and dev history lean).
   `critical` = silent wrong/empty output or data loss; `major` = breaks a real
   flow or compounds technical debt; `minor` = works but fragile /
   incorrect-in-edge-cases; `nit` = cleanup. A `nit` is registered only when
-  fixing it now is genuinely out of scope — otherwise fix it pre-PR instead of
+  fixing it now is genuinely out of scope — otherwise fix it directly instead of
   filing it.
 - Entry headings carry status and severity: `` `status · severity` ``.
-- Each entry states: what, evidence (`file:line` or a probe), current decision,
-  revisit trigger. Reference related issues by id.
-- Reviewers file newly discovered *durable* issues here rather than fixing
-  them in the branch under review; transient nits are fixed before the PR.
-- Some **Evidence** lines cite the maintainers' internal design records
-  (`findings §X`, `probes/*.py`) that are not part of this repository; the
-  stated empirical results were verified against the pinned GSAS-II and stand
-  on their own.
+- Each entry states: what, evidence (`file:line` where applicable), current
+  decision, revisit trigger. Reference related issues by id.
 
 ---
 
@@ -47,17 +39,18 @@ is *not* refined is used verbatim: GSAS-II computes peak positions from the raw,
 non-symmetric reciprocal metric tensor and returns a "successful" refinement with
 no error or warning.
 
-**Evidence.** findings §C.4; `probes/probe1_cell_mismatch.py` (distorted cubic,
-cell-refine off → d-spacings follow the distorted metric, Rwp 65.8%, success).
+**Evidence.** Verified against the pinned GSAS-II: a distorted cubic cell with
+cell-refine off → d-spacings follow the distorted metric (Rwp 65.8%, reported as
+a successful refinement).
 
-**Decision.** Pass-through, do not prevent (Branch 1). Preventing symmetry-illegal
+**Decision.** Pass-through, do not prevent. Preventing symmetry-illegal
 *cell values* is the future recipe builder's job. This behavior is also arguably
 *useful* — e.g. deliberately simulating symmetry-breaking/strain effects with a
 fixed distorted cell.
 
 **Revisit.** When a recipe builder exists, or if a cell-vs-symmetry metric
-validation option is added (design-options Fork 2/4). If added, it should be
-*opt-in / warn* so the legitimate symmetry-breaking-simulation use survives.
+validation option is added. If added, it should be *opt-in / warn* so the
+legitimate symmetry-breaking-simulation use survives.
 
 ---
 
@@ -68,10 +61,10 @@ parameter only for orthogonal cells. For monoclinic, only the unique-axis length
 is independently holdable; `a`, `c`, and the oblique angle are coupled. For
 triclinic, no direct parameter is individually holdable.
 
-**Evidence.** findings §C.6; `probes/probe4_oblique_cell_coupling.py` (hold `A2`
-in a monoclinic cell → `c` still moves 6.000→6.032).
+**Evidence.** Verified against the pinned GSAS-II: holding `A2` in a monoclinic
+cell → `c` still moves (6.000→6.032).
 
-**Decision (implemented in schema 0.26).** Branch 1 models the cell as
+**Decision (implemented in schema 0.26).** PowderLine models the cell as
 Laue-class **DOF-groups** (coupled oblique parameters form a single group) and
 applies **group-OR**: a group refines if any member is requested, and only
 whole unrefined groups are held (`powderline/constraints.py`,
@@ -84,7 +77,7 @@ a direct-parameter hold on an oblique cell is a nonlinear constraint outside
 GSAS-II's linear constraint system.
 
 **Revisit.** Transparency (which groups refined together) arrives with the
-Fork 9 provenance work. True independent oblique direct-parameter holds would
+provenance work. True independent oblique direct-parameter holds would
 require a fundamentally different (nonlinear) constraint approach — unlikely to
 change.
 
@@ -97,15 +90,15 @@ via `G2spc.SytSym`, inside a bare `except Exception: pass`, defaulting to `""`
 and `1` on failure. The recipe never states these, and a derivation failure is
 invisible.
 
-**Evidence.** `kicker.py:1170-1176`; findings §A.4.
+**Evidence.** `kicker.py:1170-1176`.
 
-**Decision.** Candidate for a dedicated branch (design-options Fork 7): make them
-explicit, validated recipe fields (7A), with an immediate safety patch to stop
-swallowing (7B). Improves resilience and decouples structural interpretation from
-GSAS-II for future multi-engine support.
+**Decision.** Candidate for dedicated work: make site symmetry and multiplicity
+explicit, validated recipe fields, with an immediate safety patch to stop
+swallowing the exception. Improves resilience and decouples structural
+interpretation from GSAS-II for future multi-engine support.
 
-**Revisit.** Branch ordering open (Fork 7 vs general constraints). At minimum,
-stop swallowing the exception when the surrounding area is next touched.
+**Revisit.** At minimum, stop swallowing the exception when the surrounding area
+is next touched.
 
 ---
 
@@ -116,11 +109,11 @@ were *actually* varied vs held-by-user vs held-by-symmetry vs frozen-by-limit is
 implicit (inferred from absence in `varyList`). No recipe-shaped output exists, so
 sequential/multi-step refinement needs external output→input mapping.
 
-**Evidence.** findings §A.5.
+**Evidence.** GSAS-II outputs are keyed by parameter name only; per-parameter
+disposition is inferred from absence in `varyList`, with no recipe-shaped output.
 
-**Decision.** Add explicit per-parameter disposition (design-options Fork 6/9C)
-and a JSON recipe-style output enabling round-trip / sequential refinement (Fork
-8). Deferred to their own branch(es).
+**Decision.** Add explicit per-parameter disposition and a JSON recipe-style
+output enabling round-trip / sequential refinement. Deferred to dedicated work.
 
 **Revisit.** When designing sequential-refinement support, or when a downstream
 data-management consumer needs machine-readable provenance.
@@ -134,13 +127,15 @@ etc.); constraint cascades/conflicts and frozen-variable notices go to stdout /
 `Rvals['msg']` only. PowderLine currently inspects none of these, inferring
 success solely from `hist.residuals['wR']` being non-None.
 
-**Evidence.** findings §A.6, §C.5; `SCRIPT:1585-1592`, `STRMAIN:607-641`.
+**Evidence.** Verified against GSAS-II internals: `proj.refine()` does not raise
+on failure, and constraint/frozen-variable notices go to stdout / `Rvals['msg']`
+only, which PowderLine does not currently inspect.
 
 **Decision.** Surface diagnostics via `proj.data` structures + captured console
-text (design-options Fork 9C), *without* adopting `do_refinements`. Minimal
-failure-detection may land in Branch 1; fuller provenance later.
+text, *without* adopting `do_refinements`. Minimal failure-detection may land
+early; fuller provenance later.
 
-**Revisit.** Bundle with Fork 6/8 provenance work.
+**Revisit.** Bundle with the provenance work.
 
 ---
 
@@ -151,12 +146,15 @@ but by resetting out-of-range variables to the limit *after* a refine and
 freezing them from the next one. Frozen state persists in the `.gpx`. Coordinate
 limits must target `Ax/Ay/Az` even though the varied variable is `dAx/dAy/dAz`.
 
-**Evidence.** findings §B.4; `STRMAIN:570-571,1196-1228`.
+**Evidence.** Verified against GSAS-II internals (`parmMin`/`parmMaxDict`
+clamp-and-freeze semantics; coordinate limits target `Ax/Ay/Az` while the varied
+variable is `dAx/dAy/dAz`).
 
-**Decision.** min/max deferred (Branch 2). When implemented, document the
-semantics honestly and surface frozen variables; do not imply hard bounds.
+**Decision.** min/max deferred to the general constraints & limits work. When
+implemented, document the semantics honestly and surface frozen variables; do
+not imply hard bounds.
 
-**Revisit.** Branch 2 (general constraints & limits).
+**Revisit.** With the general constraints & limits work.
 
 ---
 
@@ -168,13 +166,13 @@ Two-origin space groups default to origin 2; a recipe with origin-1 coordinates
 under such a symbol is silently wrong (no CIF symops exist to trigger GSAS-II's
 auto-shift, since PowderLine is file-less).
 
-**Evidence.** findings §D-Q2; `probes` rhombohedral check; `SPC:4195-4209`
-(origin table), `CIF:677-731` (CIF-only auto-shift).
+**Evidence.** Verified against GSAS-II internals: two-origin space groups default
+to origin 2, and the CIF-only auto-shift never fires because PowderLine is
+file-less (no CIF symops).
 
-**Decision.** Not addressed in Branch 1. Candidate for the convention-validation
-work (Fork 4): at minimum echo the inferred Laue class / setting back to the user.
-Origin-1 detection is hard without symmetry operators and better handled in the
-recipe builder.
+**Decision.** Candidate for the convention-validation work: at minimum echo the
+inferred Laue class / setting back to the user. Origin-1 detection is hard
+without symmetry operators and better handled in the recipe builder.
 
 **Revisit.** Convention-validation branch, or recipe-builder work.
 
@@ -235,7 +233,7 @@ was intentional, not a defect). Id retained so it is never reused.
 
 ---
 
-## KI-10 — `stop_server()` force-kill escalation raises on Windows and is untested `implemented (chore/cleanup) · minor`
+## KI-10 — `stop_server()` force-kill escalation raises on Windows and is untested `implemented · minor`
 
 **What.** `stop_server()` escalates to `os.kill(pid, signal.SIGKILL)` when the
 server has not exited 5 s after SIGTERM. `signal.SIGKILL` does not exist on
@@ -246,12 +244,11 @@ loop usually succeeds), and no test on any platform drives the timeout path —
 the unit tests cover only the graceful sequence
 (`tests/test_gsas_server_unit.py`, `alive_states = iter([True, False])`).
 
-**Evidence.** `src/powderline/gsas_server.py:371` (found in the chore/cleanup
-pre-PR review, 2026-08-11); `tests/test_gsas_server_unit.py:157`.
+**Evidence.** `src/powderline/gsas_server.py:371`;
+`tests/test_gsas_server_unit.py:157`.
 
-**Decision.** Fixed in the same pre-PR review session on the user's explicit
-instruction (overriding the Stage-3 file-don't-fix default): the escalation now
-uses `getattr(signal, "SIGKILL", signal.SIGTERM)` — on Windows,
+**Decision.** Fixed: the escalation now uses
+`getattr(signal, "SIGKILL", signal.SIGTERM)` — on Windows,
 `os.kill(pid, SIGTERM)` maps to `TerminateProcess`, the correct hard kill — and
 unit tests drive the escalation path (`tests/test_gsas_server_unit.py`).
 
@@ -269,12 +266,11 @@ keeps serving: clients silently use it while `status` reports "not running" and
 `stop` cannot stop it (there is no HTTP shutdown endpoint). A related latent
 bug in the auto-start path — the child env joined `PYTHONPATH` with a
 hardcoded `':'` instead of `os.pathsep` (wrong separator on Windows; benign in
-the pixi env, where powderline is pip-installed) — was **fixed on
-chore/cleanup** at the user's instruction; the discovery/lifecycle mismatch
-below remains open.
+the pixi env, where powderline is pip-installed) — has since been fixed; the
+discovery/lifecycle mismatch below remains open.
 
-**Evidence.** Reproduced live during the chore/cleanup pre-PR review
-(2026-08-12): `/health` on 19471 answered (`uptime_seconds≈13261`) with no
+**Evidence.** Reproduced live: `/health` on 19471 answered
+(`uptime_seconds≈13261`) with no
 `.pid`/`.port` files present and `status` reporting "not running".
 `src/powderline/gsas_server.py:332-347` (`is_server_running` = PID file),
 `src/powderline/gsas_client.py:40-49` (`is_server_available` = port probe),
@@ -302,8 +298,8 @@ mitigation, not a fix, and it keeps a (cheap) filesystem check in the client.
 **Evidence.** `gsas_server.py` security notes (server resolves `output_dir`
 in its own view); `gsas_client.py` `_server_output_visible` /
 `_submit_to_server_guarded`; `tests/test_gsas_client_visibility.py`.
-mp-simulate's `.chi` export already consumes the in-band `fit_profile` dict
-(fix/mp-integration-update), showing the in-band path works.
+mp-simulate's `.chi` export already consumes the in-band `fit_profile` dict,
+showing the in-band path works.
 
 **Decision.** Planned fix in a future server-protocol branch: the server runs
 in a server-local scratch directory and returns **all output artifacts

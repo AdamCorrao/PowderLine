@@ -30,7 +30,7 @@ extensions = [
     'myst_parser',             # Support Markdown files
 ]
 
-# GSAS-II is a heavy conda dependency absent from the RTD / doc-build
+# GSAS-II is a heavy conda dependency absent from the doc-build
 # environment; mock it so autodoc can import powderline.kicker
 # (kicker.py imports `from GSASII import ...` unguarded at module top).
 autodoc_mock_imports = ["GSASII"]
@@ -101,8 +101,11 @@ source_suffix = {
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
-html_theme = 'sphinx_rtd_theme'  # Read the Docs theme (install via pixi if not available)
+html_theme = 'sphinx_rtd_theme'  # Read the Docs *theme*; docs are hosted on GitHub Pages
 html_static_path = ['_static']
+
+# Canonical URL for the GitHub Pages site (used for sitemap/canonical links).
+html_baseurl = 'https://nsls2.github.io/PowderLine/'
 
 # -- Options for autodoc -----------------------------------------------------
 

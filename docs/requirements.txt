@@ -1,5 +1,6 @@
 # Documentation-build-only dependencies (not in pyproject.toml).
-# Versions track pixi.toml. Used by .readthedocs.yaml.
+# Versions track pixi.toml. Used by the GitHub Pages docs workflow
+# (.github/workflows/docs.yml, via `pixi run docs`).
 sphinx>=8.0,<9
 sphinx_rtd_theme>=3.0,<4
 myst-parser>=4.0,<5

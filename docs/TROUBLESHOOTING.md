@@ -86,7 +86,17 @@ Check that all required fields are present:
 
 ---
 
-## Schema Version Validation Errors
+## Schema Version and Migration Errors
+
+Schema **0.25 introduced breaking changes** and the current supported version is
+**0.26.0**. Recipes written for schema 0.24 or earlier trigger the validation errors
+below. Each entry gives the error message and the immediate fix. For the full
+version-by-version migration walkthrough — complete before/after recipes, the migration
+checklist, and field-by-field history — see [docs/SCHEMA_HISTORY.md](SCHEMA_HISTORY.md).
+
+**Currently Supported Version:** `"0.26.0"` only.
+
+**Note:** PowderLine validates schema version to ensure recipe compatibility with the current codebase. This prevents subtle bugs from using outdated recipe structures.
 
 ### Missing schema_version Field
 
@@ -130,26 +140,171 @@ schema_version
 
 **Cause:** Recipe uses an older or unsupported schema version.
 
+**Solution:** Update to schema 0.26.0 by making the following changes:
+- Add `"schema_name"` field (`"GSASII_Rietveld"` or `"GSASII_SPF"`)
+- Update `"schema_version"` to `"0.26.0"`
+- Wrap all refinement data in a `"payload"` object
+- Remove `"sample_name"` and `"recipe_description"` fields
+- Remove `"strategy"` from `refinement_controls`; use `schema_name` instead
+
+The per-error sections below cover each of these individually. See
+[docs/SCHEMA_HISTORY.md](SCHEMA_HISTORY.md) for the full migration reference.
+
+---
+
+### Missing schema_name Field
+
+**Error:**
+```
+❌ Recipe validation failed:
+1 validation error for RecipeModel
+schema_name
+  Field required [type=missing, input_value={...}, input_type=dict]
+```
+
+**Cause:** Schema 0.25 added the required `schema_name` field at the top level. It does **not** replace `schema_version` — both fields are required.
+
 **Solution:**
+Add `schema_name` at the top level (keeping `schema_version`):
+```javascript
+{
+  "schema_name": "GSASII_Rietveld",  // Required: "GSASII_Rietveld" or "GSASII_SPF"
+  "schema_version": "0.26.0",
+  "payload": {
+    "xrd_data": {...},
+    ...
+  }
+}
+```
 
-1. **Update to schema 0.26.0** by making the following changes manually:
-   - Add `"schema_name"` field (`"GSASII_Rietveld"` or `"GSASII_SPF"`)
-   - Update `"schema_version"` to `"0.26.0"`
-   - Wrap all refinement data in a `"payload"` object
-   - Remove `"sample_name"` and `"recipe_description"` fields
-   - Remove `"strategy"` from `refinement_controls`; use `schema_name` instead
+**Schema Options:**
+- `"GSASII_Rietveld"` - Full Rietveld refinement with structural phases
+- `"GSASII_SPF"` - Single peak fitting without structure
 
-   See [docs/SCHEMA_HISTORY.md](SCHEMA_HISTORY.md) for the full migration reference.
+---
 
-2. **Key changes for schema 0.26.0:**
-   - Add `"schema_name"` field (required)
-   - Update `"schema_version"` from `"0.24"` to `"0.26.0"`
-   - Wrap all refinement data in `"payload"` object
-   - Remove `"sample_name"` and `"recipe_description"` fields
+### Missing payload Field
 
-**Currently Supported Version:** `"0.26.0"` only
+**Error:**
+```
+❌ Recipe validation failed:
+1 validation error for RecipeModel
+payload
+  Field required [type=missing]
+```
 
-**Note:** PowderLine validates schema version to ensure recipe compatibility with the current codebase. This prevents subtle bugs from using outdated recipe structures.
+**Cause:** Schema 0.25 requires all recipe fields to be wrapped in a `payload` object.
+
+**Solution:**
+Wrap all recipe fields inside `payload`:
+```javascript
+// OLD (Schema 0.24):
+{
+  "schema_version": "0.24",
+  "xrd_data": {...},
+  "instrument": {...},
+  "phases": {...}
+}
+
+// NEW (Schema 0.26.0):
+{
+  "schema_name": "GSASII_Rietveld",
+  "schema_version": "0.26.0",
+  "payload": {
+    "xrd_data": {...},
+    "instrument": {...},
+    "phases": {...},
+    "refinement_controls": {...}  // Now required
+  }
+}
+```
+
+---
+
+### Missing refinement_controls Field
+
+**Error:**
+```
+❌ Recipe validation failed:
+1 validation error for PayloadModel
+refinement_controls
+  Field required [type=missing, input_value={...}, input_type=dict]
+```
+
+**Cause:** Schema 0.25 makes `refinement_controls` required (was optional in 0.24).
+
+**Solution:**
+Add `refinement_controls` inside `payload` with `refinement_cycles`:
+```javascript
+{
+  "schema_name": "GSASII_Rietveld",
+  "schema_version": "0.26.0",
+  "payload": {
+    "xrd_data": {...},
+    "refinement_controls": {
+      "refinement_cycles": 5
+    },
+    ...
+  }
+}
+```
+
+**Note:** The refinement workflow is determined by `schema_name` (either `"GSASII_Rietveld"` for full Rietveld refinement or `"GSASII_SPF"` for single peak fitting).
+
+---
+
+### Old-Style Recipe (Fields at Top Level)
+
+**Error:**
+```
+❌ Recipe validation failed:
+2 validation errors for RecipeModel
+schema_name
+  Field required [type=missing, input_value={...}, input_type=dict]
+payload
+  Field required [type=missing, input_value={...}, input_type=dict]
+```
+
+**Cause:** The recipe uses the pre-0.25 flat layout: refinement fields (`xrd_data`, `instrument`, `phases`, ...) sit at the top level instead of inside a `payload` object, and `schema_name` is absent. Note that the schema does **not** reject unknown fields (`RecipeModel` and `PayloadModel` use `extra='allow'` for schema evolution), so the leftover top-level fields themselves produce no error — the failure you actually see is the missing `payload` (and `schema_name`).
+
+**Solution:**
+Add `schema_name`, update `schema_version`, and move all recipe fields inside `payload`:
+```javascript
+// OLD (Schema 0.24) - fields at top level:
+{
+  "schema_version": "0.24",
+  "xrd_data": {...},
+  "instrument": {...},
+  "phases": {...}
+}
+
+// NEW (Schema 0.26.0) - fields inside payload:
+{
+  "schema_name": "GSASII_Rietveld",
+  "schema_version": "0.26.0",
+  "payload": {
+    "xrd_data": {...},
+    "instrument": {...},
+    "phases": {...},
+    "refinement_controls": {...}
+  }
+}
+```
+
+---
+
+### Removed Fields (`sample_name`, `recipe_description`) Are Silently Ignored
+
+Schema 0.25 removed the `sample_name` and `recipe_description` fields; output files now use fixed names (`dummy.gpx`, `dummy.lst`). Because the schema allows extra fields, a recipe that still contains them validates **without any error** — the fields are simply ignored. Remove them anyway to keep recipes honest.
+
+**Note:** Sample names should be managed externally via directory names (e.g., `example_LaB6/`) or documentation files (e.g., `DESCRIPTION.md`).
+
+**Validation:**
+```bash
+pixi run kicker --validate-only path/to/input.json
+```
+
+For the complete migration example, before/after recipes, and the migration checklist, see [docs/SCHEMA_HISTORY.md](SCHEMA_HISTORY.md).
 
 ---
 
@@ -241,35 +396,6 @@ FCJ via the Thompson-Cox-Hastings profile when SH/L is nonzero), but background
 peaks are not, and profile details differ. LaB6 reference: 9.63% vs 6.01%, both
 below the nominal noise floor (χ² < 1: integrated-detector weights overestimate
 σ). Compare lattice parameters, not Rwp, across engines.
-
----
-
-## PowderLine Module Import Error
-
-**Error:**
-```
-ModuleNotFoundError: No module named 'powderline.schema'
-```
-
-**Cause:** PYTHONPATH doesn't include `src/` directory.
-
-**Solution:**
-1. **Use pixi run commands** (automatically sets PYTHONPATH):
-   ```bash
-   pixi run kicker input.json
-   ```
-
-2. **Or set PYTHONPATH manually:**
-   ```bash
-   export PYTHONPATH=$PWD/src:$PYTHONPATH
-   python src/powderline/kicker.py input.json
-   ```
-
-3. **Check pixi.toml kicker task has PYTHONPATH:**
-   ```toml
-   [tasks]
-   kicker = { cmd = "python src/powderline/kicker.py", env = { PYTHONPATH = "$PWD/src:$PYTHONPATH" } }
-   ```
 
 ---
 
@@ -402,47 +528,6 @@ Check that:
 
 ---
 
-## Test Failures
-
-**Error:**
-```
-FAILED tests/test_example_LaB6_regression.py::test_example_LaB6_regression
-AssertionError: Final Rwp mismatch: expected 6.502%, got 6.505%
-```
-
-**Cause:** Refinement results changed from reference.
-
-**Solution:**
-1. **Determine if change is expected:**
-   - Did you modify refinement parameters?
-   - Did GSAS-II version change?
-   - Is difference significant (>0.1% Rwp)?
-
-2. **Check `dummy.lst` for details:**
-   ```bash
-   diff output/dummy.lst examples/example_LaB6/output/dummy.lst
-   ```
-
-3. **Update reference if change is intentional:**
-   ```bash
-   # Run refinement
-   pixi run kicker examples/example_LaB6/input.json
-
-   # Copy new outputs as reference
-   cp output/* examples/example_LaB6/output/
-
-   # Commit updated references
-   git add examples/example_LaB6/output/
-   git commit -m "Update example_LaB6 reference after <reason>"
-   ```
-
-4. **If unexpected, investigate:**
-   - Check for GSAS-II updates: `pixi list | grep gsas-ii`
-   - Look for code changes that might affect refinement
-   - Compare parameter values in .lst files
-
----
-
 ## Pydantic Validation Errors
 
 **Error:**
@@ -499,208 +584,6 @@ phases.0.parameterization.unit_cell.a
    ```bash
    cat examples/example_LaB6/input.json
    ```
-
----
-
-## Common Schema Migration Errors
-
-**Schema 0.25 introduced breaking changes.** If migrating from schema 0.24 or earlier, you'll encounter these errors:
-
-### Error: Missing `schema_name` Field
-
-**Error:**
-```
-❌ Recipe validation failed:
-1 validation error for RecipeModel
-schema_name
-  Field required [type=missing, input_value={...}, input_type=dict]
-```
-
-**Cause:** Schema 0.25 added the required `schema_name` field at the top level. It does **not** replace `schema_version` — both fields are required.
-
-**Solution:**
-Add `schema_name` at the top level (keeping `schema_version`):
-```javascript
-{
-  "schema_name": "GSASII_Rietveld",  // Required: "GSASII_Rietveld" or "GSASII_SPF"
-  "schema_version": "0.26.0",
-  "payload": {
-    "xrd_data": {...},
-    ...
-  }
-}
-```
-
-**Schema Options:**
-- `"GSASII_Rietveld"` - Full Rietveld refinement with structural phases
-- `"GSASII_SPF"` - Single peak fitting without structure
-
----
-
-### Error: Missing `payload` Field
-
-**Error:**
-```
-❌ Recipe validation failed:
-1 validation error for RecipeModel
-payload
-  Field required [type=missing]
-```
-
-**Cause:** Schema 0.25 requires all recipe fields to be wrapped in a `payload` object.
-
-**Solution:**
-Wrap all recipe fields inside `payload`:
-```javascript
-// OLD (Schema 0.24):
-{
-  "schema_version": "0.24",
-  "xrd_data": {...},
-  "instrument": {...},
-  "phases": {...}
-}
-
-// NEW (Schema 0.26.0):
-{
-  "schema_name": "GSASII_Rietveld",
-  "schema_version": "0.26.0",
-  "payload": {
-    "xrd_data": {...},
-    "instrument": {...},
-    "phases": {...},
-    "refinement_controls": {...}  // Now required
-  }
-}
-```
-
----
-
-### Error: Missing `refinement_controls` Field
-
-**Error:**
-```
-❌ Recipe validation failed:
-1 validation error for PayloadModel
-refinement_controls
-  Field required [type=missing, input_value={...}, input_type=dict]
-```
-
-**Cause:** Schema 0.25 makes `refinement_controls` required (was optional in 0.24).
-
-**Solution:**
-Add `refinement_controls` inside `payload` with `refinement_cycles`:
-```javascript
-{
-  "schema_name": "GSASII_Rietveld",
-  "schema_version": "0.26.0",
-  "payload": {
-    "xrd_data": {...},
-    "refinement_controls": {
-      "refinement_cycles": 5
-    },
-    ...
-  }
-}
-```
-
-**Note:** The refinement workflow is determined by `schema_name` (either `"GSASII_Rietveld"` for full Rietveld refinement or `"GSASII_SPF"` for single peak fitting).
-
----
-
-### Error: Old-Style Recipe (Fields at Top Level)
-
-**Error:**
-```
-❌ Recipe validation failed:
-2 validation errors for RecipeModel
-schema_name
-  Field required [type=missing, input_value={...}, input_type=dict]
-payload
-  Field required [type=missing, input_value={...}, input_type=dict]
-```
-
-**Cause:** The recipe uses the pre-0.25 flat layout: refinement fields (`xrd_data`, `instrument`, `phases`, ...) sit at the top level instead of inside a `payload` object, and `schema_name` is absent. Note that the schema does **not** reject unknown fields (`RecipeModel` and `PayloadModel` use `extra='allow'` for schema evolution), so the leftover top-level fields themselves produce no error — the failure you actually see is the missing `payload` (and `schema_name`).
-
-**Solution:**
-Add `schema_name`, update `schema_version`, and move all recipe fields inside `payload`:
-```javascript
-// OLD (Schema 0.24) - fields at top level:
-{
-  "schema_version": "0.24",
-  "xrd_data": {...},
-  "instrument": {...},
-  "phases": {...}
-}
-
-// NEW (Schema 0.26.0) - fields inside payload:
-{
-  "schema_name": "GSASII_Rietveld",
-  "schema_version": "0.26.0",
-  "payload": {
-    "xrd_data": {...},
-    "instrument": {...},
-    "phases": {...},
-    "refinement_controls": {...}
-  }
-}
-```
-
----
-
-### Removed Fields (`sample_name`, `recipe_description`) Are Silently Ignored
-
-Schema 0.25 removed the `sample_name` and `recipe_description` fields; output files now use fixed names (`dummy.gpx`, `dummy.lst`). Because the schema allows extra fields, a recipe that still contains them validates **without any error** — the fields are simply ignored. Remove them anyway to keep recipes honest.
-
-**Note:** Sample names should be managed externally via directory names (e.g., `example_LaB6/`) or documentation files (e.g., `DESCRIPTION.md`).
-
----
-
-### Complete Migration Example
-
-**Before (Schema 0.24):**
-```javascript
-{
-  "schema_version": "0.24",
-  "sample_name": "LaB6_test",
-  "xrd_data": {...},
-  "instrument": {...},
-  "phases": {...},
-  "refinement_controls": {
-    "refinement_cycles": 5
-  }
-}
-```
-
-**After (Schema 0.26.0):**
-```javascript
-{
-  "schema_name": "GSASII_Rietveld",
-  "schema_version": "0.26.0",
-  "payload": {
-    "xrd_data": {...},
-    "instrument": {...},
-    "phases": {...},
-    "refinement_controls": {
-      "refinement_cycles": 5
-    }
-  }
-}
-```
-
-**Migration Checklist:**
-- ✅ Added `schema_name` field (required: `"GSASII_Rietveld"` or `"GSASII_SPF"`)
-- ✅ Added `schema_version` field (required: `"0.26.0"`)
-- ✅ All recipe fields wrapped in `payload` object
-- ✅ `sample_name` removed (use external documentation like `DESCRIPTION.md`)
-- ✅ `refinement_controls` is now required
-- ✅ Output files use fixed names: `dummy.gpx`, `dummy.lst`
-
-**Validation:**
-```bash
-pixi run kicker --validate-only path/to/input.json
-```
-
-**Full Migration Guide:** See [SCHEMA_HISTORY.md](SCHEMA_HISTORY.md)
 
 ---
 
@@ -877,62 +760,6 @@ immune either way — it is built from the in-band result data.)
    pixi run kicker input.json --no-server
    pixi run mp-simulate --material-id mp-2680 --no-server --output patterns/
    ```
-
----
-
-## Stale Server (Old Code Running)
-
-**Problem:** Tests fail or code changes don't take effect, but code looks correct.
-
-**Cause:** A long-running server started before your code changes still has the old code loaded in memory. Python caches imported modules for performance - the server doesn't automatically reload code when files change.
-
-**Symptoms:**
-- Tests pass right after a server restart (or a `pixi run kicker ... --no-server` run works) but fail against a long-running server
-- Code changes don't seem to have any effect
-- Errors mention bugs you've already fixed
-
-**Solution:**
-
-1. **Kill all running servers:**
-   ```bash
-   pkill -9 -f "gsas_server|powderline.*server"
-   ```
-
-2. **Verify no servers are running:**
-   ```bash
-   ps aux | grep -E "gsas|powderline" | grep -v grep
-   # Should show no results
-   ```
-
-3. **Run tests again:**
-   ```bash
-   pixi run test
-   # Or for specific tests:
-   pixi run pytest tests/test_schema.py -v
-   ```
-
-**Best Practices:**
-
-- **During development:** Restart the server after code changes (`pixi run gsas-server restart`), or use the kicker CLI's `--no-server` flag
-- **For integration tests:** Restart (or stop) the server before running the test suite to ensure deterministic behavior
-- **Production use:** Server caching is beneficial (4-6x speedup) - just restart after deployments
-
-**Why this happens:**
-
-When the server starts, it imports `kicker.py` and GSAS-II libraries into memory. These stay loaded for performance (first refinement ~12s, subsequent ~2-3s). If you edit the source code, the server still has the old version in Python's `sys.modules` cache. The server would need to be restarted to pick up changes.
-
-**Development workflow:**
-
-```bash
-# Make code changes...
-vim src/powderline/kicker.py
-
-# Kill old server
-pkill -f gsas_server
-
-# Tests will start fresh server or use subprocess mode
-pixi run test
-```
 
 ---
 
@@ -1186,6 +1013,139 @@ Peak 10 at 2θ=67.890° - Status: NaN_failed
 - **Sequential/iterative strategies removed:** Schema 0.25 removed the sequential and iterative workflow options (not planned for future development). Each schema performs a single refinement type.
 - **No workflow customization:** The `strategy` field no longer exists. Refinement behavior is entirely determined by `schema_name`.
 - **Separate runs for multi-stage workflows:** If you need peak fitting followed by Rietveld refinement, run two separate PowderLine jobs (one with `GSASII_SPF`, then one with `GSASII_Rietveld`).
+
+---
+
+## For contributors
+
+The material in this section is for people working **on** PowderLine — modifying its
+source, updating regression references, or running the development server — not for people
+who are only running refinements. If you are just using PowderLine, everything you need is
+in the sections above.
+
+### PowderLine Module Import Error
+
+**Error:**
+```
+ModuleNotFoundError: No module named 'powderline.schema'
+```
+
+**Cause:** PYTHONPATH doesn't include `src/` directory.
+
+**Solution:**
+1. **Use pixi run commands** (automatically sets PYTHONPATH):
+   ```bash
+   pixi run kicker input.json
+   ```
+
+2. **Or set PYTHONPATH manually:**
+   ```bash
+   export PYTHONPATH=$PWD/src:$PYTHONPATH
+   python src/powderline/kicker.py input.json
+   ```
+
+3. **Check pixi.toml kicker task has PYTHONPATH:**
+   ```toml
+   [tasks]
+   kicker = { cmd = "python src/powderline/kicker.py", env = { PYTHONPATH = "$PWD/src:$PYTHONPATH" } }
+   ```
+
+---
+
+### Test Failures
+
+**Error:**
+```
+FAILED tests/test_example_LaB6_regression.py::test_example_LaB6_regression
+AssertionError: Final Rwp mismatch: expected 6.502%, got 6.505%
+```
+
+**Cause:** Refinement results changed from reference.
+
+**Solution:**
+1. **Determine if change is expected:**
+   - Did you modify refinement parameters?
+   - Did GSAS-II version change?
+   - Is difference significant (>0.1% Rwp)?
+
+2. **Check `dummy.lst` for details:**
+   ```bash
+   diff output/dummy.lst examples/example_LaB6/output/dummy.lst
+   ```
+
+3. **Update reference if change is intentional:**
+   ```bash
+   # Run refinement
+   pixi run kicker examples/example_LaB6/input.json
+
+   # Copy new outputs as reference
+   cp output/* examples/example_LaB6/output/
+
+   # Commit updated references
+   git add examples/example_LaB6/output/
+   git commit -m "Update example_LaB6 reference after <reason>"
+   ```
+
+4. **If unexpected, investigate:**
+   - Check for GSAS-II updates: `pixi list | grep gsas-ii`
+   - Look for code changes that might affect refinement
+   - Compare parameter values in .lst files
+
+---
+
+### Stale Server (Old Code Running)
+
+**Problem:** Tests fail or code changes don't take effect, but code looks correct.
+
+**Cause:** A long-running server started before your code changes still has the old code loaded in memory. Python caches imported modules for performance - the server doesn't automatically reload code when files change.
+
+**Symptoms:**
+- Tests pass right after a server restart (or a `pixi run kicker ... --no-server` run works) but fail against a long-running server
+- Code changes don't seem to have any effect
+- Errors mention bugs you've already fixed
+
+**Solution:**
+
+1. **Kill all running servers:**
+   ```bash
+   pkill -9 -f "gsas_server|powderline.*server"
+   ```
+
+2. **Verify no servers are running:**
+   ```bash
+   ps aux | grep -E "gsas|powderline" | grep -v grep
+   # Should show no results
+   ```
+
+3. **Run tests again:**
+   ```bash
+   pixi run test
+   # Or for specific tests:
+   pixi run pytest tests/test_schema.py -v
+   ```
+
+**Best Practices:**
+
+- **During development:** Restart the server after code changes (`pixi run gsas-server restart`), or use the kicker CLI's `--no-server` flag
+- **For integration tests:** Restart (or stop) the server before running the test suite to ensure deterministic behavior
+- **Production use:** Server caching is beneficial (4-6x speedup) - just restart after deployments
+
+**Why this happens:**
+
+When the server starts, it imports `kicker.py` and GSAS-II libraries into memory. These stay loaded for performance (first refinement ~12s, subsequent ~2-3s). If you edit the source code, the server still has the old version in Python's `sys.modules` cache. The server would need to be restarted to pick up changes.
+
+**Development workflow:**
+
+```bash
+# Make code changes...
+vim src/powderline/kicker.py
+
+# Kill old server
+pkill -f gsas_server
+
+# Tests will start fresh server or use subprocess mode
+pixi run test
+```
 
 ---
 

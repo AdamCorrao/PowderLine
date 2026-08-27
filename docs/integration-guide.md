@@ -46,7 +46,7 @@ powderline = { path = "/path/to/PowderLine", editable = true }  # ← change thi
 (linux-64/win-64/osx-arm64). It is not on PyPI or conda-forge, so it must be declared
 in your own workspace rather than pulled in transitively by PowderLine.
 
-> **Reproducibility tip**: pin `gsas-ii` to the same `rev` PowderLine uses (see the
+> **Reproducibility tip**: pin `GSAS-II` to the same `rev` PowderLine uses (see the
 > `[dependencies]` block in the repo's `pixi.toml`) rather than a moving upstream
 > branch, because GSAS-II profile-calculation changes can shift refinement results.
 
@@ -240,7 +240,8 @@ apples-to-apples metric.
 For the engine architecture and how to add a backend, see the
 **Adding a Refinement Engine** section of the [developer guide](DEVELOPMENT.md).
 The full design dossier and backend survey live in the private
-[PowderLine-devkit](https://github.com/NSLS2/PowderLine-devkit).
+[PowderLine-devkit](https://github.com/NSLS2/PowderLine-devkit) — a maintainers'
+repository; access is available on request.
 
 ---
 
@@ -253,6 +254,6 @@ version pin:
 # pixi_full.toml — after conda-forge release
 [dependencies]
 powderline = ">=1.0"
-# gsas-ii may still need to be declared here until it too is on conda-forge
+# GSAS-II may still need to be declared here until it too is on conda-forge
 GSAS-II = { git = "https://github.com/tacaswell/GSAS-II", rev = "enh/pixi_pkg" }
 ```

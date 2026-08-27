@@ -8,7 +8,7 @@ build-backend = "hatchling.build"
 name = "powderline"
 dynamic = ["version"]
 requires-python = ">=3.10"
-description = "Automated powder X-ray diffraction Rietveld refinements using GSAS-II"
+description = "Automated powder X-ray diffraction refinement from a declarative JSON recipe — runs GSAS-II (default), TOPAS v7, or easydiffraction"
 readme = "README.md"
 license = "BSD-3-Clause"
 license-files = ["LICENSE"]
@@ -56,7 +56,7 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://github.com/NSLS2/PowderLine"
-Documentation = "https://powderline.readthedocs.io"
+Documentation = "https://nsls2.github.io/PowderLine/"
 Repository = "https://github.com/NSLS2/PowderLine"
 Issues = "https://github.com/NSLS2/PowderLine/issues"
 

@@ -2,7 +2,7 @@
 
 ## Overview
 
-The `mp-simulate` tool fetches crystal structures from the Materials Project database and generates simulated powder diffraction patterns using GSAS-II.
+The `mp-simulate` tool fetches crystal structures from the Materials Project database and generates simulated powder diffraction patterns. Simulation runs through PowderLine's default GSAS-II engine.
 
 ## Requirements
 

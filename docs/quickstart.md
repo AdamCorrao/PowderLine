@@ -18,7 +18,7 @@ the repository root.
 ## 1. Clone and install
 
 ```bash
-git clone https://github.com/nsls2/PowderLine.git
+git clone https://github.com/NSLS2/PowderLine.git
 cd PowderLine
 pixi install
 ```
@@ -36,6 +36,11 @@ pixi run kicker examples/example_LaB6/input.json
 
 You'll see progress and a final weighted-profile R-factor (Rwp). That's a
 complete Rietveld refinement driven entirely by the JSON recipe.
+
+> **One recipe, multiple engines.** GSAS-II is the default engine, but the same
+> recipe also runs through Bruker TOPAS v7 or the open-source easydiffraction.
+> See [Getting Started](getting-started.rst) for `engine="topas"` /
+> `engine="easydiffraction"`.
 
 ## 3. Read the output
 

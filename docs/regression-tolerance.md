@@ -21,7 +21,7 @@ per-parameter, grouped by the `category` column. Metric: relative difference
 ## Windows results (Python 3.13.14, GSASII 5.7.9, win-64 source build)
 
 Reference = committed Linux output. Full example set at measurement time
-(including several examples since moved to private storage); all shapes
+(including several examples that are not part of the public example set); all shapes
 matched exactly.
 
 ### Per-example overall `value` max relative drift
@@ -34,8 +34,8 @@ matched exactly.
 | example_DRX_33_strainonly | 8.5e-6 | `:0:Back;2` |
 | example_LaB6 | 0 | (identical) |
 
-(The measurement covered a larger example set — several examples, since moved
-to private storage, also reproduced the Linux reference **byte-for-byte**;
+(The measurement covered a larger example set — several examples not part of the
+public example set also reproduced the Linux reference **byte-for-byte**;
 `example_LaB6` is the byte-identical case shown here.)
 
 ### Per parameter-class max relative drift (across all examples)
@@ -87,8 +87,8 @@ Validation: with these tolerances all 9 examples' `refined_parameters.csv` and a
 `example_DRX_33_atomrefine` is the only example needing the loose class tolerance.
 Its recipe refines correlated size **and** strain broadening (+ the `;mx` mix terms)
 on top of atom parameters, which is inherently ill-posed. Making it well-conditioned
-was investigated on Linux and **rejected by the maintainer**; keep the baseline
-recipe + `other → loose_rtol=1e-2`. Evidence (all variants run on linux-64, GSASII
+was investigated on Linux and **not adopted as a design decision**; the baseline
+recipe + `other → loose_rtol=1e-2` is kept. Evidence (all variants run on linux-64, GSASII
 5.7.9):
 
 | Variant | Outcome |
@@ -101,12 +101,12 @@ recipe + `other → loose_rtol=1e-2`. Evidence (all variants run on linux-64, GS
 Additionally, **any** edit to this recipe breaks two committed TOPAS goldens —
 `test_declarative_examples_inp_and_xye_match_golden[atomrefine]` (golden INP,
 regenerable on Linux) and `test_declarative_examples_roundtrip_reproduce_committed[atomrefine]`,
-which round-trips against the maintainer's **real Windows TOPAS** `_results.csv`
+which round-trips against a **real Windows TOPAS** `_results.csv`
 under `output/topas/` (**not** regenerable on Linux — needs `tc.exe`). Since the
-requested change diverges and every variant entangles the Windows-only TOPAS path
-while not cleanly achieving tight-and-good-fit, the maintainer elected to keep the
-baseline recipe and the scoped loose tolerance. **Do not re-attempt without a
-Windows TOPAS session to regenerate the roundtrip reference end-to-end.**
+candidate change diverges and every variant entangles the Windows-only TOPAS path
+while not cleanly achieving tight-and-good-fit, the design decision is to keep the
+baseline recipe and the scoped loose tolerance. Caveat: re-attempting this change
+requires a Windows TOPAS session to regenerate the roundtrip reference end-to-end.
 
 ## Linux results (Python 3.13.14, GSASII 5.7.9, linux-64 conda-build)
 

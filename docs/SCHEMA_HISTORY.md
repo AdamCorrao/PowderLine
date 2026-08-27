@@ -262,20 +262,15 @@ Early development versions focused on basic Rietveld refinement capabilities:
 
 ---
 
-## Phase 1A Origin (Schema 0.21–0.24)
+## Origin (Schema 0.21–0.24)
 
 PowderLine began as a minimal proof-of-concept to confirm that GSAS-II could be driven
-from a JSON file via the G2scripts API. The original Phase 1A completion criteria were:
+from a JSON file via the G2scripts API. The initial scope established the directory
+structure and documentation, a JSON schema derived from 3–5 real examples, JSON loading
+and schema validation in `kicker.py`, output written to a directory, at least three
+refinement types working end-to-end, and basic tests covering JSON loading and validation.
 
-- ✅ Directory structure and documentation created
-- ✅ JSON schema defined based on 3–5 real examples
-- ✅ `kicker.py` loads JSON and validates against schema
-- ✅ Output saved to directory
-- ✅ At least 3 different refinement types work end-to-end
-- ✅ Basic tests verify JSON loading and validation
-- ✅ README documents installation and usage
-
-Features explicitly deferred from Phase 1A (REST API, structured output parsing,
+Features deferred from that initial scope (REST API, structured output parsing,
 configuration system, programmatic Python API) were subsequently delivered in schema
 0.25.1 and 0.25.2.
 
@@ -295,8 +290,10 @@ configuration system, programmatic Python API) were subsequently delivered in sc
 
 ## Migration Philosophy
 
-For this private development repository:
-- **No backward compatibility guarantees**: Breaking changes are acceptable during active development
-- **Schema version required**: All recipes must declare `"schema_version"` for validation
-- **Clean breaks preferred**: Clear deprecation of obsolete features rather than maintaining migration paths
-- **Git history is source of truth**: This document provides high-level context only
+- **Explicit schema versions**: Every recipe declares its `"schema_version"`. The code
+  accepts one current version — **0.26.0** — and recipes written for older versions must
+  be migrated to it following the per-version notes above.
+- **Clean breaks with migration guidance**: Obsolete features are clearly deprecated, and
+  each version entry documents the migration steps rather than maintaining indefinite
+  compatibility shims.
+- **Git history is source of truth**: This document provides high-level context only.
