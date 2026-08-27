@@ -678,62 +678,66 @@ class PayloadModel(BaseModel):
 class RecipeModel(BaseModel):
     """Top-level refinement recipe model for schema 0.26.
 
-    **Architecture:** Two-tier structure (since schema 0.25) with schema metadata
-    and payload:
+    **Architecture**: Two-tier structure (since schema 0.25) with schema
+    metadata and payload:
 
-    ```json
-    {
-        "schema_name": "GSASII_Rietveld",
-        "schema_version": "0.26.0",
-        "payload": {
-            "xrd_data": {...},
-            "phases": {...},
-            ...
+    .. code-block:: javascript
+
+        {
+            "schema_name": "GSASII_Rietveld",
+            "schema_version": "0.26.0",
+            "payload": {
+                "xrd_data": {...},
+                "phases": {...},
+                ...
+            }
         }
-    }
-    ```
 
-    **Schema Types:**
-    - `GSASII_Rietveld`: Full Rietveld refinement (requires phases + instrument)
-    - `GSASII_SPF`: Single peak fitting only (requires single_peaks, forbids phases)
+    **Schema Types**:
 
-    **Validation Rules:**
-    - GSASII_Rietveld: `payload.phases` must be present, `payload.instrument` required
-    - GSASII_SPF: `payload.single_peaks` must be present, `payload.phases` must be None
+    - ``GSASII_Rietveld``: Full Rietveld refinement (requires phases + instrument)
+    - ``GSASII_SPF``: Single peak fitting only (requires single_peaks, forbids phases)
 
-    **Breaking Changes from 0.24:**
+    **Validation Rules**:
+
+    - GSASII_Rietveld: ``payload.phases`` must be present, ``payload.instrument`` required
+    - GSASII_SPF: ``payload.single_peaks`` must be present, ``payload.phases`` must be None
+
+    **Breaking Changes from 0.24**:
+
     - Removed multi-strategy refinement system (strategy, spf_first, iterative_cycles, etc.)
     - Removed sample_name, recipe_description, software_package from payload
     - Added schema_name for explicit workflow type declaration
     - Payload structure replaces flat top-level fields
 
-    **Migration from 0.24 to 0.25:**
-    ```python
-    # Old (0.24):
-    {
-        "schema_version": "0.24",
-        "sample_name": "LaB6",
-        "xrd_data": {...},
-        "phases": {...},
-        "refinement_controls": {
-            "strategy": "structural_only",
-            "refinement_cycles": 5
-        }
-    }
+    **Migration from 0.24 to 0.25**:
 
-    # New (0.25):
-    {
-        "schema_name": "GSASII_Rietveld",
-        "schema_version": "0.26.0",
-        "payload": {
+    .. code-block:: javascript
+
+        // Old (0.24):
+        {
+            "schema_version": "0.24",
+            "sample_name": "LaB6",
             "xrd_data": {...},
             "phases": {...},
             "refinement_controls": {
+                "strategy": "structural_only",
                 "refinement_cycles": 5
             }
         }
-    }
-    ```
+
+        // New (0.25):
+        {
+            "schema_name": "GSASII_Rietveld",
+            "schema_version": "0.26.0",
+            "payload": {
+                "xrd_data": {...},
+                "phases": {...},
+                "refinement_controls": {
+                    "refinement_cycles": 5
+                }
+            }
+        }
     """
 
     model_config = ConfigDict(extra='allow')

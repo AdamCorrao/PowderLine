@@ -40,7 +40,7 @@ not registered (keeps the register and dev history lean).
 
 ---
 
-### KI-01 — Malformed fixed cell computes a wrong pattern silently `accepted · critical`
+## KI-01 — Malformed fixed cell computes a wrong pattern silently `accepted · critical`
 
 **What.** A metrically symmetry-illegal cell (e.g. cubic phase with `a≠b≠c`) that
 is *not* refined is used verbatim: GSAS-II computes peak positions from the raw,
@@ -61,7 +61,7 @@ validation option is added (design-options Fork 2/4). If added, it should be
 
 ---
 
-### KI-02 — Oblique (monoclinic/triclinic) per-parameter cell holds are limited `implemented (0.26), limitation inherent · minor`
+## KI-02 — Oblique (monoclinic/triclinic) per-parameter cell holds are limited `implemented (0.26), limitation inherent · minor`
 
 **What.** Holding a reciprocal-metric A-term equals holding a *direct* cell
 parameter only for orthogonal cells. For monoclinic, only the unique-axis length
@@ -90,7 +90,7 @@ change.
 
 ---
 
-### KI-03 — Site symmetry & multiplicity are derived, and failures are swallowed `planned-fix · major`
+## KI-03 — Site symmetry & multiplicity are derived, and failures are swallowed `planned-fix · major`
 
 **What.** PowderLine derives each atom's site symmetry and multiplicity at load
 via `G2spc.SytSym`, inside a bare `except Exception: pass`, defaulting to `""`
@@ -109,7 +109,7 @@ stop swallowing the exception when the surrounding area is next touched.
 
 ---
 
-### KI-04 — Recipe→output provenance is implicit; no round-trip `planned-fix · major`
+## KI-04 — Recipe→output provenance is implicit; no round-trip `planned-fix · major`
 
 **What.** Outputs are CSV/txt keyed by GSAS-II parameter names. Which parameters
 were *actually* varied vs held-by-user vs held-by-symmetry vs frozen-by-limit is
@@ -127,7 +127,7 @@ data-management consumer needs machine-readable provenance.
 
 ---
 
-### KI-05 — GSAS-II refinement failures & constraint warnings don't raise `planned-fix · major`
+## KI-05 — GSAS-II refinement failures & constraint warnings don't raise `planned-fix · major`
 
 **What.** `proj.refine()` does not raise on refinement failure (singular matrix,
 etc.); constraint cascades/conflicts and frozen-variable notices go to stdout /
@@ -144,7 +144,7 @@ failure-detection may land in Branch 1; fuller provenance later.
 
 ---
 
-### KI-06 — GSAS-II parameter-limit (min/max) semantics are clamp-and-freeze `watch · minor`
+## KI-06 — GSAS-II parameter-limit (min/max) semantics are clamp-and-freeze `watch · minor`
 
 **What.** GSAS-II enforces `parmMin/parmMaxDict` not as in-loop box constraints
 but by resetting out-of-range variables to the limit *after* a refine and
@@ -160,7 +160,7 @@ semantics honestly and surface frozen variables; do not imply hard bounds.
 
 ---
 
-### KI-07 — Space-group setting (hexagonal vs rhombohedral, origin choice) is unvalidated `watch · critical`
+## KI-07 — Space-group setting (hexagonal vs rhombohedral, origin choice) is unvalidated `watch · critical`
 
 **What.** `R -3 c` (hexagonal axes) and `R -3 c R` (rhombohedral axes) are both
 accepted but imply different cell parameterizations and A-term equivalence sets.
@@ -180,48 +180,62 @@ recipe builder.
 
 ---
 
-### KI-08 — Sphinx build emits reST warnings from `RecipeModel` docstring `watch · nit`
+## KI-08 — Sphinx build emits reST warnings from `RecipeModel` docstring `fixed · nit`
 
-**What.** A clean `pixi run docs` builds successfully (exit 0) but prints
-**~330 warnings** (re-measured 2026-08-17 on the public-release branch), all
-pre-existing or cosmetic:
-- ~290 autodoc cross-reference warnings (`py:class reference target not
-  found`) for pydantic internals — `PlainSerializer`, `BaseModel`,
-  `ConfigDict`, and the `Annotated[..., PlainSerializer(lambda ...)]` field
-  types in `schema.py` that autodoc can't resolve;
-- ~18 docutils WARNING/ERROR lines from the `RecipeModel` docstring, whose
+**What.** A clean `pixi run docs` (which runs `sphinx-build -W --keep-going`,
+so this *did* already fail the build) printed **266 warnings**
+(re-measured 2026-08-27), all pre-existing or cosmetic:
+- ~230 autodoc cross-reference warnings (`py:class`/`py:obj` reference target
+  not found) for pydantic internals — `PlainSerializer`, `ConfigDict`, and
+  the fully-expanded `Annotated[..., PlainSerializer(lambda ...)]` field
+  types in `schema.py` that autodoc can't resolve (the renderer additionally
+  mis-splits the `PlainSerializer(func=..., return_type=..., when_used=...)`
+  repr into several bogus sub-references);
+- ~15 docutils WARNING/ERROR lines from the `RecipeModel` docstring, whose
   embedded markdown-style ```json migration examples don't parse as reST
   (unexpected indentation, inline-literal start without end);
-- ~19 myst warnings (header-level jumps and slug-style anchor cross-refs)
-  from the markdown pages promoted into the Sphinx toctree at the public
-  release (`known_issues`, `regression-tolerance`, `cross-platform-guide`);
+- ~19 myst warnings (header-level jumps in `known_issues.md`, and slug-style
+  anchor cross-refs in `cross-platform-guide.md`'s table of contents);
+- ~12 Pygments highlighting-failure warnings from ```json fences in
+  `DEVELOPMENT.md`/`TROUBLESHOOTING.md` containing `//`/`#` comments and
+  `...` ellipses (illustrative, not strictly valid JSON);
+- one stray `pandas.core.frame.DataFrame` cross-reference (pandas' own
+  intersphinx inventory only indexes the public `pandas.DataFrame` path);
 - one `html_static_path entry '_static' does not exist` warning.
 
-**Evidence.** `src/powderline/schema.py` (`RecipeModel` docstring and the
-Annotated/PlainSerializer field types); reproduced by `pixi run docs-clean &&
-pixi run docs`. Pre-existing on `main` (none of the warning sources are lines
-the 0.26 branch touched; the docstring block exists verbatim at
-`main:src/powderline/schema.py`).
+**Evidence.** Reproduced by `pixi run docs-clean && pixi run docs`.
 
-**Decision.** Cosmetic; not a build failure. Left as-is. Fix by converting the
-docstring's fenced JSON to a reST `.. code-block:: json` (or a raw literal
-block), adding the missing `docs/_static/` dir, and suppressing/nitpick-
-ignoring the pydantic cross-ref noise. `watch` so a reviewer does not
-misattribute these warnings (or their count) to a branch under review.
+**Decision.** Fixed:
+- added `docs/_static/.gitkeep` so the configured `html_static_path` exists;
+- reworded the `RecipeModel` docstring to use a proper
+  `.. code-block:: javascript` directive and double-backtick literals
+  instead of markdown fences/single-backticks;
+- relabeled the illustrative, comment-bearing ```json fences as
+  ```javascript (tolerant of `//` comments and `...`) in `DEVELOPMENT.md`
+  and `TROUBLESHOOTING.md`;
+- fixed a handful of docstrings in `kicker.py` whose `Returns:` sections
+  (e.g. `is_template_file`, `extract_refined_params_from_project`,
+  `calculate_cell_esds_from_A_matrix`, `_extract_fit_profile`) were
+  misparsed by Napoleon as bogus `name (type):` pairs;
+  `docs/conf.py` `nitpick_ignore_regex`/`nitpick_ignore` for the
+  unresolvable pydantic-`PlainSerializer` and `pandas.core.frame.DataFrame`
+  noise; fixed the `pydandtic` intersphinx key typo; set
+  `myst_heading_anchors = 4` so `cross-platform-guide.md`'s TOC anchors
+  resolve; and promoted `known_issues.md`'s `### KI-NN` headers to `##`
+  (the file has no other H2, so H1→H3 was a level skip).
 
-**Revisit.** Any docs-hardening pass, or if the docs build is made
-warnings-as-errors.
+**Revisit.** Closed; kept for history.
 
 ---
 
-### KI-09 — Withdrawn
+## KI-09 — Withdrawn
 
 Filed during the PR #23 review; withdrawn 2026-07-16 (the reported behavior
 was intentional, not a defect). Id retained so it is never reused.
 
 ---
 
-### KI-10 — `stop_server()` force-kill escalation raises on Windows and is untested `implemented (chore/cleanup) · minor`
+## KI-10 — `stop_server()` force-kill escalation raises on Windows and is untested `implemented (chore/cleanup) · minor`
 
 **What.** `stop_server()` escalates to `os.kill(pid, signal.SIGKILL)` when the
 server has not exited 5 s after SIGTERM. `signal.SIGKILL` does not exist on
@@ -245,7 +259,7 @@ unit tests drive the escalation path (`tests/test_gsas_server_unit.py`).
 
 ---
 
-### KI-11 — Server discovery is split between PID file and port probe; an orphaned server is unmanageable `watch · minor`
+## KI-11 — Server discovery is split between PID file and port probe; an orphaned server is unmanageable `watch · minor`
 
 **What.** `gsas-server status|stop` trust the PID file
 (`<tempdir>/powderline_gsas_server.pid`), while `GSASClient` trusts an HTTP
@@ -275,7 +289,7 @@ HTTP shutdown endpoint, or have `stop` fall back to the PID reported by
 
 ---
 
-### KI-12 — Server mode assumes a shared filesystem; output files should travel in-band `planned-fix · major`
+## KI-12 — Server mode assumes a shared filesystem; output files should travel in-band `planned-fix · major`
 
 **What.** The GSAS-II server writes output files into `output_dir` in **its
 own** filesystem view and returns only result *data* over HTTP. A server
