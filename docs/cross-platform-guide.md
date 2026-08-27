@@ -1,40 +1,31 @@
-# Cross-Platform Support: Windows and macOS
+# Platform Support: Windows, macOS, and Linux
 
-This document is the authoritative record of the investigation into adding
-`win-64`, `osx-64`, and `osx-arm64` platform support to PowderLine. It covers
-every discovered incompatibility, all available options for each fix (with
-trade-offs), and a step-by-step implementation guide.
+PowderLine ships for **`linux-64`, `win-64`, and `osx-arm64`** (as declared in
+`pixi.toml`). This page is the platform-support reference: which platforms are
+supported, how each cross-platform concern is handled, and the authoring rules
+to follow so pixi tasks and code stay portable.
 
-> **Status (current branch)**: Windows support has partially shipped — much of the
-> investigation below has since been implemented, sometimes differently than the
-> options it weighs. As of this branch:
+> **Status**
 >
 > - `pixi.toml` declares `platforms = ["linux-64", "win-64", "osx-arm64"]`.
-> - **Issue A (Fortran build)**: fully superseded — `gsas-ii` is now built as a conda
->   package via `pixi-build` (`preview = ["pixi-build"]`) from the `tacaswell/GSAS-II`
->   fork and declared under `[dependencies]`, so it installs on **all** platforms
->   (linux-64/win-64/osx-arm64; currently v5.7.9) — no longer linux-64-only and no
->   longer a from-source pip build. Windows now installs and runs GSAS-II directly
->   (validated during the cross-platform bring-up). The old `flang`/`flang-rt_win-64`
->   toolchain — and its `scripts/win_activate.bat` / `scripts/ar_wrapper.c` activation
->   shim — has been removed. The win-64 TOPAS path still imports zero GSAS-II by design.
->   Section 2 below is retained
->   as the historical build-from-source analysis.
-> - **Issue B (PYTHONPATH)**: partially addressed — `mp-simulate` now uses a
->   cross-platform task-level `env` dict (`{ cmd = "python -m powderline.mp_simulate",
->   env = { PYTHONPATH = "$PIXI_PROJECT_ROOT/src" } }`); the remaining tasks
+> - **GSAS-II build**: `gsas-ii` is built as a conda package via `pixi-build`
+>   (`preview = ["pixi-build"]`) from the `tacaswell/GSAS-II` fork and declared
+>   under `[dependencies]`, so it installs on **all** shipped platforms
+>   (linux-64/win-64/osx-arm64; currently v5.7.9) — not linux-64-only and not a
+>   from-source pip build. Windows installs and runs GSAS-II directly. The
+>   win-64 TOPAS path imports zero GSAS-II by design. Section 2 covers the
+>   build-from-source background for reference.
+> - **PYTHONPATH in pixi tasks**: `mp-simulate` uses a cross-platform
+>   task-level `env` dict (`{ cmd = "python -m powderline.mp_simulate",
+>   env = { PYTHONPATH = "$PIXI_PROJECT_ROOT/src" } }`); some other tasks
 >   (`kicker`, `topas-kicker`, `gsas-server`, `test`) still use the inline
->   `PYTHONPATH=$PWD/src:` (Unix) form. See Section 3 for the recommended fix.
-> - **Issue D (signal handling)**: not yet abstracted — `gsas_server.py` still uses
->   `SIGTERM`/`SIGINT`/`SIGKILL` + `os.kill` (`psutil` is used in `get_server_info`).
->   The concrete win-64 breakage this implied (`signal.SIGKILL` `AttributeError` in the
->   `stop_server` force-kill escalation) **is fixed** — see KI-10 (implemented,
->   chore/cleanup): `getattr(signal, "SIGKILL", signal.SIGTERM)`. The broader
->   abstraction remains future work.
->
-> The remainder of this document is retained as the design record and rationale; sections
-> describing un-shipped fixes (osx targets, the Python-script rewrite, Issue D) are still
-> forward-looking.
+>   `PYTHONPATH=$PWD/src:` (Unix) form. See Section 3 for the portable pattern.
+> - **Signal handling**: `gsas_server.py` uses `SIGTERM`/`SIGINT`/`SIGKILL` +
+>   `os.kill` (`psutil` is used in `get_server_info`). The concrete win-64
+>   breakage this implies (`signal.SIGKILL` `AttributeError` in the
+>   `stop_server` force-kill escalation) is fixed with
+>   `getattr(signal, "SIGKILL", signal.SIGTERM)`; a broader platform
+>   abstraction remains future work. See Section 4.
 
 ---
 
@@ -43,25 +34,25 @@ trade-offs), and a step-by-step implementation guide.
 1. [Root Causes Summary](#1-root-causes-summary)
 2. [Issue A — GSAS-II Fortran Build](#2-issue-a--gsas-ii-fortran-build)
 3. [Issue B — PYTHONPATH in pixi Tasks](#3-issue-b--pythonpath-in-pixi-tasks)
-4. [Issue D — gsas_server.py Unix Signal Handling](#4-issue-d--gsas_serverpy-unix-signal-handling)
+4. [Issue C — gsas_server.py Unix Signal Handling](#4-issue-c--gsas_serverpy-unix-signal-handling)
 5. [macOS-Specific Notes](#5-macos-specific-notes)
 6. [Implementation Guide](#6-implementation-guide)
-7. [Verification Checklist](#7-verification-checklist)
+7. [Viewing Server Logs](#7-viewing-server-logs)
 
 ---
 
 ## 1. Root Causes Summary
 
-There are four independent compatibility problems, each affecting a different
+There are three independent compatibility problems, each affecting a different
 part of the codebase.
 
 | # | Component | Problem | Platforms affected |
 |---|---|---|---|
 | A | `pixi.toml` — GSAS-II dependency | No Fortran compiler in the pixi environment | Windows, macOS |
 | B | `pixi.toml` — task definitions | `PYTHONPATH=$PWD/src:$PYTHONPATH` uses Unix path separator and shell syntax | Windows |
-| D | `src/powderline/gsas_server.py` | `os.kill(pid, signal.SIGTERM/SIGKILL)` not supported on Windows | Windows |
+| C | `src/powderline/gsas_server.py` | `os.kill(pid, signal.SIGTERM/SIGKILL)` not supported on Windows | Windows |
 
-Issues A, B, and D are independent and can be implemented in any order.
+Issues A, B, and C are independent and can be implemented in any order.
 Issue A is the one that surfaces immediately when running
 `pixi workspace platform add win-64`.
 
@@ -114,10 +105,6 @@ gcc      = ">=14.2.0,<14.3"
 compilers = ">=1.11.0,<2"
 clang     = ">=19.1.7,<22"
 
-[target.osx-64.dependencies]
-compilers = ">=1.11.0,<2"
-clang     = ">=19.1.7,<22"
-
 # (for Linux, gcc/gfortran are assumed to be system-installed)
 ```
 
@@ -133,7 +120,7 @@ the build failure.
 platforms = ["linux-64"]
 
 # After
-platforms = ["linux-64", "osx-64", "osx-arm64", "win-64"]
+platforms = ["linux-64", "win-64", "osx-arm64"]
 ```
 
 **Step 2** — Add compiler dependencies, mirroring GSAS-II's own pixi.toml:
@@ -142,10 +129,6 @@ platforms = ["linux-64", "osx-64", "osx-arm64", "win-64"]
 [target.win-64.dependencies]
 gfortran = ">=14.2.0,<14.3"
 gcc      = ">=14.2.0,<14.3"
-
-[target.osx-64.dependencies]
-compilers = ">=1.11.0,<2"
-clang     = ">=19.1.7,<22"
 
 [target.osx-arm64.dependencies]
 compilers = ">=1.11.0,<2"
@@ -274,7 +257,7 @@ approach is the safe fallback.
 
 ---
 
-## 4. Issue D — `gsas_server.py` Unix Signal Handling
+## 4. Issue C — `gsas_server.py` Unix Signal Handling
 
 ### What fails
 
@@ -470,31 +453,29 @@ xcode-select --install
 This should be documented as a **prerequisite** for macOS users in
 `docs/getting-started.rst` or `README.md`, not a `pixi.toml` fix.
 
-### Apple Silicon (osx-arm64) vs Intel (osx-64)
+### Apple Silicon (osx-arm64)
 
-Both architectures are listed in GSAS-II's own pixi.toml and use identical
-compiler dependencies. Both should be included in PowderLine's `platforms`
-list. `osx-arm64` is the dominant architecture for current Mac hardware;
-`osx-64` packages run on Apple Silicon via Rosetta 2 emulation.
+PowderLine ships `osx-arm64`, the dominant architecture for current Mac
+hardware. Intel `osx-64` is **not** a shipped platform. (Intel Macs can still
+run `osx-arm64` builds via Rosetta 2 emulation.)
 
 ### Signal handling
 
 macOS is Unix-based. `SIGTERM`, `SIGKILL`, and `os.kill(pid, 0)` all work
-correctly on macOS. Issue D is Windows-only; no macOS changes are needed in
+correctly on macOS. Issue C is Windows-only; no macOS changes are needed in
 `gsas_server.py`.
 
 ### Bash scripts
 
-macOS ships with bash (and zsh, with bash available). The existing `.sh`
-scripts work on macOS. Since the plan replaces them with Python for Windows
-compatibility, macOS users will transparently use the Python versions with no
-behaviour change.
+macOS ships with bash (and zsh, with bash available), so any `.sh` scripts work
+on macOS. Where a task is written in Python for Windows compatibility, macOS
+users use the Python version transparently with no behaviour change.
 
 ---
 
 ## 6. Implementation Guide
 
-All four issues are independent; they can be implemented in any order. The
+All three issues are independent; they can be implemented in any order. The
 order below prioritises testability (the GSAS-II build fix unlocks `pixi
 install`, after which the other changes can be verified iteratively).
 
@@ -504,7 +485,7 @@ Edit `pixi.toml`:
 
 ```toml
 # [workspace] — change platforms line
-platforms = ["linux-64", "osx-64", "osx-arm64", "win-64"]
+platforms = ["linux-64", "win-64", "osx-arm64"]
 
 # After [pypi-dependencies] — add:
 [pypi-options]
@@ -514,10 +495,6 @@ no-build-isolation = ["gsas-ii"]
 [target.win-64.dependencies]
 gfortran = ">=14.2.0,<14.3"
 gcc      = ">=14.2.0,<14.3"
-
-[target.osx-64.dependencies]
-compilers = ">=1.11.0,<2"
-clang     = ">=19.1.7,<22"
 
 [target.osx-arm64.dependencies]
 compilers = ">=1.11.0,<2"
@@ -546,7 +523,7 @@ PYTHONPATH = "$PIXI_PROJECT_ROOT/src"
 PYTHONPATH = "%PIXI_PROJECT_ROOT%\\src"
 ```
 
-### Step 3 — `gsas_server.py` signal handling (Issue D)
+### Step 3 — `gsas_server.py` signal handling (Issue C)
 
 Edit `src/powderline/gsas_server.py`:
 
@@ -559,44 +536,16 @@ Edit `src/powderline/gsas_server.py`:
 
 ---
 
-## 7. Verification Checklist
+## 7. Viewing Server Logs
 
-### Windows (win-64)
-
-```
-pixi workspace platform add win-64
-pixi install
-pixi run test
-pixi run kicker examples/example_LaB6/input.json
-pixi run gsas-server start
-pixi run gsas-server status
-pixi run gsas-server stop
-```
-
-### macOS (osx-arm64 or osx-64)
-
-```bash
-# Prerequisite — run once if Xcode CLI tools not yet installed:
-xcode-select --install
-
-pixi workspace platform add osx-arm64   # or osx-64
-pixi install
-pixi run test
-pixi run kicker examples/example_LaB6/input.json
-```
-
-### Linux regression — must not break
+The GSAS-II server writes to a log file. The portable way to follow it on any
+platform is the built-in command:
 
 ```
-pixi run test
+pixi run gsas-server logs
 ```
 
-### Cross-platform log viewing note
+If you prefer native tools, the platform equivalents are:
 
-The `gsas_server.py` docstring and `main()` currently suggest `tail -f
-<log_file>` for viewing server logs. Consider updating this hint when
-implementing Issue D:
-
-- **Unix**: `tail -f <log_file>`
+- **Unix (Linux/macOS)**: `tail -f <log_file>`
 - **Windows PowerShell**: `Get-Content <log_file> -Wait -Tail 50`
-- **Cross-platform (already implemented)**: `pixi run gsas-server logs`

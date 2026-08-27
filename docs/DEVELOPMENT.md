@@ -1,14 +1,14 @@
 # PowderLine Developer Guide
 
-This guide provides comprehensive context for developers and AI assistants working on PowderLine. Read this first to understand the project architecture, design decisions, and development workflows.
+This guide provides comprehensive context for developers working on PowderLine (and for AI coding assistants used alongside them). Read this first to understand the project architecture, design decisions, and development workflows.
 
 ## Project Overview
 
 **What is PowderLine?**
-PowderLine automates crystallographic refinement using GSAS-II software. It takes a JSON "recipe" describing refinement parameters and produces standardized output reports. The goal is to make powder diffraction refinements reproducible, automatable, and accessible.
+PowderLine automates crystallographic refinement from a declarative JSON "recipe" and drives interchangeable refinement engines — GSAS-II by default, with Bruker TOPAS v7 and open-source easydiffraction as optional alternatives. It takes a recipe describing refinement parameters and produces standardized output reports. The goal is to make powder diffraction refinements reproducible, automatable, and accessible.
 
 **Scope:**
-- Command-line tool that runs GSAS-II refinements from JSON recipes
+- Command-line tool that runs refinements from JSON recipes, dispatching to interchangeable engines (GSAS-II by default; TOPAS v7 and easydiffraction optional)
 - Schema 0.26.0: Simplified two-workflow system (Rietveld refinement or single peak fitting)
 - Schema validation using Pydantic
 - Single-phase and multi-phase Rietveld refinements; phase-less single peak fitting
@@ -206,7 +206,7 @@ GSAS-II uses a single string at atom record index 2 to encode which parameters a
 - **'U'**: Refine displacement parameters (isotropic or anisotropic)
 - **Combinations**: 'FXU' (all), 'XU' (coordinates + displacement), 'F' (occupancy only), etc.
 
-**Per-Parameter Semantics (Schema 0.26):** Although GSAS-II exposes only the lumped 'X' flag (and one 'U' flag for all six anisotropic components), PowderLine honors the recipe's per-parameter flags: a coordinate or `Uij` component refines iff it is present with `refine_flag=true`; absent or false means fixed. Internally, PowderLine sets the lumped flag when any member is requested, then emits GSAS-II "Hold" constraints for the parameters that were not requested (see `src/powderline/constraints.py`). Only site-symmetry-linked parameters remain coupled: e.g. `x` and `y` on an `(x,x,z)` site form one degree-of-freedom group that refines if either is requested; flags on symmetry-fixed parameters have no effect.
+**Per-Parameter Semantics (Schema 0.26):** Although GSAS-II exposes only the lumped 'X' flag (and one 'U' flag for all six anisotropic components), PowderLine honors the recipe's per-parameter flags: a coordinate or `Uij` component refines iff it is present with `refine_flag=true`; absent or false means fixed. This uses the same lumped-flag + "Hold"-constraint mechanism as unit-cell parameters — see [Unit Cell Refinement Semantics (Schema 0.26)](#unit-cell-refinement-semantics-schema-026) and `src/powderline/constraints.py`. For atoms, only site-symmetry-linked parameters remain coupled: e.g. `x` and `y` on an `(x,x,z)` site form one degree-of-freedom group that refines if either is requested; flags on symmetry-fixed parameters have no effect.
 
 **Displacement Parameter Types (ADP field):**
 Each atom has an atom-specific `ADP` field indicating which displacement type to use:
@@ -349,9 +349,8 @@ These inconsistencies exist in GSAS-II (as of 2025) and are documented in kicker
    - PowderLine uses correct extended format
 
 2. **Unit Cell Refinement**:
-   - GSAS-II natively exposes a single refine flag for all 6 unit cell parameters
-   - Since schema 0.26, PowderLine works around this: per-parameter flags are honored by setting the lumped flag and emitting "Hold" constraints for the unrefined degrees of freedom (`src/powderline/constraints.py`)
-   - Only symmetry-linked parameters remain coupled (e.g. cubic a=b=c; monoclinic a/c/beta — see KI-02 in `docs/known_issues.md`)
+   - GSAS-II natively exposes a single refine flag for all 6 unit cell parameters; since schema 0.26 PowderLine honors per-parameter flags instead.
+   - See [Unit Cell Refinement Semantics (Schema 0.26)](#unit-cell-refinement-semantics-schema-026) for the full mechanism and symmetry-coupling rules.
 
 3. **Reflection List Headers**:
    - GSAS-II provides 15-column reflection arrays without headers
@@ -526,7 +525,7 @@ well-formed recipes the behavior matches; the two definitions only diverge on
 inconsistent input (`cycles == 1` *with* a stray refine flag), which GSAS-II
 refuses and the alternate engines would run. Uniform input-contract enforcement
 across all engines is a tracked follow-up (see the PowderLine-devkit
-easydiffraction dossier).
+easydiffraction dossier — a private maintainers' repo, access on request).
 
 ### Schema Design: Why `extra='allow'`?
 
@@ -547,7 +546,7 @@ Future phases may tighten validation to `extra='forbid'` once schema stabilizes.
 
 ### The "Upstream" Pattern
 
-You'll see comments like `# TODO: validation will be handled upstream` throughout kicker.py (78 occurrences). This means:
+You'll see several TODO markers like `# TODO: validation will be handled upstream` throughout kicker.py. This means:
 
 - **Currently**: Validation happens in helper functions (e.g., check coefficient count in `set_chebyshev_background`)
 - **Future**: Validation moves to Pydantic schema (separation of concerns)
@@ -872,7 +871,7 @@ See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) ("Stale Server (Old Code Running)")
 
 **Speedup**: Server mode is **10.67x faster** than subprocess for LaB6 simulations.
 
-*Times measured on NSLS-II workstation post-fix (commit ea8c7d1)*
+*Times measured on NSLS-II workstation post-fix*
 
 ### Adding a New Refinement Parameter
 
