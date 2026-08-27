@@ -19,7 +19,7 @@ Kicker Module
 Main refinement workflow and parameter setting functions.
 
 Key Functions
-~~~~~~~~~~~~~
+~~~~~~~~~~~~~~
 
 Template and Validation
 ^^^^^^^^^^^^^^^^^^^^^^^^
@@ -27,7 +27,7 @@ Template and Validation
 .. autofunction:: powderline.kicker.is_template_file
 
 Output Generation
-^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^
 
 Functions for exporting refinement results with uncertainty quantification.
 
@@ -39,7 +39,8 @@ Functions for exporting refinement results with uncertainty quantification.
 
 .. note::
 
-   ESDs (estimated standard deviations) are extracted from GSAS-II's covariance matrix
+   These helpers document the GSAS-II engine's extraction path. ESDs (estimated
+   standard deviations) are read from GSAS-II's covariance matrix
    (``proj.data['Covariance']``). Unit cell ESDs require conversion from the reciprocal
    metric tensor (A-matrix) to direct lattice parameters via ``calculate_cell_esds_from_A_matrix()``.
 
@@ -94,7 +95,7 @@ Example::
     "scale": [1.0, true, null, null]            # Refined starting from 1.0
 
 Phase vs Histogram Parameters
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 - **Phase parameters**: Belong to crystal structure (unit cell, atoms)
 - **Histogram parameters**: Belong to measurement (scale, broadening, background)

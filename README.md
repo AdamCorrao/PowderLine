@@ -1,20 +1,17 @@
 # PowderLine
 
-[![Documentation Status](https://readthedocs.org/projects/powderline/badge/?version=latest)](https://powderline.readthedocs.io/en/latest/?badge=latest)
+[![Docs](https://img.shields.io/badge/docs-live-blue)](https://nsls2.github.io/PowderLine/)
 
 Automated powder X-ray diffraction refinement. You describe a refinement in a
-JSON "recipe"; PowderLine runs it with [GSAS-II](https://gsasii.github.io/) (or,
-optionally, Bruker TOPAS v7) and returns standardized result tables.
+JSON "recipe"; PowderLine runs it through a refinement engine —
+[GSAS-II](https://gsasii.github.io/) by default, or Bruker TOPAS v7 or the
+open-source easydiffraction — and returns standardized result tables.
 
-**Documentation:** [powderline.readthedocs.io](https://powderline.readthedocs.io/)
+**Documentation:** [nsls2.github.io/PowderLine](https://nsls2.github.io/PowderLine/)
 · **New here? Start with the [Quickstart](docs/quickstart.md).**
 
-> **Note:** the hosted documentation goes live when PowderLine becomes public.
-> Until then, build the same docs locally with `pixi run docs` (HTML lands in
-> `docs/_build/html/`).
-
 PowderLine gives you a programmatic, reproducible way to run Rietveld refinements
-and single-peak fits without hand-driving GSAS-II.
+and single-peak fits without hand-driving the underlying refinement software.
 
 - **Two workflow types:** Rietveld refinement (`GSASII_Rietveld`) and single-peak
   fitting (`GSASII_SPF`).
@@ -35,7 +32,7 @@ GSAS-II is installed **automatically** by `pixi install` (it ships as a conda
 package — no separate GSAS-II install).
 
 ```bash
-git clone https://github.com/nsls2/PowderLine.git
+git clone https://github.com/NSLS2/PowderLine.git
 cd PowderLine
 pixi install
 ```
@@ -195,6 +192,17 @@ request access).
   works internally, for contributors. See also the
   [known-issues register](docs/known_issues.md) (`KI-NN` ids referenced from
   code and docs).
+
+## Citation
+
+If you use PowderLine in your research, please cite the preprint:
+
+> A. A. Corrao, J. A. Perez, J. D. Langhout, M. M. Butala, T. A. Caswell, and
+> D. Olds. *PowderLine: a programmatic powder diffraction analysis application.*
+> arXiv:2608.17009 (2026).
+> [doi:10.48550/arXiv.2608.17009](https://doi.org/10.48550/arXiv.2608.17009)
+
+Machine-readable metadata is in [`CITATION.cff`](CITATION.cff).
 
 ## License
 

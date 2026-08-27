@@ -58,10 +58,11 @@ result dictionary — see the integration guide's easydiffraction section for
 its v1 capability list.
 
 ``engine="topas"`` returns the same result dictionary as the GSAS-II engine
-(plus ``rwp``/``r_exp``/``gof``). All 8 real example recipes translate and have
-been validated against a real ``tc.exe`` run on Windows (the 9th,
-``example_template``, is a fill-in-the-blanks skeleton and is rejected with a
-clear error by design). Refined **lattice parameters agree with GSAS-II to
+(plus ``rwp``/``r_exp``/``gof``). The bundled ``GSASII_Rietveld`` / ``GSASII_SPF``
+example recipes translate to TOPAS, and the committed golden set has been
+validated against a real ``tc.exe`` run on Windows (``example_template`` is a
+fill-in-the-blanks skeleton and is rejected with a clear error by design).
+Refined **lattice parameters agree with GSAS-II to
 sub-percent** across the example set; correlated profile terms (instrument
 U..Z, size vs. strain) are not individually comparable between engines, but
 cell, scale, and occupancy are reliable.
@@ -186,7 +187,7 @@ After refinement, PowderLine generates standardized outputs with fixed filenames
 - ``single_peaks_report.txt`` - Peak fit results (position, width, intensity)
 - ``peak_convergence_diagnostics.txt`` - Convergence warnings
 
-**Note:** Simulation mode (all ``refine_flag=false``) does not generate ``refined_parameters.csv`` since no parameters are refined.
+**Note:** Simulation mode (``refinement_cycles=1`` with all ``refine_flag=false``) does not generate ``refined_parameters.csv`` since no parameters are refined.
 
 Programmatic API
 ----------------

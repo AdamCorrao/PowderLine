@@ -1,8 +1,9 @@
 # CLAUDE.md — PowderLine
 
-Automated powder X-ray diffraction Rietveld refinements using GSAS-II. A JSON "recipe"
-(schema **0.26.0**) describes the refinement; `powderline.run()` drives GSAS-II — or
-TOPAS / easydiffraction via `engine=` — and returns standardized tables.
+Automated powder X-ray diffraction refinement driven from a JSON "recipe". PowderLine
+is the application layer over interchangeable refinement engines: a recipe (schema
+**0.26.0**) describes the refinement, and `powderline.run()` drives GSAS-II by default —
+or TOPAS / easydiffraction via `engine=` — and returns standardized tables.
 Example-driven: real refinement cases drive schema evolution.
 
 ## Architecture (`src/powderline/`)

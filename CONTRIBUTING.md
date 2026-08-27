@@ -6,7 +6,7 @@ guides.
 ## Dev setup
 
 ```bash
-git clone https://github.com/nsls2/PowderLine.git
+git clone https://github.com/NSLS2/PowderLine.git
 cd PowderLine
 pixi install        # installs everything, including GSAS-II
 pixi run test       # full suite — run it before and after your change

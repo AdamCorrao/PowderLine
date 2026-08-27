@@ -3,18 +3,46 @@ message: "If you use PowderLine in your research, please cite it as below."
 title: "PowderLine"
 type: software
 authors:
+  - family-names: "Corrao"
+    given-names: "Adam A."
+    affiliation: "Brookhaven National Laboratory"
+  - family-names: "Perez"
+    given-names: "Jennifer A."
+  - family-names: "Langhout"
+    given-names: "John D."
+  - family-names: "Butala"
+    given-names: "Megan M."
+  - family-names: "Caswell"
+    given-names: "Thomas A."
+    affiliation: "Brookhaven National Laboratory"
   - family-names: "Olds"
     given-names: "Daniel"
-    affiliation: "Brookhaven National Laboratory"
-  - family-names: "Corrao"
-    given-names: "Adam"
     affiliation: "Brookhaven National Laboratory"
 license: BSD-3-Clause
 repository-code: "https://github.com/NSLS2/PowderLine"
 version: 0.1.0
-# REPLACE-BEFORE-PUBLIC: fill in the arXiv pre-print reference below when it is
-# posted. Tracked in RELEASE_CHECKLIST.md.
-# identifiers:
-#   - type: url
-#     value: "https://arxiv.org/abs/XXXX.XXXXX"
-#     description: "PowderLine pre-print (arXiv)"
+identifiers:
+  - type: doi
+    value: "10.48550/arXiv.2608.17009"
+    description: "PowderLine preprint (arXiv:2608.17009)"
+preferred-citation:
+  type: article
+  title: "PowderLine: a programmatic powder diffraction analysis application"
+  year: 2026
+  authors:
+    - family-names: "Corrao"
+      given-names: "Adam A."
+    - family-names: "Perez"
+      given-names: "Jennifer A."
+    - family-names: "Langhout"
+      given-names: "John D."
+    - family-names: "Butala"
+      given-names: "Megan M."
+    - family-names: "Caswell"
+      given-names: "Thomas A."
+    - family-names: "Olds"
+      given-names: "Daniel"
+  identifiers:
+    - type: doi
+      value: "10.48550/arXiv.2608.17009"
+      description: "arXiv preprint"
