@@ -14,7 +14,7 @@ topas-kicker = "PYTHONPATH=$PWD/src:$PYTHONPATH python -m powderline.topas.kicke
 mp-simulate = { cmd = "python -m powderline.mp_simulate", env = { PYTHONPATH = "$PIXI_PROJECT_ROOT/src" } }
 gsas-server = "PYTHONPATH=$PWD/src:$PYTHONPATH python src/powderline/gsas_server.py"
 test = "PYTHONPATH=$PWD/src:$PYTHONPATH pytest -v"
-docs = "sphinx-build -b html docs docs/_build/html"
+docs = "sphinx-build -W --keep-going -b html docs docs/_build/html"
 docs-clean = "rm -rf docs/_build"
 ui = 'GSASII_NOPATHHACKING="true" python -m GSASII' # to test running GSAS-II GUI
 update-code-hash = "python scripts/update_code_hash.py"
