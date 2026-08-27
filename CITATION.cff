@@ -2,16 +2,12 @@ cff-version: 1.2.0
 message: "If you use PowderLine in your research, please cite it as below."
 title: "PowderLine"
 type: software
+# Software authors (contributors to this codebase). The associated preprint has a
+# broader author list — see preferred-citation below.
 authors:
   - family-names: "Corrao"
     given-names: "Adam A."
     affiliation: "Brookhaven National Laboratory"
-  - family-names: "Perez"
-    given-names: "Jennifer A."
-  - family-names: "Langhout"
-    given-names: "John D."
-  - family-names: "Butala"
-    given-names: "Megan M."
   - family-names: "Caswell"
     given-names: "Thomas A."
     affiliation: "Brookhaven National Laboratory"
