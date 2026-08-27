@@ -456,8 +456,8 @@ This should be documented as a **prerequisite** for macOS users in
 ### Apple Silicon (osx-arm64)
 
 PowderLine ships `osx-arm64`, the dominant architecture for current Mac
-hardware. Intel `osx-64` is **not** a shipped platform. (Intel Macs can still
-run `osx-arm64` builds via Rosetta 2 emulation.)
+hardware. Intel `osx-64` is **not** a shipped platform. (Apple Silicon can still
+run `osx-64` builds via Rosetta 2 emulation.)
 
 ### Signal handling
 
