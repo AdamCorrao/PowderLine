@@ -110,21 +110,29 @@ def require_phase(error_suffix: str):
     import inspect
 
     def decorator(func):
+        sig = inspect.signature(func)
+        # Decoration-time misuse check: decorated functions must take these args.
+        assert 'proj' in sig.parameters and 'phase_name' in sig.parameters
+
         @wraps(func)
         def wrapper(*args, **kwargs):
             # Find proj and phase_name from args/kwargs
-            sig = inspect.signature(func)
-            bound = sig.bind(*args, **kwargs)
+            try:
+                bound = sig.bind(*args, **kwargs)
+            except TypeError:
+                # Missing/extra arguments: call through so Python raises the
+                # function's native signature error, as the undecorated
+                # function would.
+                return func(*args, **kwargs)
             bound.apply_defaults()
 
-            proj = bound.arguments.get('proj')
-            phase_name = bound.arguments.get('phase_name')
+            proj = bound.arguments['proj']
+            phase_name = bound.arguments['phase_name']
 
-            if proj is None or phase_name is None:
-                # Shouldn't happen if decorator is used correctly
-                return func(*args, **kwargs)
-
-            # Perform the phase existence check
+            # Perform the phase existence check unconditionally — the original
+            # inline checks treated phase_name=None as a missing phase
+            # (ValueError) and proj=None as an AttributeError; both semantics
+            # are preserved by not special-casing None.
             if phase_name not in [p.name for p in proj.phases()]:
                 raise ValueError(f"Phase '{phase_name}' not found in project. {error_suffix}")
 
