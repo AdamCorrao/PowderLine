@@ -93,6 +93,46 @@ def unpack_refinement_parameter(param: list | None, param_name: str = "parameter
         )
 
 
+def require_phase(error_suffix: str):
+    """
+    Decorator to check phase existence in project before calling setter functions.
+
+    Args:
+        error_suffix: The error message suffix (e.g., "Cannot set scale.")
+
+    The decorated function must accept 'proj' as first positional arg and 'phase_name'
+    as a keyword or positional arg (position determined by inspection).
+
+    Raises:
+        ValueError: If phase_name is not found in proj.phases()
+    """
+    from functools import wraps
+    import inspect
+
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            # Find proj and phase_name from args/kwargs
+            sig = inspect.signature(func)
+            bound = sig.bind(*args, **kwargs)
+            bound.apply_defaults()
+
+            proj = bound.arguments.get('proj')
+            phase_name = bound.arguments.get('phase_name')
+
+            if proj is None or phase_name is None:
+                # Shouldn't happen if decorator is used correctly
+                return func(*args, **kwargs)
+
+            # Perform the phase existence check
+            if phase_name not in [p.name for p in proj.phases()]:
+                raise ValueError(f"Phase '{phase_name}' not found in project. {error_suffix}")
+
+            return func(*args, **kwargs)
+        return wrapper
+    return decorator
+
+
 def load_recipe_asset(recipe_path: Path) -> dict:
     """Load a recipe asset from .json, .yaml/.yml, or .txt (YAML)."""
     ext = recipe_path.suffix.lower()
@@ -1313,6 +1353,7 @@ def add_phases_from_dict(proj: Any, hist: Any, phases_dict: dict, print_info: bo
 ##################################################################
 # Functions for phase parameterization
 
+@require_phase("Cannot set scale.")
 def set_phase_scale(proj: Any, hist: Any, phase_name: str, scale_param: list, print_info: bool = False) -> None:
     """
     Set the phase scale factor in the GSAS-II project.
@@ -1330,9 +1371,6 @@ def set_phase_scale(proj: Any, hist: Any, phase_name: str, scale_param: list, pr
     Returns:
     None
     """
-    if phase_name not in [p.name for p in proj.phases()]:
-        raise ValueError(f"Phase '{phase_name}' not found in project. Cannot set scale.")
-
     value, refine_flag, min_val, max_val = unpack_refinement_parameter(scale_param, "scale_param")
 
     # Set the scale factor value - defaults will be handled upstream in future in validation
@@ -1351,6 +1389,7 @@ def set_phase_scale(proj: Any, hist: Any, phase_name: str, scale_param: list, pr
     if print_info:
         print(f"Set scale for phase '{phase_name}' to {value} with refine_flag={refine_flag}")
 
+@require_phase("Cannot set unit cell parameters.")
 def set_phase_unit_cell(proj: Any, phase_name: str, unit_cell_dict: dict, print_info: bool = False) -> list[str]:
     """
     Set the unit cell parameters in the GSAS-II project for a given phase.
@@ -1389,9 +1428,6 @@ def set_phase_unit_cell(proj: Any, phase_name: str, unit_cell_dict: dict, print_
     # This makes sticking with a project based approach more straightforward.
 
     phase_names = [p.name for p in proj.phases()]
-    if phase_name not in phase_names:
-        raise ValueError(f"Phase '{phase_name}' not found in project. Cannot set unit cell parameters.")
-
     cell_changed = False
     cell_params = ['a', 'b', 'c', 'alpha', 'beta', 'gamma'] # must match schema, and match order in GSAS-II
 
@@ -1438,6 +1474,7 @@ def set_phase_unit_cell(proj: Any, phase_name: str, unit_cell_dict: dict, print_
     return cell_plan.holds
 
 
+@require_phase("Cannot set size broadening parameters.")
 def set_phase_size_broadening(proj: Any, hist: Any, phase_name: str, size_broadening_dict: dict, print_info: bool = False) -> None:
     """
     Set size broadening parameters in the GSAS-II project for a given phase.
@@ -1462,10 +1499,6 @@ def set_phase_size_broadening(proj: Any, hist: Any, phase_name: str, size_broade
     Returns:
     None
     """
-
-    if phase_name not in [p.name for p in proj.phases()]:
-        raise ValueError(f"Phase '{phase_name}' not found in project. Cannot set size broadening parameters.")
-
     # Extract model type (default to isotropic for backward compatibility)
     model = size_broadening_dict.get('model', 'isotropic')
 
@@ -1557,6 +1590,7 @@ def _set_isotropic_size_broadening(proj: Any, hist: Any, phase_name: str, size_b
 # Setting strain broadening should be done in the same way as size broadening
 # The dictionary structure is very similar. We just need to map to the correct keys in the proj.data structure.
 
+@require_phase("Cannot set strain broadening parameters.")
 def set_phase_strain_broadening(proj: Any, hist: Any, phase_name: str, strain_broadening_dict: dict, print_info: bool = False) -> None:
     """
     Set strain broadening parameters in the GSAS-II project for a given phase.
@@ -1581,10 +1615,6 @@ def set_phase_strain_broadening(proj: Any, hist: Any, phase_name: str, strain_br
     Returns:
     None
     """
-
-    if phase_name not in [p.name for p in proj.phases()]:
-        raise ValueError(f"Phase '{phase_name}' not found in project. Cannot set strain broadening parameters.")
-
     # Extract model type (default to isotropic for backward compatibility)
     model = strain_broadening_dict.get('model', 'isotropic')
 
@@ -1701,6 +1731,7 @@ def has_active_refinement_parameter(atom_param: dict) -> bool:
 
 
 # Function to set atom parameters for a phase
+@require_phase("Cannot set atom parameters.")
 def set_phase_atom_parameters(proj: Any, phase_name: str, atom_parameters_dict: dict, print_info: bool = False) -> list[str]:
     """
     Set atom parameters for a phase in the GSAS-II project.
@@ -1787,9 +1818,6 @@ def set_phase_atom_parameters(proj: Any, phase_name: str, atom_parameters_dict: 
     }
 
     phase_names = [p.name for p in proj.phases()]
-    if phase_name not in phase_names:
-        raise ValueError(f"Phase '{phase_name}' not found in project. Cannot set atom parameters.")
-
     phase_idx = phase_names.index(phase_name)
     SGData = proj.data['Phases'][phase_name]['General']['SGData']
     atom_labels_present = [x[0] for x in proj.data['Phases'][phase_name]['Atoms']]
