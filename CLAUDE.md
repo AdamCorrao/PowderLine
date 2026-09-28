@@ -1,5 +1,19 @@
 # CLAUDE.md — PowderLine
 
+> ### ⚠️ Multi-engine refactor in progress (v0.2.0)
+> **The architecture described below is the pre-refactor v0.1.1 baseline and is being replaced — do not treat it as the target.** Active on branch `refactor/multi-engine`. During the refactor the authoritative sources are, in order:
+> 1. `_dev/dossiers/multi-engine/05-master-plan.md` — decision log (§3) + invariants (§4) + orchestration guidance (§6)
+> 2. the active `_dev/dossiers/multi-engine/subplans/re-NN-*.md`
+> 3. `_dev/dossiers/multi-engine/00-pre-planning-findings.md` — codebase map (file:line anchors)
+>
+> **Ask, don't assume (master plan A25):** if a decision isn't in the decision log or the active subplan, **stop and ask the maintainer — do not infer** — and record the answer in the dossier before proceeding.
+>
+> **Frozen:** GSAS-II setup/execution in `kicker.py` is move-only; additive edits go only through the signed-off ledger `_dev/dossiers/multi-engine/tasks/re04-frozen-edits.md`.
+>
+> **Known-stale below** (being changed — see the decision log): `0.26.0` / `EXPECTED_SCHEMA_VERSION` exact-match → core + per-engine schemas `1.0.0` with *declared* compatibility; the `engine=` arg → removed (engine named by `schema_name`, e.g. `gsasii.rietveld`); `GSASII_Rietveld`/`GSASII_SPF` → `gsasii.rietveld`/`gsasii.spf`; `src/powderline/{topas,easydiff}/` → `src/powderline/gateways/{gsasii,topas,easydiffraction}/`; env `easydiff` → `easydiffraction`; default env → core-only (no engines); the 6-name public API + flat "4-element list" → `RefinableParameter`/`BoundedRefinableParameter` (re/07).
+>
+> _This banner is removed in `re/10` (docs migration), which rewrites this file for the new architecture._
+
 Automated powder X-ray diffraction refinement driven from a JSON "recipe". PowderLine
 is the application layer over interchangeable refinement engines: a recipe (schema
 **0.26.0**) describes the refinement, and `powderline.run()` drives GSAS-II by default —
