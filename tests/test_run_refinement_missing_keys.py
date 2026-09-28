@@ -129,16 +129,16 @@ def _run_with_mocked_gsas(mock_recipe, tmp_path, proj, hist):
     output_dir.mkdir()
 
     with patch("powderline.kicker.G2.G2Project", return_value=proj), \
-         patch("powderline.kicker.add_powder_histogram_from_arrays", return_value=hist), \
-         patch("powderline.kicker.set_hist_scale"), \
-         patch("powderline.kicker.set_fit_range_hist"), \
-         patch("powderline.kicker.set_chebyshev_background"), \
-         patch("powderline.kicker.set_single_peak_background"), \
-         patch("powderline.kicker.add_phases_from_dict"), \
-         patch("powderline.kicker.set_phase_parameterization"), \
-         patch("powderline.kicker.set_instrument_parameterization"), \
-         patch("powderline.kicker.set_refinement_cycles"), \
-         patch("powderline.kicker.calculate_cell_esds_from_A_matrix",
+         patch("powderline.gateways.gsasii.executors.add_powder_histogram_from_arrays", return_value=hist), \
+         patch("powderline.gateways.gsasii.executors.set_hist_scale"), \
+         patch("powderline.gateways.gsasii.executors.set_fit_range_hist"), \
+         patch("powderline.gateways.gsasii.executors.set_chebyshev_background"), \
+         patch("powderline.gateways.gsasii.executors.set_single_peak_background"), \
+         patch("powderline.gateways.gsasii.executors.add_phases_from_dict"), \
+         patch("powderline.gateways.gsasii.executors.set_phase_parameterization"), \
+         patch("powderline.gateways.gsasii.executors.set_instrument_parameterization"), \
+         patch("powderline.gateways.gsasii.executors.set_refinement_cycles"), \
+         patch("powderline.gateways.gsasii.extractors.calculate_cell_esds_from_A_matrix",
                return_value=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]):
         from powderline.kicker import run_refinement
         result = run_refinement(mock_recipe, output_dir, verbose=False, method='test')
@@ -277,7 +277,7 @@ class TestHistogramLoadFailure:
         output_dir.mkdir()
 
         with patch("powderline.kicker.G2.G2Project", return_value=proj), \
-             patch("powderline.kicker.add_powder_histogram_from_arrays",
+             patch("powderline.gateways.gsasii.executors.add_powder_histogram_from_arrays",
                    side_effect=ValueError("bad instrument params")):
             from powderline.kicker import run_refinement
             result = run_refinement(mock_recipe, output_dir, verbose=False, method='test')
@@ -292,7 +292,7 @@ class TestHistogramLoadFailure:
         output_dir.mkdir()
 
         with patch("powderline.kicker.G2.G2Project", return_value=proj), \
-             patch("powderline.kicker.add_powder_histogram_from_arrays",
+             patch("powderline.gateways.gsasii.executors.add_powder_histogram_from_arrays",
                    side_effect=IOError("file not found")):
             from powderline.kicker import run_refinement
             result = run_refinement(mock_recipe, output_dir, verbose=False, method='test')
@@ -308,16 +308,16 @@ class TestExecutorFailure:
         proj, hist, _ = _make_mock_hist("PWDR test", residuals={"wR": 5.0})
 
         with patch("powderline.kicker.G2.G2Project", return_value=proj), \
-             patch("powderline.kicker.add_powder_histogram_from_arrays", return_value=hist), \
-             patch("powderline.kicker.set_hist_scale"), \
-             patch("powderline.kicker.set_fit_range_hist"), \
-             patch("powderline.kicker.set_chebyshev_background"), \
-             patch("powderline.kicker.set_single_peak_background"), \
-             patch("powderline.kicker.add_phases_from_dict"), \
-             patch("powderline.kicker.set_phase_parameterization"), \
-             patch("powderline.kicker.set_instrument_parameterization"), \
-             patch("powderline.kicker.set_refinement_cycles"), \
-             patch("powderline.kicker.SCHEMA_EXECUTORS",
+             patch("powderline.gateways.gsasii.executors.add_powder_histogram_from_arrays", return_value=hist), \
+             patch("powderline.gateways.gsasii.executors.set_hist_scale"), \
+             patch("powderline.gateways.gsasii.executors.set_fit_range_hist"), \
+             patch("powderline.gateways.gsasii.executors.set_chebyshev_background"), \
+             patch("powderline.gateways.gsasii.executors.set_single_peak_background"), \
+             patch("powderline.gateways.gsasii.executors.add_phases_from_dict"), \
+             patch("powderline.gateways.gsasii.executors.set_phase_parameterization"), \
+             patch("powderline.gateways.gsasii.executors.set_instrument_parameterization"), \
+             patch("powderline.gateways.gsasii.executors.set_refinement_cycles"), \
+             patch("powderline.gateways.gsasii.executors.SCHEMA_EXECUTORS",
                    {"GSASII_Rietveld": MagicMock(side_effect=RuntimeError("diverged"))}):
             from powderline.kicker import run_refinement
             result = run_refinement(mock_recipe, output_dir=tmp_path, verbose=False, method='test')
@@ -331,16 +331,16 @@ class TestExecutorFailure:
         failing_executor = MagicMock(return_value={"success": False, "rwp": None})
 
         with patch("powderline.kicker.G2.G2Project", return_value=proj), \
-             patch("powderline.kicker.add_powder_histogram_from_arrays", return_value=hist), \
-             patch("powderline.kicker.set_hist_scale"), \
-             patch("powderline.kicker.set_fit_range_hist"), \
-             patch("powderline.kicker.set_chebyshev_background"), \
-             patch("powderline.kicker.set_single_peak_background"), \
-             patch("powderline.kicker.add_phases_from_dict"), \
-             patch("powderline.kicker.set_phase_parameterization"), \
-             patch("powderline.kicker.set_instrument_parameterization"), \
-             patch("powderline.kicker.set_refinement_cycles"), \
-             patch("powderline.kicker.SCHEMA_EXECUTORS", {"GSASII_Rietveld": failing_executor}):
+             patch("powderline.gateways.gsasii.executors.add_powder_histogram_from_arrays", return_value=hist), \
+             patch("powderline.gateways.gsasii.executors.set_hist_scale"), \
+             patch("powderline.gateways.gsasii.executors.set_fit_range_hist"), \
+             patch("powderline.gateways.gsasii.executors.set_chebyshev_background"), \
+             patch("powderline.gateways.gsasii.executors.set_single_peak_background"), \
+             patch("powderline.gateways.gsasii.executors.add_phases_from_dict"), \
+             patch("powderline.gateways.gsasii.executors.set_phase_parameterization"), \
+             patch("powderline.gateways.gsasii.executors.set_instrument_parameterization"), \
+             patch("powderline.gateways.gsasii.executors.set_refinement_cycles"), \
+             patch("powderline.gateways.gsasii.executors.SCHEMA_EXECUTORS", {"GSASII_Rietveld": failing_executor}):
             from powderline.kicker import run_refinement
             result = run_refinement(mock_recipe, output_dir=tmp_path, verbose=False, method='test')
 
@@ -357,15 +357,15 @@ class TestUnknownSchemaName:
         proj, hist, _ = _make_mock_hist("PWDR test", residuals={"wR": 5.0})
 
         with patch("powderline.kicker.G2.G2Project", return_value=proj), \
-             patch("powderline.kicker.add_powder_histogram_from_arrays", return_value=hist), \
-             patch("powderline.kicker.set_hist_scale"), \
-             patch("powderline.kicker.set_fit_range_hist"), \
-             patch("powderline.kicker.set_chebyshev_background"), \
-             patch("powderline.kicker.set_single_peak_background"), \
-             patch("powderline.kicker.add_phases_from_dict"), \
-             patch("powderline.kicker.set_phase_parameterization"), \
-             patch("powderline.kicker.set_instrument_parameterization"), \
-             patch("powderline.kicker.set_refinement_cycles"):
+             patch("powderline.gateways.gsasii.executors.add_powder_histogram_from_arrays", return_value=hist), \
+             patch("powderline.gateways.gsasii.executors.set_hist_scale"), \
+             patch("powderline.gateways.gsasii.executors.set_fit_range_hist"), \
+             patch("powderline.gateways.gsasii.executors.set_chebyshev_background"), \
+             patch("powderline.gateways.gsasii.executors.set_single_peak_background"), \
+             patch("powderline.gateways.gsasii.executors.add_phases_from_dict"), \
+             patch("powderline.gateways.gsasii.executors.set_phase_parameterization"), \
+             patch("powderline.gateways.gsasii.executors.set_instrument_parameterization"), \
+             patch("powderline.gateways.gsasii.executors.set_refinement_cycles"):
             from powderline.kicker import run_refinement
             result = run_refinement(mock_recipe, output_dir=tmp_path, verbose=False, method='test')
 
@@ -383,18 +383,18 @@ class TestCorruptCovariance:
         proj.data["Covariance"]["data"]["varyList"] = [":0:Back;0"]
 
         with patch("powderline.kicker.G2.G2Project", return_value=proj), \
-             patch("powderline.kicker.add_powder_histogram_from_arrays", return_value=hist), \
-             patch("powderline.kicker.set_hist_scale"), \
-             patch("powderline.kicker.set_fit_range_hist"), \
-             patch("powderline.kicker.set_chebyshev_background"), \
-             patch("powderline.kicker.set_single_peak_background"), \
-             patch("powderline.kicker.add_phases_from_dict"), \
-             patch("powderline.kicker.set_phase_parameterization"), \
-             patch("powderline.kicker.set_instrument_parameterization"), \
-             patch("powderline.kicker.set_refinement_cycles"), \
-             patch("powderline.kicker.calculate_cell_esds_from_A_matrix",
+             patch("powderline.gateways.gsasii.executors.add_powder_histogram_from_arrays", return_value=hist), \
+             patch("powderline.gateways.gsasii.executors.set_hist_scale"), \
+             patch("powderline.gateways.gsasii.executors.set_fit_range_hist"), \
+             patch("powderline.gateways.gsasii.executors.set_chebyshev_background"), \
+             patch("powderline.gateways.gsasii.executors.set_single_peak_background"), \
+             patch("powderline.gateways.gsasii.executors.add_phases_from_dict"), \
+             patch("powderline.gateways.gsasii.executors.set_phase_parameterization"), \
+             patch("powderline.gateways.gsasii.executors.set_instrument_parameterization"), \
+             patch("powderline.gateways.gsasii.executors.set_refinement_cycles"), \
+             patch("powderline.gateways.gsasii.extractors.calculate_cell_esds_from_A_matrix",
                    return_value=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]), \
-             patch("powderline.kicker.extract_refined_params_from_project",
+             patch("powderline.gateways.gsasii.executors.extract_refined_params_from_project",
                    return_value={}):
             from powderline.kicker import run_refinement
             result = run_refinement(mock_recipe, output_dir=tmp_path, verbose=False, method='test')
@@ -415,7 +415,7 @@ class TestTracebackConsistency:
         output_dir.mkdir()
 
         with patch("powderline.kicker.G2.G2Project", return_value=proj), \
-             patch("powderline.kicker.add_powder_histogram_from_arrays",
+             patch("powderline.gateways.gsasii.executors.add_powder_histogram_from_arrays",
                    side_effect=ValueError("bad instrument params")):
             from powderline.kicker import run_refinement
             result = run_refinement(mock_recipe, output_dir, verbose=False, method='test')
@@ -433,16 +433,16 @@ class TestTracebackConsistency:
         output_dir.mkdir()
 
         with patch("powderline.kicker.G2.G2Project", return_value=proj), \
-             patch("powderline.kicker.add_powder_histogram_from_arrays", return_value=hist), \
-             patch("powderline.kicker.set_hist_scale"), \
-             patch("powderline.kicker.set_fit_range_hist"), \
-             patch("powderline.kicker.set_chebyshev_background"), \
-             patch("powderline.kicker.set_single_peak_background"), \
-             patch("powderline.kicker.add_phases_from_dict"), \
-             patch("powderline.kicker.set_phase_parameterization"), \
-             patch("powderline.kicker.set_instrument_parameterization"), \
-             patch("powderline.kicker.set_refinement_cycles"), \
-             patch("powderline.kicker.SCHEMA_EXECUTORS",
+             patch("powderline.gateways.gsasii.executors.add_powder_histogram_from_arrays", return_value=hist), \
+             patch("powderline.gateways.gsasii.executors.set_hist_scale"), \
+             patch("powderline.gateways.gsasii.executors.set_fit_range_hist"), \
+             patch("powderline.gateways.gsasii.executors.set_chebyshev_background"), \
+             patch("powderline.gateways.gsasii.executors.set_single_peak_background"), \
+             patch("powderline.gateways.gsasii.executors.add_phases_from_dict"), \
+             patch("powderline.gateways.gsasii.executors.set_phase_parameterization"), \
+             patch("powderline.gateways.gsasii.executors.set_instrument_parameterization"), \
+             patch("powderline.gateways.gsasii.executors.set_refinement_cycles"), \
+             patch("powderline.gateways.gsasii.executors.SCHEMA_EXECUTORS",
                    {"GSASII_Rietveld": MagicMock(side_effect=RuntimeError("diverged"))}):
             from powderline.kicker import run_refinement
             result = run_refinement(mock_recipe, output_dir=output_dir, verbose=False, method='test')
@@ -467,16 +467,16 @@ class TestTracebackConsistency:
         output_dir.mkdir()
 
         with patch("powderline.kicker.G2.G2Project", return_value=MagicMock()), \
-             patch("powderline.kicker.add_powder_histogram_from_arrays", return_value=hist), \
-             patch("powderline.kicker.set_hist_scale"), \
-             patch("powderline.kicker.set_fit_range_hist"), \
-             patch("powderline.kicker.set_chebyshev_background"), \
-             patch("powderline.kicker.set_single_peak_background"), \
-             patch("powderline.kicker.add_phases_from_dict"), \
-             patch("powderline.kicker.set_phase_parameterization"), \
-             patch("powderline.kicker.set_instrument_parameterization"), \
-             patch("powderline.kicker.set_refinement_cycles"), \
-             patch("powderline.kicker.SCHEMA_EXECUTORS", {"GSASII_Rietveld": failing_executor}):
+             patch("powderline.gateways.gsasii.executors.add_powder_histogram_from_arrays", return_value=hist), \
+             patch("powderline.gateways.gsasii.executors.set_hist_scale"), \
+             patch("powderline.gateways.gsasii.executors.set_fit_range_hist"), \
+             patch("powderline.gateways.gsasii.executors.set_chebyshev_background"), \
+             patch("powderline.gateways.gsasii.executors.set_single_peak_background"), \
+             patch("powderline.gateways.gsasii.executors.add_phases_from_dict"), \
+             patch("powderline.gateways.gsasii.executors.set_phase_parameterization"), \
+             patch("powderline.gateways.gsasii.executors.set_instrument_parameterization"), \
+             patch("powderline.gateways.gsasii.executors.set_refinement_cycles"), \
+             patch("powderline.gateways.gsasii.executors.SCHEMA_EXECUTORS", {"GSASII_Rietveld": failing_executor}):
             from powderline.kicker import run_refinement
             result = run_refinement(mock_recipe, output_dir=output_dir, verbose=False, method='test')
 
@@ -491,16 +491,16 @@ class TestTracebackConsistency:
         output_dir.mkdir()
 
         with patch("powderline.kicker.G2.G2Project", return_value=MagicMock()), \
-             patch("powderline.kicker.add_powder_histogram_from_arrays", return_value=hist), \
-             patch("powderline.kicker.set_hist_scale"), \
-             patch("powderline.kicker.set_fit_range_hist"), \
-             patch("powderline.kicker.set_chebyshev_background"), \
-             patch("powderline.kicker.set_single_peak_background"), \
-             patch("powderline.kicker.add_phases_from_dict"), \
-             patch("powderline.kicker.set_phase_parameterization"), \
-             patch("powderline.kicker.set_instrument_parameterization"), \
-             patch("powderline.kicker.set_refinement_cycles"), \
-             patch("powderline.kicker.SCHEMA_EXECUTORS", {"GSASII_Rietveld": failing_executor}):
+             patch("powderline.gateways.gsasii.executors.add_powder_histogram_from_arrays", return_value=hist), \
+             patch("powderline.gateways.gsasii.executors.set_hist_scale"), \
+             patch("powderline.gateways.gsasii.executors.set_fit_range_hist"), \
+             patch("powderline.gateways.gsasii.executors.set_chebyshev_background"), \
+             patch("powderline.gateways.gsasii.executors.set_single_peak_background"), \
+             patch("powderline.gateways.gsasii.executors.add_phases_from_dict"), \
+             patch("powderline.gateways.gsasii.executors.set_phase_parameterization"), \
+             patch("powderline.gateways.gsasii.executors.set_instrument_parameterization"), \
+             patch("powderline.gateways.gsasii.executors.set_refinement_cycles"), \
+             patch("powderline.gateways.gsasii.executors.SCHEMA_EXECUTORS", {"GSASII_Rietveld": failing_executor}):
             from powderline.kicker import run_refinement
             result = run_refinement(mock_recipe, output_dir=output_dir, verbose=False, method='test')
 
