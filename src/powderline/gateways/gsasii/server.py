@@ -141,7 +141,7 @@ class GSASServer:
         import_start = time.time()
 
         # Set PYTHONPATH to include src directory
-        src_dir = Path(__file__).parent.parent
+        src_dir = Path(__file__).parents[3]
         if str(src_dir) not in sys.path:
             sys.path.insert(0, str(src_dir))
 

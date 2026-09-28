@@ -275,8 +275,8 @@ class GSASClient:
 
         try:
             # Build command to start server
-            src_dir = Path(__file__).parent.parent
-            server_script = Path(__file__).parent / 'gsas_server.py'
+            src_dir = Path(__file__).parents[3]
+            server_script = Path(__file__).parent / 'server.py'
 
             # Prepare environment
             env = os.environ.copy()
