@@ -1,8 +1,9 @@
-"""Test that kicker.py code changes are accompanied by a version bump.
+"""Test that GSAS-II gateway module code changes are accompanied by a version bump.
 
 WHY THIS EXISTS:
-    The GSAS-II server loads kicker.py once at startup and caches it in memory.
-    If kicker.py changes on disk, running servers still use the old code. The
+    The GSAS-II server loads the GSAS-II gateway modules
+    (src/powderline/gateways/gsasii/) once at startup and caches them in memory.
+    If those modules change on disk, running servers still use the old code. The
     schema_version in each recipe is validated against EXPECTED_SCHEMA_VERSION
     in schema.py, so bumping the version forces stale servers to reject new
     recipes and restart with fresh code. Without this, tests pass locally
@@ -10,7 +11,7 @@ WHY THIS EXISTS:
     uses stale cached code).
 
 WHEN THIS TEST FAILS:
-    kicker.py was modified but _code_hash.json was not updated. Fix it:
+    A GSAS-II gateway module was modified but _code_hash.json was not updated. Fix it:
 
     1. If output behavior changed (new files, format changes, column additions):
        bump EXPECTED_SCHEMA_VERSION in schema.py and update schema_version
@@ -24,17 +25,43 @@ WHEN THIS TEST FAILS:
 import hashlib
 import json
 from pathlib import Path
+import pytest
 
 
 SRC_DIR = Path(__file__).parent.parent / "src" / "powderline"
-KICKER_PATH = SRC_DIR / "kicker.py"
+GATEWAY_DIR = SRC_DIR / "gateways" / "gsasii"
 HASH_FILE = SRC_DIR / "_code_hash.json"
 
+# Expected modules in the manifest (independent tripwire)
+EXPECTED_MODULES = (
+    "helpers.py",
+    "project.py",
+    "setters.py",
+    "executors.py",
+    "extractors.py",
+    "constraints.py",
+)
 
-def test_kicker_hash_matches():
-    """Verify kicker.py hash matches the stored hash in _code_hash.json.
 
-    If this test fails, it means kicker.py was modified without updating
+def test_gateway_manifest_covers_expected_modules():
+    """Verify the manifest covers exactly the expected GSAS-II gateway modules."""
+    assert HASH_FILE.exists(), f"_code_hash.json not found at {HASH_FILE}"
+
+    stored = json.loads(HASH_FILE.read_text(encoding="utf-8"))
+    manifest = stored.get("gsasii_gateway_hashes", {})
+
+    assert set(manifest.keys()) == set(EXPECTED_MODULES), (
+        f"\nManifest modules mismatch!\n"
+        f"  Expected: {set(EXPECTED_MODULES)}\n"
+        f"  Got:      {set(manifest.keys())}\n"
+    )
+
+
+@pytest.mark.parametrize("module_name", EXPECTED_MODULES)
+def test_gateway_hashes_match(module_name):
+    """Verify each GSAS-II gateway module hash matches the stored hash.
+
+    If this test fails, it means a gateway module was modified without updating
     the code hash. To fix:
 
     1. If output behavior changed: bump EXPECTED_SCHEMA_VERSION in schema.py
@@ -42,17 +69,22 @@ def test_kicker_hash_matches():
     2. Run: pixi run update-code-hash
     3. Commit the updated _code_hash.json along with your changes.
     """
-    assert KICKER_PATH.exists(), f"kicker.py not found at {KICKER_PATH}"
+    module_path = GATEWAY_DIR / module_name
+    assert module_path.exists(), f"{module_name} not found at {module_path}"
     assert HASH_FILE.exists(), f"_code_hash.json not found at {HASH_FILE}"
 
-    current_hash = hashlib.md5(KICKER_PATH.read_bytes()).hexdigest()
-    stored = json.loads(HASH_FILE.read_text())
+    current_hash = hashlib.md5(module_path.read_bytes()).hexdigest()
+    stored = json.loads(HASH_FILE.read_text(encoding="utf-8"))
+    manifest = stored.get("gsasii_gateway_hashes", {})
 
-    assert current_hash == stored["kicker_hash"], (
-        f"\nkicker.py has changed but _code_hash.json was not updated!\n"
-        f"  Stored hash:  {stored['kicker_hash']}\n"
+    assert module_name in manifest, f"{module_name} not in manifest"
+    stored_hash = manifest[module_name]
+
+    assert current_hash == stored_hash, (
+        f"\n{module_name} has changed but _code_hash.json was not updated!\n"
+        f"  Stored hash:  {stored_hash}\n"
         f"  Current hash: {current_hash}\n\n"
-        f"If kicker.py output behavior changed, bump EXPECTED_SCHEMA_VERSION in schema.py.\n"
+        f"If gateway module output behavior changed, bump EXPECTED_SCHEMA_VERSION in schema.py.\n"
         f"Then run: pixi run update-code-hash\n"
         f"See docs/DEVELOPMENT.md 'Schema Version Discipline' for details."
     )
