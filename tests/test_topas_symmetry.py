@@ -168,3 +168,35 @@ def test_adp_dof_c2m_unique_b_off_diagonals_fixed():
 def test_adp_dof_rejects_bad_shape():
     with pytest.raises(ValueError):
         sym.adp_dof("P m -3 m", (0.0, 0.0))
+
+
+# --- defensive raise paths (unreachable with real gemmi groups; KI-13) -------
+
+
+class _UnknownSystem:
+    """Stand-in space group whose crystal system no rule handles."""
+
+    def crystal_system_str(self):
+        return "not-a-system"
+
+
+def test_unsupported_crystal_system_raises_translation_error(monkeypatch):
+    monkeypatch.setattr(sym, "resolve_space_group", lambda _sg: _UnknownSystem())
+    with pytest.raises(TopasTranslationError, match="unsupported crystal system"):
+        sym.cell_constraints("P1")
+
+
+def test_empty_stabilizer_raises_translation_error(monkeypatch):
+    import numpy as np
+
+    # A single translation-only op fixes no point, so the stabiliser is empty.
+    monkeypatch.setattr(sym, "_expanded_ops", lambda _sg: [(np.eye(3), np.full(3, 0.5))])
+    with pytest.raises(TopasTranslationError, match="empty stabilizer"):
+        sym.site_dof("P1", [0.1, 0.2, 0.3])
+
+
+def test_monoclinic_unique_axis_failure_raises_translation_error():
+    import numpy as np
+
+    with pytest.raises(TopasTranslationError, match="monoclinic unique axis"):
+        sym._monoclinic_unique_axis([(np.eye(3), np.zeros(3))])
