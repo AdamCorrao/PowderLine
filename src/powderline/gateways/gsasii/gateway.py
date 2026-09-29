@@ -32,7 +32,7 @@ def capabilities() -> dict:
 
 
 def validate(recipe, *, verbose: bool = False):
-    """Validate a recipe (dict or ``RecipeModel``); return the ``RecipeModel`` (A50)."""
+    """Validate a recipe (dict or ``RecipeModel``); return the ``RecipeModel`` (A50, A59)."""
     return _validate_recipe(recipe, verbose=verbose)
 
 

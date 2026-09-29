@@ -41,9 +41,10 @@ class Gateway:
     - ``name``: registry name (``"gsasii"``, ``"topas"``, ``"easydiffraction"``).
     - ``capabilities()``: dict with at least ``name``, ``workflows`` and
       ``engine_version_spec`` (a PEP 440 specifier string, A41).
-    - ``validate(recipe, **opts)``: schema layer, engine-free. Takes a recipe
-      dict or an already-validated model, raises on an invalid recipe, returns
-      the validated model (A50).
+    - ``validate(recipe, *, verbose=False)``: schema layer, engine-free. Takes a
+      recipe dict or an already-validated model, raises on an invalid recipe,
+      returns the validated model (A50). The same explicit keywords on every
+      gateway (A59); new options are added to the contract deliberately.
     - ``run(recipe, output_dir, **opts)``: runtime layer; imports the engine
       lazily; returns the standardized result dict.
     """

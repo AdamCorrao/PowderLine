@@ -33,7 +33,19 @@ EXAMPLES = REPO / "examples"
 
 def _lab6_recipe():
     """Load the LaB6 example recipe as a dict."""
-    return json.loads((EXAMPLES / "example_LaB6" / "input.json").read_text())
+    return json.loads((EXAMPLES / "example_LaB6" / "input.json").read_text(encoding="utf-8"))
+
+
+@pytest.fixture
+def isolated_registry():
+    """Snapshot the registry caches; restore them even if the test fails."""
+    saved = (registry._explicit.copy(), registry._instances.copy(), registry._entry_points)
+    yield registry
+    registry._explicit.clear()
+    registry._explicit.update(saved[0])
+    registry._instances.clear()
+    registry._instances.update(saved[1])
+    registry._entry_points = saved[2]
 
 
 # --- ENGINE_VERSION_SPEC consistency ---
@@ -351,7 +363,7 @@ def test_easydiff_installed_version_satisfies_spec():
 # --- Dispatcher routing ---
 
 
-def test_dispatcher_routes_through_registry_get(tmp_path, monkeypatch):
+def test_dispatcher_routes_through_registry_get(tmp_path, monkeypatch, isolated_registry):
     """powderline.engine.run(..., engine=X) routes through registry.get(X).run(...)."""
     from powderline import engine as dispatcher_module
 
@@ -416,10 +428,6 @@ def test_dispatcher_routes_through_registry_get(tmp_path, monkeypatch):
     assert "easydiffraction" in calls
     assert calls["easydiffraction"]["verbose"] is True
     assert calls["easydiffraction"]["validate_only"] is False
-
-    # Unregister the fake gateways
-    for name in ["gsasii", "topas", "easydiffraction"]:
-        registry.unregister_gateway(name)
 
 
 def test_dispatcher_unknown_engine_raises_value_error():
@@ -509,7 +517,7 @@ sys.meta_path.insert(0, _Block())
 from powderline.gateways.gsasii import gateway as gsasii_gw
 from powderline.exceptions import EngineNotAvailableError
 
-recipe = json.loads(Path(r'{recipe_path}').read_text())
+recipe = json.loads(Path(r'{recipe_path}').read_text(encoding="utf-8"))
 
 try:
     gsasii_gw.run(recipe, r'{output_path}', validate_only=False)
@@ -522,3 +530,24 @@ except EngineNotAvailableError as e:
     proc = run_subprocess_utf8([sys.executable, "-c", script], capture_output=True, text=True)
     assert proc.returncode == 0, f"stdout={proc.stdout!r} stderr={proc.stderr!r}"
     assert "OK" in proc.stdout
+
+
+# --- Uniform validate() contract (A59) ---
+
+
+@pytest.mark.parametrize("gateway_module", [gsasii_gateway, topas_gateway, easydiff_gateway],
+                         ids=["gsasii", "topas", "easydiffraction"])
+def test_validate_signature_is_uniform(gateway_module):
+    import inspect
+
+    params = inspect.signature(gateway_module.validate).parameters
+    assert list(params) == ["recipe", "verbose"]
+    assert params["verbose"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert params["verbose"].default is False
+
+
+@pytest.mark.parametrize("name", ["gsasii", "topas", "easydiffraction"])
+def test_validate_accepts_verbose_through_the_registry(name):
+    example = "example_LaB6_easydiff" if name == "easydiffraction" else "example_LaB6"
+    recipe = json.loads((EXAMPLES / example / "input.json").read_text(encoding="utf-8"))
+    assert isinstance(registry.get(name).validate(recipe, verbose=True), schema.RecipeModel)

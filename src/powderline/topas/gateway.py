@@ -30,8 +30,12 @@ def capabilities() -> dict:
     return {"name": NAME, "workflows": WORKFLOWS, "engine_version_spec": ENGINE_VERSION_SPEC}
 
 
-def validate(recipe):
-    """Validate a recipe (dict or ``RecipeModel``); return the ``RecipeModel`` (A50)."""
+def validate(recipe, *, verbose: bool = False):
+    """Validate a recipe (dict or ``RecipeModel``); return the ``RecipeModel`` (A50, A59).
+
+    ``verbose`` is part of the uniform gateway contract; this gateway prints
+    nothing extra today.
+    """
     from powderline.topas.writer import render_topas
 
     model = recipe if isinstance(recipe, RecipeModel) else RecipeModel.model_validate(recipe)
