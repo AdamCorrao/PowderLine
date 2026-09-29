@@ -35,7 +35,7 @@ def _iparm_current(iparm1: dict, key: str, default=0.0):
 
 
 def check_unsupported(recipe: dict) -> list[str]:
-    from powderline.topas.symmetry import cell_constraints
+    from powderline.symmetry import cell_constraints
     from powderline.topas.errors import TopasTranslationError
 
     warnings: list[str] = []

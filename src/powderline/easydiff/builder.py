@@ -23,7 +23,7 @@ from powderline.easydiff.conversions import (
 from powderline.easydiff.errors import EasyDiffractionTranslationError
 from powderline.easydiff.policy import check_unsupported, param_flag, param_value
 from powderline.topas.errors import TopasTranslationError
-from powderline.topas.symmetry import cell_constraints
+from powderline.symmetry import cell_constraints
 
 
 @dataclass

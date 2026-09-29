@@ -17366,6 +17366,7 @@ packages:
   - h5py>=3.12
   - httpx>=0.28
   - numpy>=2.0
+  - packaging>=22
   - pandas>=2.0
   - pybaselines>=1.2
   - pydantic>=2.0

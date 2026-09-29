@@ -52,7 +52,17 @@ dependencies = [
     "uvicorn>=0.34",
     "httpx>=0.28",
     "gemmi>=0.7,<0.8",
+    "packaging>=22",
 ]
+
+# Gateway plugins (master plan A17): each entry targets an engine-free factory
+# module. Entry-point metadata is written at install time -- after editing this
+# table, re-install the editable package (`pixi reinstall powderline`) or the
+# registry finds no gateways.
+[project.entry-points."powderline.gateways"]
+gsasii = "powderline.gateways.gsasii.gateway:get_gateway"
+topas = "powderline.topas.gateway:get_gateway"
+easydiffraction = "powderline.easydiff.gateway:get_gateway"
 
 [project.urls]
 Homepage = "https://github.com/NSLS2/PowderLine"

@@ -20,7 +20,6 @@ from dataclasses import dataclass
 import gemmi
 import numpy as np
 
-from .errors import TopasTranslationError
 
 # Fractional-coordinate tolerances (plan §5).
 _POS_TOL = 1e-5   # position / orbit equality mod 1
@@ -85,6 +84,20 @@ class SiteDof:
         return self.axes[_AXIS_LETTERS.index(axis)]
 
 
+def _translation_error(message: str) -> Exception:
+    """Build the error raised for unsupported symmetry input (A56, interim).
+
+    Returns ``powderline.topas.errors.TopasTranslationError``, the type callers
+    catch today. Imported here, lazily, because importing ``powderline.topas`` at
+    module top is circular (topas/__init__ -> writer -> symmetry). This is the
+    module's only reference to a gateway; re/03 replaces it with a core error
+    that each gateway translates.
+    """
+    from powderline.topas.errors import TopasTranslationError
+
+    return TopasTranslationError(message)
+
+
 # --- space-group resolution -------------------------------------------------
 
 
@@ -102,16 +115,16 @@ def resolve_space_group(space_group: str) -> gemmi.SpaceGroup:
     if sg is None:
         sg = gemmi.find_spacegroup_by_name(raw.replace(" ", ""))
     if sg is None:
-        raise TopasTranslationError(
+        raise _translation_error(
             f"unrecognized space-group symbol {space_group!r} (gemmi could not resolve it)"
         )
     if sg.ext == "R":
-        raise TopasTranslationError(
+        raise _translation_error(
             f"rhombohedral ':R' setting not supported for {space_group!r}; "
             "use the hexagonal (:H) setting"
         )
     if sg.ext in ("1", "2") and ":" not in raw:
-        raise TopasTranslationError(
+        raise _translation_error(
             f"space group {space_group!r} has two origin choices; specify one "
             "explicitly (e.g. append ':2' for the GSAS-II origin-2 convention)"
         )
@@ -145,7 +158,7 @@ def _monoclinic_unique_axis(ops: list[tuple[np.ndarray, np.ndarray]]) -> str:
                 if abs(evals[i].real - 1.0) < _MAT_TOL and abs(evals[i].imag) < _MAT_TOL:
                     direction = np.abs(evecs[:, i].real)
                     return _LENGTHS[int(np.argmax(direction))]
-    raise TopasTranslationError(
+    raise _translation_error(
         "could not determine the monoclinic unique axis (no proper 2-fold found)"
     )
 
@@ -180,7 +193,7 @@ def cell_constraints(space_group: str) -> CellRules:
     if system == "triclinic":
         return CellRules(system, singles, (), _ANGLES)
 
-    raise TopasTranslationError(
+    raise _translation_error(
         f"unsupported crystal system {system!r} for space group {space_group!r}"
     )
 
@@ -222,7 +235,7 @@ def site_dof(space_group: str, xyz) -> SiteDof:
 
     stab_rots = [R for (R, t) in ops if np.all(np.abs(_wrap_symmetric(R @ x + t - x)) < _POS_TOL)]
     if not stab_rots:  # pragma: no cover - identity is always in the group
-        raise TopasTranslationError("empty stabilizer (should be impossible)")
+        raise _translation_error("empty stabilizer (should be impossible)")
 
     projector = sum(stab_rots) / len(stab_rots)
 
