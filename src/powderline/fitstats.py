@@ -78,12 +78,16 @@ def compute_fit_statistics(yobs, ycalc, weights, n_params: int,
     if int(n_params) != n_params or n_params < 0:
         raise ValueError(f"n_params must be a non-negative integer, got {n_params!r}")
     n_params = int(n_params)
+    # Check weights over the whole fit range *before* the w > 0 filter: NaN > 0
+    # is False, so a NaN weight would otherwise be silently dropped from N.
+    if not np.all(np.isfinite(weights[mask])):
+        raise ValueError("yobs, ycalc and weights must be finite inside the fit range")
     if np.any(weights[mask] < 0):
         raise ValueError("weights must be >= 0")
 
     included = mask & (weights > 0)
     yo, yc, w = yobs[included], ycalc[included], weights[included]
-    if not (np.all(np.isfinite(yo)) and np.all(np.isfinite(yc)) and np.all(np.isfinite(w))):
+    if not (np.all(np.isfinite(yo)) and np.all(np.isfinite(yc))):
         raise ValueError("yobs, ycalc and weights must be finite inside the fit range")
 
     n_points = int(included.sum())

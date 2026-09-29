@@ -61,6 +61,8 @@ def test_undefined_values_are_nan():
     (dict(yobs=[1, 2], ycalc=[1, 2], weights=[1, 1], n_params=-1), "non-negative integer"),
     (dict(yobs=[1, 2], ycalc=[1, 2], weights=[1, 1], n_params=1.5), "non-negative integer"),
     (dict(yobs=[1, np.nan], ycalc=[1, 2], weights=[1, 1], n_params=0), "finite"),
+    (dict(yobs=[1, 2, 3], ycalc=[1, 2, 3], weights=[1, np.nan, 1], n_params=0), "finite"),
+    (dict(yobs=[1, 2], ycalc=[1, 2], weights=[1, np.inf], n_params=0), "finite"),
     (dict(yobs=[1, 2], ycalc=[1, 2], weights=[1, 1], n_params=0, mask=[True]), "mask"),
 ])
 def test_invalid_input_raises(kwargs, match):
