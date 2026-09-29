@@ -356,3 +356,35 @@ supported topology. Needs protocol versioning for already-running servers.
 
 **Revisit.** Next branch touching the server protocol, or when the HPC
 deployment work starts.
+
+---
+
+## KI-13 — Engine dispatch depends on install-time entry-point metadata `watch · minor`
+
+**What.** Since re/02, `powderline.run()` resolves every engine through the
+gateway registry. That includes the default `engine="gsasii"` and the in-repo
+gateways. The registry reads the `powderline.gateways` entry points from the
+installed distribution's metadata. If a checkout's editable install predates
+the `[project.entry-points]` table, is half-installed, or powderline is
+imported from source (`PYTHONPATH=src`) with no dist-info at all, then every
+`run()` call fails with `GatewayNotInstalledError`. Before re/02 the
+dispatcher imported the backends directly and did not depend on install
+metadata. The error message is clear and names the fix. However, each existing
+dev environment has to be re-installed once (`pixi reinstall powderline`).
+During re/02 the maintainer's `easydiff` env was left half-installed with no
+error shown, and it failed this way.
+
+**Evidence.** `src/powderline/engine.py:53` (`registry.get(...)` for all
+engines); `src/powderline/registry.py` `get` / `_not_installed_message`;
+`CLAUDE.md` (the `pixi reinstall powderline` note); the execution-log re/02
+entry (env notes).
+
+**Decision.** Keep entry points as the **only** discovery path (A17, A58): the
+in-repo gateways use exactly the plugin mechanism a third-party engine will
+use, and a hard-coded fallback would add a second discovery path and hide a
+stale install. The registry's error already names the fix. re/08 adds
+install-health guidance (and possibly a check command); re/10 documents the
+re-install step for contributors.
+
+**Revisit.** re/08 (entry points finalized) and re/10 (migration guide / dev
+docs).
