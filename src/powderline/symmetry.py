@@ -20,7 +20,6 @@ from dataclasses import dataclass
 import gemmi
 import numpy as np
 
-from .errors import TopasTranslationError
 
 # Fractional-coordinate tolerances (plan §5).
 _POS_TOL = 1e-5   # position / orbit equality mod 1
@@ -97,6 +96,10 @@ def resolve_space_group(space_group: str) -> gemmi.SpaceGroup:
     passed without an explicit ``:1``/``:2`` selector also error rather than
     guess an origin (plan §5(6); demo groups are single-origin).
     """
+    # Lazy: importing powderline.topas at module top is circular (topas/__init__
+    # -> writer -> symmetry). Interim until re/03 raises a core error here (A56).
+    from powderline.topas.errors import TopasTranslationError
+
     raw = str(space_group)
     sg = gemmi.find_spacegroup_by_name(raw)
     if sg is None:
@@ -138,6 +141,10 @@ def _monoclinic_unique_axis(ops: list[tuple[np.ndarray, np.ndarray]]) -> str:
     The single proper 2-fold (det +1, trace -1) fixes the unique axis; its
     invariant direction maps to the dominant cell axis a/b/c.
     """
+    # Lazy: importing powderline.topas at module top is circular (topas/__init__
+    # -> writer -> symmetry). Interim until re/03 raises a core error here (A56).
+    from powderline.topas.errors import TopasTranslationError
+
     for R, _t in ops:
         if abs(np.linalg.det(R) - 1.0) < _MAT_TOL and abs(np.trace(R) + 1.0) < _MAT_TOL:
             evals, evecs = np.linalg.eig(R)

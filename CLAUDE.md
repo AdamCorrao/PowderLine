@@ -70,7 +70,7 @@ Python ≥3.12):
 - `policy.py` — the pre-flight "honesty rule": fixed-unmappable recipe features
   are dropped with a recorded warning; anything *flagged for refinement* that
   can't be represented raises `errors.EasyDiffractionTranslationError`. Also
-  validates space groups via `topas.symmetry.cell_constraints`. Powers
+  validates space groups via `powderline.symmetry.cell_constraints`. Powers
   `validate_only` with **no easydiffraction import**.
 - `builder.py` — recipe dict → easydiffraction `Project` + a manifest mapping
   every freed parameter back to GSAS-II naming/units (`scale_to_recipe`); cell

@@ -1,10 +1,10 @@
-"""Tests for powderline.topas.symmetry (plan §5 targets + error cases)."""
+"""Tests for powderline.symmetry (plan §5 targets + error cases)."""
 
 from __future__ import annotations
 
 import pytest
 
-from powderline.topas import symmetry as sym
+from powderline import symmetry as sym
 from powderline.topas.errors import TopasTranslationError
 
 

@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 
 from . import conversions as cv
 from .errors import TopasTranslationError
-from .symmetry import adp_dof, cell_constraints, site_dof
+from powderline.symmetry import adp_dof, cell_constraints, site_dof
 
 SCHEMA_RIETVELD = "GSASII_Rietveld"
 SCHEMA_SPF = "GSASII_SPF"
