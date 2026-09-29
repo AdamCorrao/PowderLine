@@ -105,6 +105,10 @@ The 6-name public API is in `src/powderline/__init__.py` `__all__`:
 - `pixi run mp-simulate --material-id mp-2680` — simulate a pattern from
   Materials Project (`--formula`, `--wavelength`, `--no-server`, `--keep-recipe`).
 - `pixi run docs` / `pixi run docs-clean` — build / clean the Sphinx HTML docs.
+- `pixi reinstall powderline` — required after editing `[project.entry-points]` in
+  `pyproject.toml`: entry-point metadata is written at install time, and the gateway
+  registry (`powderline.registry`, group `powderline.gateways`) finds nothing until
+  the editable package is re-installed.
 - `pixi run update-code-hash` — regenerate `src/powderline/_code_hash.json` after
   editing `kicker.py` (guarded by `tests/test_code_hash.py`).
 

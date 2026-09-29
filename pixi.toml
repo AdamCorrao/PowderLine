@@ -59,6 +59,7 @@ fastapi = ">=0.115.0,<1"
 uvicorn = ">=0.34.0,<1"
 httpx = ">=0.28.0,<1"
 gemmi = ">=0.7.5,<0.8"
+packaging = ">=22"
 # GSAS-II is built as a conda package via pixi-build (see `preview` above) from
 # the tacaswell fork, which adds the conda recipe. This installs GSAS-II on ALL
 # platforms (linux-64/win-64/osx-arm64), unlike the former linux-64-only pip pin.
