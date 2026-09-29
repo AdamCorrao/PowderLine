@@ -18,7 +18,7 @@ import pytest
 
 pytest.importorskip("pydantic")
 
-from powderline import gsas_server
+from powderline.gateways.gsasii import server as gsas_server
 
 
 # The ProcessLookupError/PermissionError semantics below are specific to the
