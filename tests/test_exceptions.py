@@ -13,12 +13,13 @@ from powderline.exceptions import (
     PowderLineError,
     RecipeValidationError,
     StructuredWarning,
+    SymmetryError,
 )
 
 
 @pytest.mark.parametrize("cls", [
     RecipeValidationError, GatewayNotInstalledError, EngineNotAvailableError,
-    EngineVersionError, EngineExecutionError,
+    EngineVersionError, EngineExecutionError, SymmetryError,
 ])
 def test_all_derive_from_powderline_error(cls):
     assert issubclass(cls, PowderLineError)

@@ -24,7 +24,8 @@ from dataclasses import dataclass, field
 
 from . import conversions as cv
 from .errors import TopasTranslationError
-from powderline.symmetry import adp_dof, cell_constraints, site_dof
+from powderline.exceptions import SymmetryError
+from powderline.symmetry import adp_dof, cell_constraints, resolve_space_group, site_dof
 
 SCHEMA_RIETVELD = "GSASII_Rietveld"
 SCHEMA_SPF = "GSASII_SPF"
@@ -708,8 +709,26 @@ def _emit_str(lines, phase_name, phase, payload, ctx, phase_idx=0) -> None:
     _emit_peak_lists(lines, phase_name)
 
 
+def _symmetry(fn, space_group, *args):
+    """Call a core symmetry helper under the TOPAS gateway's rules (A61, A62).
+
+    TOPAS rejects the rhombohedral ``:R`` setting, and core
+    :class:`~powderline.exceptions.SymmetryError` becomes
+    :class:`TopasTranslationError`, the type this gateway raises.
+    """
+    try:
+        if resolve_space_group(space_group).ext == "R":
+            raise TopasTranslationError(
+                f"rhombohedral ':R' setting not supported for {space_group!r}; "
+                "use the hexagonal (:H) setting"
+            )
+        return fn(space_group, *args)
+    except SymmetryError as exc:
+        raise TopasTranslationError(str(exc)) from exc
+
+
 def _emit_cell(lines, phase_name, pname, structure, param, ctx, phase_idx=0) -> None:
-    rules = cell_constraints(structure.get("space_group"))
+    rules = _symmetry(cell_constraints, structure.get("space_group"))
     ucell = structure.get("unit_cell", {})
     pflags = param.get("unit_cell", {}) or {}
 
@@ -832,7 +851,7 @@ def _emit_one_site(lines, phase_name, pname, space_group, xyz, members, atoms, p
     site_label = cv.sanitize(first)
 
     # Multiplicity cross-check: warn (never error) on orbit-size mismatch (plan §5(5)).
-    dof = site_dof(space_group, xyz)
+    dof = _symmetry(site_dof, space_group, xyz)
     for label in members:
         mult = atoms[label].get("Multiplicity")
         if mult is not None and int(mult) != dof.orbit_size:
@@ -925,7 +944,7 @@ def _uaniso_tokens(pname, label, atom, patom, space_group, xyz, ctx, phase_name,
     """Emit the six ``u_ij`` for an anisotropic ADP atom (permissive; warns on a
     refine flag on a symmetry-restricted component but does not enforce it)."""
     aniso = patom.get("Uaniso") or {}
-    dof = adp_dof(space_group, xyz)
+    dof = _symmetry(adp_dof, space_group, xyz)
     tokens = []
     for tkey, rkey in _UANISO_KEYS:
         entry = aniso.get(rkey)

@@ -14,6 +14,9 @@ gateway errors split along the schema/runtime layers (master plan A23, A5/A8):
   supported ``ENGINE_VERSION_SPEC``. A hard error (A44).
 - :class:`EngineExecutionError` — the engine ran and failed.
 - :class:`RecipeValidationError` — a recipe failed validation.
+- :class:`SymmetryError` — core symmetry helpers (``powderline.symmetry``)
+  cannot interpret a space group or site. Gateways convert it to their own
+  error type (A61).
 
 This module must never import an engine (enforced by an import-block test).
 """
@@ -48,6 +51,16 @@ class RecipeValidationError(PowderLineError, ValueError):
                   schema_name=schema_name)
         err.__cause__ = exc
         return err
+
+
+class SymmetryError(PowderLineError, ValueError):
+    """A space group or atomic site cannot be interpreted (``powderline.symmetry``).
+
+    A ``ValueError`` so that, raised inside a pydantic validator, it is reported
+    as a validation error with the field location. Gateways that call the
+    symmetry helpers outside validation convert it to their own error type
+    (A56, A61).
+    """
 
 
 class GatewayNotInstalledError(PowderLineError):

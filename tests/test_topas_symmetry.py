@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from powderline import symmetry as sym
-from powderline.topas.errors import TopasTranslationError
+from powderline.exceptions import PowderLineError, SymmetryError
 
 
 # --- (a) cell rules ---------------------------------------------------------
@@ -67,19 +67,36 @@ def test_trigonal_hex_setting_is_hexagonal_cell():
 
 
 def test_unknown_symbol_errors():
-    with pytest.raises(TopasTranslationError, match="unrecognized"):
+    with pytest.raises(SymmetryError, match="unrecognized"):
         sym.cell_constraints("NotASpaceGroup")
 
 
-def test_rhombohedral_R_setting_errors():
-    with pytest.raises(TopasTranslationError, match="rhombohedral"):
+def test_rhombohedral_R_setting_accepted_by_core():
+    # A62: core resolves both rhombohedral settings; engines that cannot handle
+    # :R (TOPAS, easydiffraction) reject it in their own layer.
+    assert sym.resolve_space_group("R -3 m :R").ext == "R"
+    assert sym.site_dof("R -3 m :R", (0.0, 0.0, 0.0)).orbit_size == 1
+    assert sym.site_dof("R -3 m :H", (0.0, 0.0, 0.0)).orbit_size == 3
+
+
+def test_rhombohedral_R_cell_rules_not_implemented():
+    # alpha=beta=gamma ties are not expressible as CellRules: refuse, don't guess.
+    with pytest.raises(SymmetryError, match="not implemented"):
         sym.cell_constraints("R -3 m :R")
-    with pytest.raises(TopasTranslationError, match="rhombohedral"):
-        sym.site_dof("R -3 m :R", (0.0, 0.0, 0.0))
+
+
+def test_symmetry_error_is_a_core_value_error():
+    # A61: a ValueError (pydantic reports it with the field location inside a
+    # validator) and a PowderLineError; no gateway error type involved.
+    with pytest.raises(SymmetryError) as info:
+        sym.resolve_space_group("NotASpaceGroup")
+    assert isinstance(info.value, ValueError)
+    assert isinstance(info.value, PowderLineError)
+    assert type(info.value).__module__ == "powderline.exceptions"
 
 
 def test_two_origin_without_selector_errors():
-    with pytest.raises(TopasTranslationError, match="two origin"):
+    with pytest.raises(SymmetryError, match="two origin"):
         sym.cell_constraints("F d -3 m")
     # explicit origin is accepted
     assert sym.cell_constraints("F d -3 m:2").crystal_system == "cubic"
@@ -180,23 +197,23 @@ class _UnknownSystem:
         return "not-a-system"
 
 
-def test_unsupported_crystal_system_raises_translation_error(monkeypatch):
+def test_unsupported_crystal_system_raises_symmetry_error(monkeypatch):
     monkeypatch.setattr(sym, "resolve_space_group", lambda _sg: _UnknownSystem())
-    with pytest.raises(TopasTranslationError, match="unsupported crystal system"):
+    with pytest.raises(SymmetryError, match="unsupported crystal system"):
         sym.cell_constraints("P1")
 
 
-def test_empty_stabilizer_raises_translation_error(monkeypatch):
+def test_empty_stabilizer_raises_symmetry_error(monkeypatch):
     import numpy as np
 
     # A single translation-only op fixes no point, so the stabiliser is empty.
     monkeypatch.setattr(sym, "_expanded_ops", lambda _sg: [(np.eye(3), np.full(3, 0.5))])
-    with pytest.raises(TopasTranslationError, match="empty stabilizer"):
+    with pytest.raises(SymmetryError, match="empty stabilizer"):
         sym.site_dof("P1", [0.1, 0.2, 0.3])
 
 
-def test_monoclinic_unique_axis_failure_raises_translation_error():
+def test_monoclinic_unique_axis_failure_raises_symmetry_error():
     import numpy as np
 
-    with pytest.raises(TopasTranslationError, match="monoclinic unique axis"):
+    with pytest.raises(SymmetryError, match="monoclinic unique axis"):
         sym._monoclinic_unique_axis([(np.eye(3), np.zeros(3))])

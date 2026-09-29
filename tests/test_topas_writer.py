@@ -280,6 +280,22 @@ def test_rhombohedral_R_setting_rejected():
         render_topas(recipe, "x")
 
 
+@pytest.mark.parametrize("space_group, match", [
+    ("NotASpaceGroup", "unrecognized"),
+    ("F d -3 m", "two origin"),
+])
+def test_core_symmetry_error_becomes_translation_error(space_group, match):
+    # A61: core raises SymmetryError; the TOPAS gateway raises its own type,
+    # chaining the core error.
+    from powderline.exceptions import SymmetryError
+
+    recipe = _recipe("example_LaB6")
+    recipe["payload"]["phases"]["LaB6"]["structure"]["space_group"] = space_group
+    with pytest.raises(TopasTranslationError, match=match) as info:
+        render_topas(recipe, "x")
+    assert isinstance(info.value.__cause__, SymmetryError)
+
+
 def test_template_skeleton_rejected_cleanly():
     # The fill-in-the-blanks example_template (null instrument.parameterization,
     # empty tth) must fail with a clear TopasTranslationError, not a raw crash.

@@ -1,6 +1,6 @@
-"""gemmi-backed crystallographic rules for the TOPAS writer (plan §5).
+"""gemmi-backed crystallographic rules (engine-free core module).
 
-Two pure capabilities, both GSAS-II-free:
+Two pure capabilities, both engine-free:
 
 * :func:`cell_constraints` -- crystal-system cell equalities and fixed angles,
   so the writer can share one ``prm`` name across equal cell lengths and emit
@@ -11,6 +11,10 @@ Two pure capabilities, both GSAS-II-free:
 
 Space-group operations come from gemmi; the stabiliser / projector math is our
 own (~small, spec in plan §5). ``gemmi`` is an approved runtime dependency (D3).
+
+Errors are :class:`~powderline.exceptions.SymmetryError`; each gateway converts
+it to its own error type and applies its engine's own restrictions (e.g. TOPAS
+rejects the rhombohedral ``:R`` setting) (A61, A62).
 """
 
 from __future__ import annotations
@@ -19,6 +23,8 @@ from dataclasses import dataclass
 
 import gemmi
 import numpy as np
+
+from powderline.exceptions import SymmetryError
 
 
 # Fractional-coordinate tolerances (plan §5).
@@ -84,20 +90,6 @@ class SiteDof:
         return self.axes[_AXIS_LETTERS.index(axis)]
 
 
-def _translation_error(message: str) -> Exception:
-    """Build the error raised for unsupported symmetry input (A56, interim).
-
-    Returns ``powderline.topas.errors.TopasTranslationError``, the type callers
-    catch today. Imported here, lazily, because importing ``powderline.topas`` at
-    module top is circular (topas/__init__ -> writer -> symmetry). This is the
-    module's only reference to a gateway; re/03 replaces it with a core error
-    that each gateway translates.
-    """
-    from powderline.topas.errors import TopasTranslationError
-
-    return TopasTranslationError(message)
-
-
 # --- space-group resolution -------------------------------------------------
 
 
@@ -105,26 +97,22 @@ def resolve_space_group(space_group: str) -> gemmi.SpaceGroup:
     """Resolve a recipe space-group string to a gemmi ``SpaceGroup``.
 
     Tries the symbol verbatim, then whitespace-stripped (gemmi accepts both
-    ``"P m -3 m"`` and ``"Pm-3m"``). Rhombohedral ``:R`` settings and
-    unresolvable symbols raise :class:`TopasTranslationError`. Two-origin groups
-    passed without an explicit ``:1``/``:2`` selector also error rather than
-    guess an origin (plan §5(6); demo groups are single-origin).
+    ``"P m -3 m"`` and ``"Pm-3m"``). Unresolvable symbols raise
+    :class:`SymmetryError`. Two-origin groups passed without an explicit
+    ``:1``/``:2`` selector also error rather than guess an origin (plan §5(6)).
+    Both rhombohedral settings (``:H``, ``:R``) are accepted; engines that
+    cannot handle ``:R`` reject it themselves (A62).
     """
     raw = str(space_group)
     sg = gemmi.find_spacegroup_by_name(raw)
     if sg is None:
         sg = gemmi.find_spacegroup_by_name(raw.replace(" ", ""))
     if sg is None:
-        raise _translation_error(
+        raise SymmetryError(
             f"unrecognized space-group symbol {space_group!r} (gemmi could not resolve it)"
         )
-    if sg.ext == "R":
-        raise _translation_error(
-            f"rhombohedral ':R' setting not supported for {space_group!r}; "
-            "use the hexagonal (:H) setting"
-        )
     if sg.ext in ("1", "2") and ":" not in raw:
-        raise _translation_error(
+        raise SymmetryError(
             f"space group {space_group!r} has two origin choices; specify one "
             "explicitly (e.g. append ':2' for the GSAS-II origin-2 convention)"
         )
@@ -158,7 +146,7 @@ def _monoclinic_unique_axis(ops: list[tuple[np.ndarray, np.ndarray]]) -> str:
                 if abs(evals[i].real - 1.0) < _MAT_TOL and abs(evals[i].imag) < _MAT_TOL:
                     direction = np.abs(evecs[:, i].real)
                     return _LENGTHS[int(np.argmax(direction))]
-    raise _translation_error(
+    raise SymmetryError(
         "could not determine the monoclinic unique axis (no proper 2-fold found)"
     )
 
@@ -166,8 +154,9 @@ def _monoclinic_unique_axis(ops: list[tuple[np.ndarray, np.ndarray]]) -> str:
 def cell_constraints(space_group: str) -> CellRules:
     """Cell-length equality groups and fixed/free angles for ``space_group``.
 
-    See :class:`CellRules`. Rhombohedral ``:R`` and unknown symbols raise
-    :class:`TopasTranslationError` (via :func:`resolve_space_group`).
+    See :class:`CellRules`. Unknown symbols raise :class:`SymmetryError` (via
+    :func:`resolve_space_group`), as does the rhombohedral ``:R`` setting (its
+    tied angles are not expressible as :class:`CellRules`).
     """
     sg = resolve_space_group(space_group)
     system = sg.crystal_system_str()
@@ -180,8 +169,14 @@ def cell_constraints(space_group: str) -> CellRules:
     if system == "tetragonal":
         return CellRules(system, (("a", "b"), ("c",)), all_angles_fixed, ())
     if system in ("hexagonal", "trigonal"):
-        # trigonal reaches here only in the hexagonal (:H) setting -- :R errored
-        # out in resolve_space_group. Cell is a=b, 90/90/120.
+        if sg.ext == "R":
+            # Rhombohedral axes need alpha=beta=gamma tied together, which
+            # CellRules cannot express; refuse rather than return wrong rules.
+            raise SymmetryError(
+                f"cell rules for the rhombohedral ':R' setting are not implemented "
+                f"({space_group!r}); use the hexagonal (:H) setting"
+            )
+        # Hexagonal axes (incl. the :H setting of rhombohedral groups): a=b, 90/90/120.
         return CellRules(system, (("a", "b"), ("c",)), all_angles_fixed, ())
     if system == "orthorhombic":
         return CellRules(system, singles, all_angles_fixed, ())
@@ -193,7 +188,7 @@ def cell_constraints(space_group: str) -> CellRules:
     if system == "triclinic":
         return CellRules(system, singles, (), _ANGLES)
 
-    raise _translation_error(
+    raise SymmetryError(
         f"unsupported crystal system {system!r} for space group {space_group!r}"
     )
 
@@ -235,7 +230,7 @@ def site_dof(space_group: str, xyz) -> SiteDof:
 
     stab_rots = [R for (R, t) in ops if np.all(np.abs(_wrap_symmetric(R @ x + t - x)) < _POS_TOL)]
     if not stab_rots:  # pragma: no cover - identity is always in the group
-        raise _translation_error("empty stabilizer (should be impossible)")
+        raise SymmetryError("empty stabilizer (should be impossible)")
 
     projector = sum(stab_rots) / len(stab_rots)
 
