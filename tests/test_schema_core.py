@@ -238,18 +238,21 @@ def test_chebyshev_num_coefficients_must_be_positive():
 
 
 def test_chebyshev_refine_flag_null_rejected():
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError) as exc_info:
         ChebyshevBackground(num_coefficients=1, coefficients=[1.0], refine_flag=None)
+    assert _errors(exc_info) == [(('refine_flag',), 'bool_type')]
 
 
 def test_chebyshev_refine_flag_string_rejected():
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError) as exc_info:
         ChebyshevBackground(num_coefficients=1, coefficients=[1.0], refine_flag="true")
+    assert _errors(exc_info) == [(('refine_flag',), 'bool_type')]
 
 
 def test_chebyshev_refine_flag_int_rejected():
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError) as exc_info:
         ChebyshevBackground(num_coefficients=1, coefficients=[1.0], refine_flag=1)
+    assert _errors(exc_info) == [(('refine_flag',), 'bool_type')]
 
 
 def test_chebyshev_extra_key_rejected():
@@ -604,8 +607,9 @@ def test_refinable_parameter_scalar_rejected():
 
 
 def test_refinable_parameter_null_value_rejected():
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError) as exc_info:
         _WrapperRP(a=[None, True])
+    assert _errors(exc_info) == [(('a', 'value'), 'float_type')]
 
 
 @pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
@@ -615,23 +619,27 @@ def test_refinable_parameter_non_finite_value_rejected(bad):
 
 
 def test_refinable_parameter_refine_flag_null_rejected():
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError) as exc_info:
         _WrapperRP(a=[1.5, None])
+    assert _errors(exc_info) == [(('a', 'refine_flag'), 'bool_type')]
 
 
 def test_refinable_parameter_refine_flag_string_rejected():
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError) as exc_info:
         _WrapperRP(a=[1.5, "true"])
+    assert _errors(exc_info) == [(('a', 'refine_flag'), 'bool_type')]
 
 
 def test_refinable_parameter_refine_flag_int_1_rejected():
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError) as exc_info:
         _WrapperRP(a=[1.5, 1])
+    assert _errors(exc_info) == [(('a', 'refine_flag'), 'bool_type')]
 
 
 def test_refinable_parameter_refine_flag_int_0_rejected():
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError) as exc_info:
         _WrapperRP(a=[1.5, 0])
+    assert _errors(exc_info) == [(('a', 'refine_flag'), 'bool_type')]
 
 
 def test_refinable_parameter_int_value_accepted_and_dumped_as_float():
@@ -703,8 +711,9 @@ def test_bounded_refinable_parameter_non_finite_max_rejected(bad):
 
 
 def test_bounded_refinable_parameter_null_value_rejected():
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError) as exc_info:
         _WrapperBRP(a=[None, True, 0.0, 2.0])
+    assert _errors(exc_info) == [(('a', 'value'), 'float_type')]
 
 
 # --- 4. StructureRefinableParameter / StructureBoundedRefinableParameter ----
@@ -730,8 +739,9 @@ def test_structure_refinable_parameter_4_element_list_rejected():
 
 
 def test_structure_refinable_parameter_refine_flag_null_rejected():
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError) as exc_info:
         _WrapperSRP(a=[None, None])
+    assert _errors(exc_info) == [(('a', 'refine_flag'), 'bool_type')]
 
 
 def test_structure_bounded_refinable_parameter_null_value_accepted():
@@ -756,8 +766,9 @@ def test_structure_bounded_refinable_parameter_non_null_value_enforces_bounds_ab
 
 
 def test_structure_bounded_refinable_parameter_refine_flag_null_rejected():
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError) as exc_info:
         _WrapperSBRP(a=[None, None, 0.0, 2.0])
+    assert _errors(exc_info) == [(('a', 'refine_flag'), 'bool_type')]
 
 
 # --- 5. check_within_bounds -------------------------------------------------
@@ -1162,8 +1173,8 @@ def test_phase_structure_special_position_adjusted():
     }
     phase = PhaseStructure.model_validate(d)
     # Check coordinates are exact fractions
-    assert abs(phase.atoms["A1"].x - 1/3) < 1e-15
-    assert abs(phase.atoms["A1"].y - 2/3) < 1e-15
+    assert phase.atoms["A1"].x == 1/3
+    assert phase.atoms["A1"].y == 2/3
     # Check warning
     warnings = phase.warnings()
     assert len(warnings) == 1
@@ -1216,8 +1227,9 @@ def test_phase_structure_cell_cubic_b_neq_a_rejected():
     with pytest.raises(ValidationError) as exc_info:
         PhaseStructure.model_validate(d)
     msg = str(exc_info.value)
-    assert "b" in msg.lower()
-    assert "inconsistent" in msg.lower()
+    assert "b = 4.2 (symmetric value" in msg
+    assert "inconsistent" in msg
+    assert _errors(exc_info) == [(("unit_cell",), "value_error")]
 
 
 def test_phase_structure_cell_cubic_gamma_91_rejected():
@@ -1302,7 +1314,7 @@ def test_phase_structure_uaniso_hexagonal_6h_adjusted():
     }
     phase = PhaseStructure.model_validate(d)
     # Check U11 stayed
-    assert abs(phase.atoms["A1"].Uaniso["U11"] - 0.012) < 1e-15
+    assert phase.atoms["A1"].Uaniso["U11"] == 0.012  # free: returned exactly as stated
     # Check U12 became U22/2
     u22 = phase.atoms["A1"].Uaniso["U22"]
     u12 = phase.atoms["A1"].Uaniso["U12"]

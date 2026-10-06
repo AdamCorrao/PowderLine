@@ -137,8 +137,7 @@ def test_check_uij_identity_unchanged():
     uij = (0.01, 0.01, 0.01, 0.0, 0.0, 0.0)
     symmetric, adjusted = check_uij(sg, xyz, uij)
     assert adjusted is False
-    for i in range(6):
-        assert abs(symmetric[i] - uij[i]) < 1e-15
+    assert symmetric == uij  # returned exactly, not just closely
 
 
 def test_check_uij_adjusted_within_tol():
@@ -171,8 +170,7 @@ def test_check_uij_general_position_unchanged():
     uij = (0.01, 0.02, 0.03, 0.005, 0.007, 0.009)
     symmetric, adjusted = check_uij(sg, xyz, uij)
     assert adjusted is False
-    for i in range(6):
-        assert abs(symmetric[i] - uij[i]) < 1e-15
+    assert symmetric == uij  # returned exactly, not just closely
 
 
 # --- analyze_site -----------------------------------------------------------
