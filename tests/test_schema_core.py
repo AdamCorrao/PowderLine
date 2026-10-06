@@ -901,3 +901,410 @@ def test_charged_types_rejected_not_stripped(symbol):
 def test_unknown_element_rejected(symbol):
     with pytest.raises(ValueError, match="not a known element symbol"):
         check_element_symbol(symbol)
+
+
+# --- phase structure ---
+
+import pytest  # noqa: E402
+from fractions import Fraction  # noqa: E402
+from pydantic import ValidationError  # noqa: E402
+
+from powderline.schema_core import UnitCell, Atom, PhaseStructure  # noqa: E402
+from powderline.exceptions import SymmetryError  # noqa: E402
+
+
+def _valid_pmm_lab6_phase_dict():
+    """Helper: valid P m -3 m LaB6-like phase (cubic a=4.15692, La at origin, B at 0.5,0.5,0.2021)."""
+    return {
+        "phase_name": "LaB6",
+        "space_group": "P m -3 m",
+        "unit_cell": {
+            "a": 4.15692,
+            "b": 4.15692,
+            "c": 4.15692,
+            "alpha": 90.0,
+            "beta": 90.0,
+            "gamma": 90.0,
+        },
+        "atoms": {
+            "La1": {
+                "element": "La",
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "occupancy": 1.0,
+                "ADP": "Uiso",
+                "Uiso": 0.005,
+            },
+            "B1": {
+                "element": "B",
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.2021,
+                "occupancy": 1.0,
+                "ADP": "Uiso",
+                "Uiso": 0.006,
+            },
+        },
+    }
+
+
+def test_phase_structure_valid_validates():
+    """Valid phase validates with no warnings."""
+    phase = PhaseStructure.model_validate(_valid_pmm_lab6_phase_dict())
+    assert phase.warnings() == []
+
+
+def test_phase_structure_site_multiplicity():
+    """Site multiplicity: La (origin) -> 1, B (0.5,0.5,0.2021) -> 6 in P m -3 m."""
+    phase = PhaseStructure.model_validate(_valid_pmm_lab6_phase_dict())
+    assert phase.site("La1").multiplicity == 1
+    assert phase.site("B1").multiplicity == 6
+
+
+def test_unit_cell_length_zero_rejected():
+    """UnitCell: a=0 rejected."""
+    with pytest.raises(ValidationError, match="must be positive"):
+        UnitCell(a=0.0, b=4.0, c=4.0, alpha=90, beta=90, gamma=90)
+
+
+def test_unit_cell_length_negative_rejected():
+    """UnitCell: b=-1 rejected."""
+    with pytest.raises(ValidationError, match="must be positive"):
+        UnitCell(a=4.0, b=-1.0, c=4.0, alpha=90, beta=90, gamma=90)
+
+
+def test_unit_cell_length_non_finite_rejected():
+    """UnitCell: c=nan rejected."""
+    with pytest.raises(ValidationError, match="must be positive"):
+        UnitCell(a=4.0, b=4.0, c=float("nan"), alpha=90, beta=90, gamma=90)
+
+
+def test_unit_cell_angle_zero_rejected():
+    """UnitCell: alpha=0 rejected."""
+    with pytest.raises(ValidationError, match="must be between 0 and 180"):
+        UnitCell(a=4.0, b=4.0, c=4.0, alpha=0.0, beta=90, gamma=90)
+
+
+def test_unit_cell_angle_180_rejected():
+    """UnitCell: beta=180 rejected."""
+    with pytest.raises(ValidationError, match="must be between 0 and 180"):
+        UnitCell(a=4.0, b=4.0, c=4.0, alpha=90, beta=180.0, gamma=90)
+
+
+def test_unit_cell_angle_above_180_rejected():
+    """UnitCell: gamma=181 rejected."""
+    with pytest.raises(ValidationError, match="must be between 0 and 180"):
+        UnitCell(a=4.0, b=4.0, c=4.0, alpha=90, beta=90, gamma=181.0)
+
+
+def test_unit_cell_angle_non_finite_rejected():
+    """UnitCell: alpha=inf rejected."""
+    with pytest.raises(ValidationError, match="must be between 0 and 180"):
+        UnitCell(a=4.0, b=4.0, c=4.0, alpha=float("inf"), beta=90, gamma=90)
+
+
+def test_unit_cell_extra_key_rejected():
+    """UnitCell: 'volume' key rejected (extra='forbid')."""
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        UnitCell(a=4.0, b=4.0, c=4.0, alpha=90, beta=90, gamma=90, volume=64.0)
+
+
+def test_atom_element_uppercase_rejected_with_suggestion():
+    """Atom: 'FE' -> message suggests 'Fe'."""
+    with pytest.raises(ValidationError, match="write the element symbol as 'Fe'"):
+        Atom(element="FE", x=0.0, y=0.0, z=0.0, ADP="Uiso", Uiso=0.01)
+
+
+def test_atom_element_charged_rejected():
+    """Atom: 'Fe3+' rejected as charged."""
+    with pytest.raises(ValidationError, match="charged scattering types are not supported"):
+        Atom(element="Fe3+", x=0.0, y=0.0, z=0.0, ADP="Uiso", Uiso=0.01)
+
+
+def test_atom_occupancy_zero_accepted():
+    """Atom: occupancy=0 accepted."""
+    atom = Atom(element="Fe", x=0.0, y=0.0, z=0.0, occupancy=0.0, ADP="Uiso", Uiso=0.01)
+    assert atom.occupancy == 0.0
+
+
+def test_atom_occupancy_one_accepted():
+    """Atom: occupancy=1 accepted."""
+    atom = Atom(element="Fe", x=0.0, y=0.0, z=0.0, occupancy=1.0, ADP="Uiso", Uiso=0.01)
+    assert atom.occupancy == 1.0
+
+
+def test_atom_occupancy_negative_rejected():
+    """Atom: occupancy=-0.01 rejected."""
+    with pytest.raises(ValidationError, match="greater than or equal to 0"):
+        Atom(element="Fe", x=0.0, y=0.0, z=0.0, occupancy=-0.01, ADP="Uiso", Uiso=0.01)
+
+
+def test_atom_occupancy_above_one_rejected():
+    """Atom: occupancy=1.01 rejected."""
+    with pytest.raises(ValidationError, match="less than or equal to 1"):
+        Atom(element="Fe", x=0.0, y=0.0, z=0.0, occupancy=1.01, ADP="Uiso", Uiso=0.01)
+
+
+def test_atom_adp_uiso_without_value_rejected():
+    """Atom: ADP='Uiso' without Uiso rejected."""
+    with pytest.raises(ValidationError, match="requires a Uiso value"):
+        Atom(element="Fe", x=0.0, y=0.0, z=0.0, ADP="Uiso")
+
+
+def test_atom_adp_uiso_with_uaniso_rejected():
+    """Atom: ADP='Uiso' with Uaniso also given rejected."""
+    with pytest.raises(ValidationError, match="must not also give Uaniso"):
+        Atom(element="Fe", x=0.0, y=0.0, z=0.0, ADP="Uiso", Uiso=0.01,
+             Uaniso={"U11": 0.01, "U22": 0.01, "U33": 0.01, "U12": 0, "U13": 0, "U23": 0})
+
+
+def test_atom_adp_uaniso_missing_component_rejected():
+    """Atom: ADP='Uaniso' missing U23 rejected."""
+    with pytest.raises(ValidationError, match="requires all of U11"):
+        Atom(element="Fe", x=0.0, y=0.0, z=0.0, ADP="Uaniso",
+             Uaniso={"U11": 0.01, "U22": 0.01, "U33": 0.01, "U12": 0, "U13": 0})
+
+
+def test_atom_adp_uaniso_unknown_key_rejected():
+    """Atom: ADP='Uaniso' with U14 rejected."""
+    with pytest.raises(ValidationError, match="Input should be"):
+        Atom(element="Fe", x=0.0, y=0.0, z=0.0, ADP="Uaniso",
+             Uaniso={"U11": 0.01, "U22": 0.01, "U33": 0.01, "U12": 0, "U13": 0, "U23": 0, "U14": 0})
+
+
+def test_atom_adp_uaniso_with_uiso_rejected():
+    """Atom: ADP='Uaniso' with Uiso also given rejected."""
+    with pytest.raises(ValidationError, match="must not also give Uiso"):
+        Atom(element="Fe", x=0.0, y=0.0, z=0.0, ADP="Uaniso", Uiso=0.01,
+             Uaniso={"U11": 0.01, "U22": 0.01, "U33": 0.01, "U12": 0, "U13": 0, "U23": 0})
+
+
+def test_atom_adp_wrong_value_rejected():
+    """Atom: ADP='Uaniso' but only Uiso given rejected."""
+    with pytest.raises(ValidationError, match="requires all of U11"):
+        Atom(element="Fe", x=0.0, y=0.0, z=0.0, ADP="Uaniso", Uiso=0.01)
+
+
+def test_atom_xyz_non_finite_rejected():
+    """Atom: x=nan rejected."""
+    with pytest.raises(ValidationError, match="must be finite"):
+        Atom(element="Fe", x=float("nan"), y=0.0, z=0.0, ADP="Uiso", Uiso=0.01)
+
+
+def test_phase_structure_space_group_no_origin_rejected():
+    """PhaseStructure: 'F d -3 m' (no :1/:2) rejected."""
+    d = _valid_pmm_lab6_phase_dict()
+    d["space_group"] = "F d -3 m"
+    with pytest.raises(ValidationError, match="two origin choices"):
+        PhaseStructure.model_validate(d)
+
+
+def test_phase_structure_space_group_no_rhombohedral_setting_rejected():
+    """PhaseStructure: 'R -3 m' (no :H/:R) rejected."""
+    d = _valid_pmm_lab6_phase_dict()
+    d["space_group"] = "R -3 m"
+    with pytest.raises(ValidationError, match="rhombohedral"):
+        PhaseStructure.model_validate(d)
+
+
+def test_phase_structure_space_group_fd3m_origin2_accepted():
+    """PhaseStructure: 'F d -3 m:2' (cubic) accepted."""
+    d = _valid_pmm_lab6_phase_dict()
+    d["space_group"] = "F d -3 m:2"
+    # Adjust cell to cubic (already is in the helper, but be explicit)
+    d["unit_cell"] = {"a": 8.0, "b": 8.0, "c": 8.0, "alpha": 90, "beta": 90, "gamma": 90}
+    # Put an atom at a general position to avoid special-position complications
+    d["atoms"] = {
+        "A1": {"element": "O", "x": 0.125, "y": 0.125, "z": 0.125, "ADP": "Uiso", "Uiso": 0.01}
+    }
+    phase = PhaseStructure.model_validate(d)
+    assert phase.space_group == "F d -3 m:2"
+
+
+def test_phase_structure_space_group_r3m_hexagonal_accepted():
+    """PhaseStructure: 'R -3 m:H' (hexagonal a=b, gamma=120) accepted."""
+    d = {
+        "phase_name": "test",
+        "space_group": "R -3 m:H",
+        "unit_cell": {"a": 3.2, "b": 3.2, "c": 5.0, "alpha": 90, "beta": 90, "gamma": 120},
+        "atoms": {
+            "A1": {"element": "O", "x": 0.2, "y": 0.4, "z": 0.1, "ADP": "Uiso", "Uiso": 0.01}
+        },
+    }
+    phase = PhaseStructure.model_validate(d)
+    assert phase.space_group == "R -3 m:H"
+
+
+def test_phase_structure_special_position_adjusted():
+    """PhaseStructure: P 63/m m c atom at (0.333333,0.666667,0.25) adjusted to 1/3,2/3,1/4."""
+    d = {
+        "phase_name": "test",
+        "space_group": "P 63/m m c",
+        "unit_cell": {"a": 3.2, "b": 3.2, "c": 5.2, "alpha": 90, "beta": 90, "gamma": 120},
+        "atoms": {
+            "A1": {"element": "O", "x": 0.333333, "y": 0.666667, "z": 0.25, "ADP": "Uiso", "Uiso": 0.01}
+        },
+    }
+    phase = PhaseStructure.model_validate(d)
+    # Check coordinates are exact fractions
+    assert abs(phase.atoms["A1"].x - 1/3) < 1e-15
+    assert abs(phase.atoms["A1"].y - 2/3) < 1e-15
+    # Check warning
+    warnings = phase.warnings()
+    assert len(warnings) == 1
+    assert warnings[0]["code"] == "special_position_adjusted"
+    assert "A1" in warnings[0]["message"]
+    assert warnings[0]["field_path"] == "atoms.A1"
+
+
+def test_phase_structure_special_position_ambiguous_rejected():
+    """PhaseStructure: atom at (0.3333,0.6667,0.25) in P 63/m m c rejected (ambiguous)."""
+    d = {
+        "phase_name": "test",
+        "space_group": "P 63/m m c",
+        "unit_cell": {"a": 3.2, "b": 3.2, "c": 5.2, "alpha": 90, "beta": 90, "gamma": 120},
+        "atoms": {
+            "A1": {"element": "O", "x": 0.3333, "y": 0.6667, "z": 0.25, "ADP": "Uiso", "Uiso": 0.01}
+        },
+    }
+    with pytest.raises(ValidationError, match="without being on it") as exc_info:
+        PhaseStructure.model_validate(d)
+    # Check that the atom label appears in the error
+    assert "A1" in str(exc_info.value)
+
+
+def test_phase_structure_multiplicity_match_accepted():
+    """PhaseStructure: stated Multiplicity equal to derived accepted."""
+    d = _valid_pmm_lab6_phase_dict()
+    d["atoms"]["La1"]["Multiplicity"] = 1
+    d["atoms"]["B1"]["Multiplicity"] = 6
+    phase = PhaseStructure.model_validate(d)
+    assert phase.site("La1").multiplicity == 1
+    assert phase.site("B1").multiplicity == 6
+
+
+def test_phase_structure_multiplicity_mismatch_rejected():
+    """PhaseStructure: stated Multiplicity != derived rejected."""
+    d = _valid_pmm_lab6_phase_dict()
+    d["atoms"]["B1"]["Multiplicity"] = 12  # should be 6
+    with pytest.raises(ValidationError) as exc_info:
+        PhaseStructure.model_validate(d)
+    msg = str(exc_info.value)
+    assert "stated Multiplicity" in msg
+    assert "derived" in msg
+
+
+def test_phase_structure_cell_cubic_b_neq_a_rejected():
+    """PhaseStructure: cubic with b != a rejected."""
+    d = _valid_pmm_lab6_phase_dict()
+    d["unit_cell"]["b"] = 4.2
+    with pytest.raises(ValidationError) as exc_info:
+        PhaseStructure.model_validate(d)
+    msg = str(exc_info.value)
+    assert "b" in msg.lower()
+    assert "inconsistent" in msg.lower()
+
+
+def test_phase_structure_cell_cubic_gamma_91_rejected():
+    """PhaseStructure: cubic with gamma=91 rejected."""
+    d = _valid_pmm_lab6_phase_dict()
+    d["unit_cell"]["gamma"] = 91.0
+    with pytest.raises(ValidationError, match="inconsistent"):
+        PhaseStructure.model_validate(d)
+
+
+def test_phase_structure_cell_hexagonal_gamma_90_rejected():
+    """PhaseStructure: hexagonal with gamma=90 rejected."""
+    d = {
+        "phase_name": "test",
+        "space_group": "P 63/m m c",
+        "unit_cell": {"a": 3.2, "b": 3.2, "c": 5.2, "alpha": 90, "beta": 90, "gamma": 90},
+        "atoms": {
+            "A1": {"element": "O", "x": 0.2, "y": 0.4, "z": 0.1, "ADP": "Uiso", "Uiso": 0.01}
+        },
+    }
+    with pytest.raises(ValidationError, match="inconsistent"):
+        PhaseStructure.model_validate(d)
+
+
+def test_phase_structure_cell_monoclinic_accepted():
+    """PhaseStructure: valid monoclinic C 1 2/m 1 with beta=104.3 accepted."""
+    d = {
+        "phase_name": "test",
+        "space_group": "C 1 2/m 1",
+        "unit_cell": {"a": 5.0, "b": 6.0, "c": 7.0, "alpha": 90, "beta": 104.3, "gamma": 90},
+        "atoms": {
+            "A1": {"element": "O", "x": 0.2, "y": 0.0, "z": 0.1, "ADP": "Uiso", "Uiso": 0.01}
+        },
+    }
+    phase = PhaseStructure.model_validate(d)
+    assert phase.space_group == "C 1 2/m 1"
+
+
+def test_phase_structure_uaniso_cubic_m3m_isotropic_accepted():
+    """PhaseStructure: La at (0,0,0) in P m -3 m with isotropic Uaniso (U11=U22=U33, off-diag 0) accepted."""
+    d = _valid_pmm_lab6_phase_dict()
+    d["atoms"]["La1"]["ADP"] = "Uaniso"
+    d["atoms"]["La1"]["Uaniso"] = {"U11": 0.01, "U22": 0.01, "U33": 0.01, "U12": 0, "U13": 0, "U23": 0}
+    del d["atoms"]["La1"]["Uiso"]
+    phase = PhaseStructure.model_validate(d)
+    assert phase.warnings() == []
+
+
+def test_phase_structure_uaniso_cubic_m3m_anisotropic_rejected():
+    """PhaseStructure: La at (0,0,0) in P m -3 m with U11!=U22 rejected (breaks symmetry)."""
+    d = _valid_pmm_lab6_phase_dict()
+    d["atoms"]["La1"]["ADP"] = "Uaniso"
+    d["atoms"]["La1"]["Uaniso"] = {"U11": 0.01, "U22": 0.02, "U33": 0.01, "U12": 0, "U13": 0, "U23": 0}
+    del d["atoms"]["La1"]["Uiso"]
+    with pytest.raises(ValidationError, match="break the site symmetry"):
+        PhaseStructure.model_validate(d)
+
+
+def test_phase_structure_uaniso_hexagonal_6h_adjusted():
+    """PhaseStructure: P 63/m m c, site 6h, Uaniso with U11=U22/2 adjusted and reported."""
+    d = {
+        "phase_name": "test",
+        "space_group": "P 63/m m c",
+        "unit_cell": {"a": 3.2, "b": 3.2, "c": 5.2, "alpha": 90, "beta": 90, "gamma": 120},
+        "atoms": {
+            "A1": {
+                "element": "O",
+                "x": 0.2,
+                "y": 0.4,
+                "z": 0.25,
+                "ADP": "Uaniso",
+                "Uaniso": {
+                    "U11": 0.012,
+                    "U22": 0.012347,
+                    "U33": 0.02,
+                    "U12": 0.006174,
+                    "U13": 0.0,
+                    "U23": 0.0,
+                },
+            }
+        },
+    }
+    phase = PhaseStructure.model_validate(d)
+    # Check U11 stayed
+    assert abs(phase.atoms["A1"].Uaniso["U11"] - 0.012) < 1e-15
+    # Check U12 became U22/2
+    u22 = phase.atoms["A1"].Uaniso["U22"]
+    u12 = phase.atoms["A1"].Uaniso["U12"]
+    assert abs(u12 - u22 / 2) < 1e-15
+    # Check warning
+    warnings = phase.warnings()
+    assert any(w["code"] == "adp_symmetry_adjusted" for w in warnings)
+
+
+def test_phase_structure_multiple_atom_problems_all_reported():
+    """PhaseStructure: two atoms with wrong Multiplicity -> both labels appear in one error."""
+    d = _valid_pmm_lab6_phase_dict()
+    d["atoms"]["La1"]["Multiplicity"] = 2
+    d["atoms"]["B1"]["Multiplicity"] = 12
+    with pytest.raises(ValidationError) as exc_info:
+        PhaseStructure.model_validate(d)
+    msg = str(exc_info.value)
+    assert "La1" in msg
+    assert "B1" in msg

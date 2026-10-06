@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import json
 import math
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 import gemmi
 import numpy as np
@@ -31,11 +31,15 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    PrivateAttr,
     StrictBool,
     field_validator,
     model_serializer,
     model_validator,
 )
+
+from powderline.exceptions import StructuredWarning, SymmetryError
+from powderline.symmetry import analyze_site, check_cell, check_uij, resolve_space_group
 
 # --- versions (A40, A65) ---------------------------------------------------
 
@@ -456,6 +460,187 @@ class ChebyshevBackground(BaseModel):
         if num_coef is not None and len(v) != num_coef:
             raise ValueError(f"Number of coefficients ({len(v)}) must match num_coefficients ({num_coef})")
         return v
+
+
+# --- phase structure (A32, A35, A62, A63, A69, A73) -------------------------
+
+
+class UnitCell(BaseModel):
+    """Cell constants (values, not refinables). No ``volume``: every engine
+    derives it from a..gamma (A74)."""
+
+    model_config = _STRICT
+
+    a: float = Field(json_schema_extra=_unit(UNIT_ANGSTROM))
+    b: float = Field(json_schema_extra=_unit(UNIT_ANGSTROM))
+    c: float = Field(json_schema_extra=_unit(UNIT_ANGSTROM))
+    alpha: float = Field(json_schema_extra=_unit(UNIT_DEGREE))
+    beta: float = Field(json_schema_extra=_unit(UNIT_DEGREE))
+    gamma: float = Field(json_schema_extra=_unit(UNIT_DEGREE))
+
+    @field_validator("a", "b", "c")
+    @classmethod
+    def _length(cls, v, info):
+        if not (math.isfinite(v) and v > 0):
+            raise ValueError(f"cell length {info.field_name} must be positive, got {v}")
+        return v
+
+    @field_validator("alpha", "beta", "gamma")
+    @classmethod
+    def _angle(cls, v, info):
+        if not (math.isfinite(v) and 0 < v < 180):
+            raise ValueError(f"cell angle {info.field_name} must be between 0 and 180 degrees, got {v}")
+        return v
+
+
+_UANISO_KEYS = ("U11", "U22", "U33", "U12", "U13", "U23")
+
+
+class Atom(BaseModel):
+    """One atom of a phase structure (values, not refinables).
+
+    Coordinates are fractional JSON numbers. A special position is declared by
+    stating it to at least 6 decimals. The validated phase holds canonical
+    (exact) coordinates and reports every adjustment (A73). ``Multiplicity`` is
+    optional and, when stated, must match the derived value (A69 T3).
+    ``occupancy`` is 0 to 1 inclusive, even where an engine would accept more
+    (A76). ``Uaniso`` must respect the site symmetry: within 1e-6 A^2 it is set
+    to the symmetric values and reported, beyond that it is an error (A78).
+    """
+
+    model_config = _STRICT
+
+    element: str = Field(description="Bare element symbol, exactly as in the periodic table (e.g. 'Fe')")
+    x: float = Field(description="Fractional x coordinate")
+    y: float = Field(description="Fractional y coordinate")
+    z: float = Field(description="Fractional z coordinate")
+    occupancy: float = Field(default=1.0, ge=0.0, le=1.0, description="Site occupancy, 0 to 1 inclusive (A76)")
+    Multiplicity: Optional[int] = Field(default=None, description="Site multiplicity; cross-checked when stated")
+    ADP: Literal["Uiso", "Uaniso"] = Field(description="Displacement-parameter type")
+    Uiso: Optional[float] = Field(default=None, json_schema_extra=_unit(UNIT_ANGSTROM2))
+    Uaniso: Optional[dict[Literal["U11", "U22", "U33", "U12", "U13", "U23"], float]] = Field(
+        default=None, json_schema_extra=_unit(UNIT_ANGSTROM2),
+        description="All six of U11, U22, U33, U12, U13, U23")
+
+    @field_validator("element")
+    @classmethod
+    def _element(cls, v: str) -> str:
+        return check_element_symbol(v)
+
+    @field_validator("x", "y", "z", "occupancy", "Uiso")
+    @classmethod
+    def _finite(cls, v, info):
+        return _finite(info.field_name, v)
+
+    @field_validator("Uaniso")
+    @classmethod
+    def _uaniso_finite(cls, v):
+        if v is not None:
+            for k, u in v.items():
+                _finite(k, u)
+        return v
+
+    @model_validator(mode="after")
+    def _adp_block(self) -> "Atom":
+        if self.ADP == "Uiso":
+            if self.Uiso is None:
+                raise ValueError("ADP 'Uiso' requires a Uiso value")
+            if self.Uaniso is not None:
+                raise ValueError("ADP 'Uiso' must not also give Uaniso")
+        else:
+            if self.Uaniso is None or set(self.Uaniso) != set(_UANISO_KEYS):
+                raise ValueError(f"ADP 'Uaniso' requires all of {', '.join(_UANISO_KEYS)}")
+            if self.Uiso is not None:
+                raise ValueError("ADP 'Uaniso' must not also give Uiso")
+        return self
+
+
+class PhaseStructure(BaseModel):
+    """A phase's crystal structure: space group, cell, atoms (core-owned, A35).
+
+    Validation derives each atom's site (multiplicity, DOF) from the space group
+    (:func:`powderline.symmetry.analyze_site`). It rejects ambiguous positions
+    and stated multiplicities that don't match. It replaces stated coordinates
+    with the canonical ones, so every engine receives the same exact structure.
+    Each adjustment is reported by :meth:`warnings` (A73). The unit cell must
+    fit the space group exactly (A77), and anisotropic ADPs the site symmetry
+    (A78).
+    """
+
+    model_config = _STRICT
+
+    phase_name: str = Field(min_length=1)
+    space_group: str = Field(description="Hermann-Mauguin symbol with an explicit setting "
+                                         "for two-origin (':1'/':2') and rhombohedral (':H'/':R') groups")
+    unit_cell: UnitCell
+    atoms: dict[str, Atom] = Field(min_length=1, description="Atoms keyed by unique label")
+
+    _sites: dict = PrivateAttr(default_factory=dict)
+    _warnings: list = PrivateAttr(default_factory=list)
+
+    @field_validator("space_group")
+    @classmethod
+    def _space_group(cls, v: str) -> str:
+        resolve_space_group(v, explicit_setting=True)  # SymmetryError is a ValueError
+        return v
+
+    @model_validator(mode="after")
+    def _sites_check(self) -> "PhaseStructure":
+        problems: list[str] = []
+        cell = self.unit_cell
+        try:
+            check_cell(self.space_group, (cell.a, cell.b, cell.c, cell.alpha, cell.beta, cell.gamma))
+        except SymmetryError as exc:
+            problems.append(str(exc))
+        for label, atom in self.atoms.items():
+            try:
+                site = analyze_site(self.space_group, (atom.x, atom.y, atom.z))
+            except SymmetryError as exc:
+                problems.append(f"atom {label!r}: {exc}")
+                continue
+            if atom.Multiplicity is not None and atom.Multiplicity != site.multiplicity:
+                problems.append(
+                    f"atom {label!r}: stated Multiplicity {atom.Multiplicity}, derived "
+                    f"{site.multiplicity} ({self.space_group!r}, site {site.stated})"
+                )
+                continue
+            if atom.Uaniso is not None:
+                stated_u = tuple(atom.Uaniso[k] for k in _UANISO_KEYS)
+                try:
+                    symmetric_u, u_adjusted = check_uij(self.space_group, site.canonical, stated_u)
+                except SymmetryError as exc:
+                    problems.append(f"atom {label!r}: {exc}")
+                    continue
+                if u_adjusted:
+                    atom.Uaniso = dict(zip(_UANISO_KEYS, symmetric_u))
+                    self._warnings.append(StructuredWarning(
+                        code="adp_symmetry_adjusted",
+                        message=(f"atom {label!r}: Uaniso {dict(zip(_UANISO_KEYS, stated_u))} adjusted to "
+                                 f"the site-symmetric values {atom.Uaniso}"),
+                        field_path=f"atoms.{label}.Uaniso",
+                    ))
+            self._sites[label] = site
+            if site.adjusted:
+                atom.x, atom.y, atom.z = site.canonical
+                self._warnings.append(StructuredWarning(
+                    code="special_position_adjusted",
+                    message=(f"atom {label!r}: coordinates {site.stated} are on a special position "
+                             f"(multiplicity {site.multiplicity}); using the exact values "
+                             f"{site.canonical}"),
+                    field_path=f"atoms.{label}",
+                ))
+        if problems:
+            raise ValueError("; ".join(problems))
+        return self
+
+    def site(self, label: str):
+        """The :class:`~powderline.symmetry.SiteAnalysis` of atom ``label``."""
+        return self._sites[label]
+
+    def warnings(self) -> list:
+        """Structured warnings raised while validating this structure (paths relative to it)."""
+        return list(self._warnings)
+
 
 
 # --- top-level recipe frame (A1, A18, A21, A40) ------------------------------
