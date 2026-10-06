@@ -38,6 +38,9 @@ engine schemas adopt it in re/04–06.
 - **Background**: Chebyshev (`num_coefficients`, `coefficients`, `refine_flag`).
   Coefficient semantics are documented per engine.
 - **Units** are fixed per field in the schema, never written in a recipe.
+- **Numbers** are JSON numbers: a quoted number (`"0.25"`) or a boolean is an
+  error, never converted. Integer fields (`Multiplicity`, `num_coefficients`)
+  take a whole number (`4` or `4.0`), not `4.5`.
 - **Accepted core versions** (this release): `==1.0.0`.
 
 - **Phase structure** (`PhaseStructure`): `phase_name`, `space_group`,

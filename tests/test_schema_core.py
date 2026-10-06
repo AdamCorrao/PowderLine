@@ -1405,3 +1405,96 @@ def test_phase_structure_does_not_modify_caller_atoms():
     assert (atom.x, atom.y) == (0.3333333, 0.6666667)
     assert (phase.atoms["C1"].x, phase.atoms["C1"].y) == (1 / 3, 2 / 3)
     assert phase.atoms["C1"] is not atom
+
+
+# --- numbers are JSON numbers: no strings, no booleans (A80) -----------------
+
+import numpy as np  # noqa: E402
+
+from powderline.schema_core import FitRange, XRDData  # noqa: E402
+
+
+def _cell(**kw):
+    return {"a": 4.0, "b": 4.0, "c": 4.0, "alpha": 90, "beta": 90, "gamma": 90, **kw}
+
+
+def _atom(**kw):
+    return {"element": "Na", "x": 0.1, "y": 0.2, "z": 0.3, "ADP": "Uiso", "Uiso": 0.01, **kw}
+
+
+def _xrd(**kw):
+    return {"tth": [10.0, 20.0], "Itth": [1.0, 2.0], "Itth_weights": [1.0, 1.0], **kw}
+
+
+# (label, build(v) -> validated model, error location); every numeric core field
+_NUMERIC_FIELDS = [
+    ("RefinableParameter.value", lambda v: RefinableParameter.model_validate([v, True]), ("value",)),
+    ("BoundedRefinableParameter.value", lambda v: BoundedRefinableParameter.model_validate([v, True, None, None]), ("value",)),
+    ("BoundedRefinableParameter.min", lambda v: BoundedRefinableParameter.model_validate([1.0, True, v, None]), ("min",)),
+    ("BoundedRefinableParameter.max", lambda v: BoundedRefinableParameter.model_validate([0.5, True, None, v]), ("max",)),
+    ("StructureRefinableParameter.value", lambda v: StructureRefinableParameter.model_validate([v, True]), ("value",)),
+    ("StructureBoundedRefinableParameter.value",
+     lambda v: StructureBoundedRefinableParameter.model_validate([v, True, None, None]), ("value",)),
+    ("FitRange.min", lambda v: FitRange.model_validate([v, None]), ("min",)),
+    ("FitRange.max", lambda v: FitRange.model_validate([None, v]), ("max",)),
+    ("XRDData.tth", lambda v: XRDData.model_validate(_xrd(tth=[v, 20.0])), ("tth", 0)),
+    ("XRDData.Itth", lambda v: XRDData.model_validate(_xrd(Itth=[v, 2.0])), ("Itth", 0)),
+    ("XRDData.Itth_weights", lambda v: XRDData.model_validate(_xrd(Itth_weights=[v, 1.0])), ("Itth_weights", 0)),
+    ("ChebyshevBackground.coefficients",
+     lambda v: ChebyshevBackground(num_coefficients=1, coefficients=[v], refine_flag=False), ("coefficients", 0)),
+    *[(f"UnitCell.{k}", (lambda k: lambda v: UnitCell.model_validate(_cell(**{k: v})))(k), (k,))
+      for k in ("a", "b", "c", "alpha", "beta", "gamma")],
+    *[(f"Atom.{k}", (lambda k: lambda v: Atom.model_validate(_atom(**{k: v})))(k), (k,))
+      for k in ("x", "y", "z", "occupancy", "Uiso")],
+    ("Atom.Uaniso", lambda v: Atom.model_validate(_atom(ADP="Uaniso", Uiso=None, Uaniso={
+        "U11": v, "U22": 0.01, "U33": 0.01, "U12": 0.0, "U13": 0.0, "U23": 0.0})), ("Uaniso", "U11")),
+]
+_FLOAT_IDS = [f[0] for f in _NUMERIC_FIELDS]
+
+
+@pytest.mark.parametrize("label, build, loc", _NUMERIC_FIELDS, ids=_FLOAT_IDS)
+@pytest.mark.parametrize("bad", ["0.5", "1", True, False], ids=["str-float", "str-int", "true", "false"])
+def test_numeric_field_rejects_strings_and_booleans(label, build, loc, bad):
+    with pytest.raises(ValidationError) as exc_info:
+        build(bad)
+    assert _errors(exc_info) == [(loc, "float_type")]
+
+
+@pytest.mark.parametrize("label, build, loc", _NUMERIC_FIELDS, ids=_FLOAT_IDS)
+@pytest.mark.parametrize("good", [1, np.float64(0.5), np.int64(1)], ids=["int", "numpy-float", "numpy-int"])
+def test_numeric_field_accepts_numbers(label, build, loc, good):
+    model = build(good)  # no error; the value is kept as a float
+    value = model
+    for part in loc:
+        value = value[part] if isinstance(value, (list, dict)) else getattr(value, part)
+    assert value == float(good) and type(value) is float
+
+
+def test_numeric_json_strings_rejected():
+    """From JSON too: a quoted number is not a number."""
+    with pytest.raises(ValidationError) as exc_info:
+        Atom.model_validate_json(json.dumps(_atom(x="0.25")))
+    assert _errors(exc_info) == [(("x",), "float_type")]
+    assert Atom.model_validate_json(json.dumps(_atom(x=1))).x == 1.0
+
+
+@pytest.mark.parametrize("good", [4, 4.0, np.int64(4), np.float64(4.0)])
+def test_integer_fields_accept_whole_numbers(good):
+    assert Atom.model_validate(_atom(Multiplicity=good)).Multiplicity == 4
+    assert ChebyshevBackground(num_coefficients=good, coefficients=[0.0] * 4, refine_flag=False).num_coefficients == 4
+
+
+@pytest.mark.parametrize("bad, error_type", [
+    (4.5, "int_from_float"), ("4", "int_type"), (True, "int_type"), (False, "int_type"), (b"4", "int_type"),
+])
+def test_integer_fields_reject_fractions_strings_and_booleans(bad, error_type):
+    with pytest.raises(ValidationError) as exc_info:
+        Atom.model_validate(_atom(Multiplicity=bad))
+    assert _errors(exc_info) == [(("Multiplicity",), error_type)]
+    with pytest.raises(ValidationError) as exc_info:
+        ChebyshevBackground(num_coefficients=bad, coefficients=[0.0] * 4, refine_flag=False)
+    assert _errors(exc_info)[0] == (("num_coefficients",), error_type)
+
+
+def test_integer_json_whole_float_accepted():
+    assert Atom.model_validate_json(json.dumps(_atom(Multiplicity=4.0))).Multiplicity == 4

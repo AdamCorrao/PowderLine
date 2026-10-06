@@ -12,7 +12,9 @@ Conventions (master plan A19-A21, A32):
 - a refinable quantity is a :class:`RefinableParameter` (JSON
   ``[value, refine_flag]``) or, where the engine honors bounds, a
   :class:`BoundedRefinableParameter` (JSON ``[value, refine_flag, min, max]``);
-- plain (non-refinable) values get field-specific validation.
+- plain (non-refinable) values get field-specific validation;
+- numbers are JSON numbers (:data:`CoreFloat`, :data:`CoreInt`): a string or a
+  boolean is never read as a number.
 
 This module must never import an engine (enforced by an import-block test).
 """
@@ -21,7 +23,7 @@ from __future__ import annotations
 
 import json
 import math
-from typing import Any, Literal, Optional
+from typing import Annotated, Any, Literal, Optional
 
 import gemmi
 import numpy as np
@@ -29,16 +31,18 @@ from packaging.specifiers import SpecifierSet
 from packaging.version import InvalidVersion, Version
 from pydantic import (
     BaseModel,
+    BeforeValidator,
     ConfigDict,
     Field,
     PrivateAttr,
+    Strict,
     StrictBool,
     ValidationError,
     field_validator,
     model_serializer,
     model_validator,
 )
-from pydantic_core import InitErrorDetails
+from pydantic_core import InitErrorDetails, PydanticCustomError
 
 from powderline.exceptions import StructuredWarning, SymmetryError
 from powderline.symmetry import analyze_site, check_cell, check_uij, resolve_space_group
@@ -108,6 +112,25 @@ _BOOLEAN = {"type": "boolean"}
 _STRICT = ConfigDict(extra="forbid")
 
 
+# --- numbers -----------------------------------------------------------------
+
+
+def _integer_not_text_or_bool(v: Any) -> Any:
+    if isinstance(v, (bool, str, bytes, bytearray)):
+        raise PydanticCustomError("int_type", "Input should be a valid integer, got {kind}",
+                                  {"kind": type(v).__name__})
+    return v
+
+
+#: A float field: any number (int or float, incl. numpy scalars), never a
+#: string or a boolean (the JSON Schema says ``number``; pydantic's default
+#: would accept ``"0.25"`` and ``true``). Engine schemas use it too.
+CoreFloat = Annotated[float, Strict()]
+#: An integer field: a whole number (``4`` or ``4.0``, as JSON Schema's
+#: ``integer``), never a string or a boolean; ``4.5`` is rejected.
+CoreInt = Annotated[int, BeforeValidator(_integer_not_text_or_bool)]
+
+
 # --- parameter models (A20, A32, A71) ---------------------------------------
 
 
@@ -128,7 +151,7 @@ class RefinableParameter(BaseModel):
 
     model_config = _STRICT
 
-    value: float
+    value: CoreFloat
     refine_flag: StrictBool
 
     @model_validator(mode="before")
@@ -177,10 +200,10 @@ class BoundedRefinableParameter(BaseModel):
 
     model_config = _STRICT
 
-    value: float
+    value: CoreFloat
     refine_flag: StrictBool
-    min: Optional[float] = None
-    max: Optional[float] = None
+    min: Optional[CoreFloat] = None
+    max: Optional[CoreFloat] = None
 
     @model_validator(mode="before")
     @classmethod
@@ -235,7 +258,7 @@ class StructureRefinableParameter(RefinableParameter):
     (today's behavior: the GSAS-II setters skip a null value).
     """
 
-    value: Optional[float]
+    value: Optional[CoreFloat]
 
 
 class StructureBoundedRefinableParameter(BoundedRefinableParameter):
@@ -246,7 +269,7 @@ class StructureBoundedRefinableParameter(BoundedRefinableParameter):
     (:func:`check_within_bounds`).
     """
 
-    value: Optional[float]
+    value: Optional[CoreFloat]
 
 
 def check_within_bounds(value: float, param: BoundedRefinableParameter, field: str) -> None:
@@ -301,9 +324,9 @@ class XRDData(BaseModel):
 
     model_config = _STRICT
 
-    tth: list[float] = Field(description="Two-theta values", json_schema_extra=_unit(UNIT_DEG_2THETA))
-    Itth: list[float] = Field(description="Intensity values", json_schema_extra=_unit(UNIT_ARBITRARY))
-    Itth_weights: list[float] = Field(description="Intensity weights (1/sigma^2)",
+    tth: list[CoreFloat] = Field(description="Two-theta values", json_schema_extra=_unit(UNIT_DEG_2THETA))
+    Itth: list[CoreFloat] = Field(description="Intensity values", json_schema_extra=_unit(UNIT_ARBITRARY))
+    Itth_weights: list[CoreFloat] = Field(description="Intensity weights (1/sigma^2)",
                                       json_schema_extra=_unit(UNIT_INV_INTENSITY2))
     filename: str | None = Field(default=None, description="Original filename for reference")
 
@@ -389,8 +412,8 @@ class FitRange(BaseModel):
 
     model_config = _STRICT
 
-    min: Optional[float] = None
-    max: Optional[float] = None
+    min: Optional[CoreFloat] = None
+    max: Optional[CoreFloat] = None
 
     @model_validator(mode="before")
     @classmethod
@@ -453,8 +476,8 @@ class ChebyshevBackground(BaseModel):
 
     model_config = _STRICT
 
-    num_coefficients: int = Field(gt=0, description="Number of Chebyshev coefficients")
-    coefficients: list[float] = Field(description="Coefficient values")
+    num_coefficients: CoreInt = Field(gt=0, description="Number of Chebyshev coefficients")
+    coefficients: list[CoreFloat] = Field(description="Coefficient values")
     refine_flag: StrictBool = Field(description="Whether to refine background")
 
     @field_validator('coefficients')
@@ -483,12 +506,12 @@ class UnitCell(BaseModel):
 
     model_config = _STRICT
 
-    a: float = Field(json_schema_extra=_unit(UNIT_ANGSTROM))
-    b: float = Field(json_schema_extra=_unit(UNIT_ANGSTROM))
-    c: float = Field(json_schema_extra=_unit(UNIT_ANGSTROM))
-    alpha: float = Field(json_schema_extra=_unit(UNIT_DEGREE))
-    beta: float = Field(json_schema_extra=_unit(UNIT_DEGREE))
-    gamma: float = Field(json_schema_extra=_unit(UNIT_DEGREE))
+    a: CoreFloat = Field(json_schema_extra=_unit(UNIT_ANGSTROM))
+    b: CoreFloat = Field(json_schema_extra=_unit(UNIT_ANGSTROM))
+    c: CoreFloat = Field(json_schema_extra=_unit(UNIT_ANGSTROM))
+    alpha: CoreFloat = Field(json_schema_extra=_unit(UNIT_DEGREE))
+    beta: CoreFloat = Field(json_schema_extra=_unit(UNIT_DEGREE))
+    gamma: CoreFloat = Field(json_schema_extra=_unit(UNIT_DEGREE))
 
     @field_validator("a", "b", "c")
     @classmethod
@@ -523,14 +546,14 @@ class Atom(BaseModel):
     model_config = _STRICT
 
     element: str = Field(description="Bare element symbol, exactly as in the periodic table (e.g. 'Fe')")
-    x: float = Field(description="Fractional x coordinate")
-    y: float = Field(description="Fractional y coordinate")
-    z: float = Field(description="Fractional z coordinate")
-    occupancy: float = Field(default=1.0, ge=0.0, le=1.0, description="Site occupancy, 0 to 1 inclusive (A76)")
-    Multiplicity: Optional[int] = Field(default=None, description="Site multiplicity; cross-checked when stated")
+    x: CoreFloat = Field(description="Fractional x coordinate")
+    y: CoreFloat = Field(description="Fractional y coordinate")
+    z: CoreFloat = Field(description="Fractional z coordinate")
+    occupancy: CoreFloat = Field(default=1.0, ge=0.0, le=1.0, description="Site occupancy, 0 to 1 inclusive (A76)")
+    Multiplicity: Optional[CoreInt] = Field(default=None, description="Site multiplicity; cross-checked when stated")
     ADP: Literal["Uiso", "Uaniso"] = Field(description="Displacement-parameter type")
-    Uiso: Optional[float] = Field(default=None, json_schema_extra=_unit(UNIT_ANGSTROM2))
-    Uaniso: Optional[dict[Literal["U11", "U22", "U33", "U12", "U13", "U23"], float]] = Field(
+    Uiso: Optional[CoreFloat] = Field(default=None, json_schema_extra=_unit(UNIT_ANGSTROM2))
+    Uaniso: Optional[dict[Literal["U11", "U22", "U33", "U12", "U13", "U23"], CoreFloat]] = Field(
         default=None, json_schema_extra=_unit(UNIT_ANGSTROM2),
         description="All six of U11, U22, U33, U12, U13, U23")
 
