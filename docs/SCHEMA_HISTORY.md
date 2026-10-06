@@ -40,8 +40,37 @@ engine schemas adopt it in re/04–06.
 - **Units** are fixed per field in the schema, never written in a recipe.
 - **Accepted core versions** (this release): `==1.0.0`.
 
-Phase structure and symmetry validation (space-group setting, element symbols,
-special positions) are documented here when they land.
+- **Phase structure** (`PhaseStructure`): `phase_name`, `space_group`,
+  `unit_cell`, `atoms` (keyed by label). Structural interpretation is checked
+  once, in core, so every engine gets the same structure:
+  - **Space group**: a Hermann–Mauguin symbol. Two-origin groups need an explicit
+    `:1`/`:2` and rhombohedral groups `:H`/`:R` (e.g. `"F d -3 m:2"`,
+    `"R -3 m:H"`). Individual engines may accept fewer settings.
+  - **Unit cell**: `a`, `b`, `c` (Å, > 0), `alpha`, `beta`, `gamma` (degrees,
+    0–180). No `volume` (every engine derives it). The cell must fit the
+    space group **exactly** (to floating-point precision): e.g. cubic
+    `a = b = c` and all angles 90°. A mismatch is an error naming each
+    parameter and its symmetric value. (GSAS-II alone would silently apply the
+    symmetry only when the cell is refined.)
+  - **Elements**: a bare element symbol spelled exactly (`"Fe"`, not `"FE"`).
+    Charged scattering types (`"Fe3+"`) are not supported yet and are rejected,
+    never reduced to the neutral atom.
+  - **Occupancy**: 0 to 1 inclusive, even where an engine would accept more.
+  - **Special positions**: an atom whose symmetry images lie within 5e-6
+    (fractional) of itself is on a special position, so write special
+    coordinates with **at least 6 decimals** (e.g. `0.333333`). An atom 5e-6 to
+    2e-3 from a special position is an **error** (`0.33`, `0.3333`, `0.33333`):
+    state it to ≥ 6 decimals or move it off. Accepted special positions are
+    replaced by their **exact** coordinates (fixed coordinates become the exact
+    fraction; coupled ones satisfy their relation, by the smallest change). Each
+    adjustment is reported as a structured warning, and these exact values are
+    what every engine receives.
+  - **Multiplicity**: optional; when stated it must equal the multiplicity
+    derived from the space group.
+  - **ADPs**: `ADP` is `"Uiso"` (with `Uiso`, Å²) or `"Uaniso"` (with all of
+    `U11 U22 U33 U12 U13 U23`, Å²). Anisotropic ADPs must respect the site
+    symmetry: within 1e-6 Å² they are set to the symmetric values and reported;
+    beyond that it is an error.
 
 ## gsasii engine schema
 
