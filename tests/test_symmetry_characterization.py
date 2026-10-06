@@ -124,26 +124,35 @@ def test_site_analysis_matches_gsasii(number):
     assert not disagreements, f"{name} (GSAS-II {symbol!r}): {disagreements[:5]}"
 
 
-@pytest.mark.parametrize("space_group, exact, rounded", [
-    ("P 63/m m c", (1 / 3, 2 / 3, 0.25), (0.333333, 0.666667, 0.25)),
-    ("P 63/m m c", (1 / 6, 1 / 3, 0.25), (0.166667, 0.333333, 0.25)),
+@pytest.mark.parametrize("space_group, rounded, expected", [
+    # fully fixed sites: canonical == the exact special position
+    ("P 63/m m c", (0.333333, 0.666667, 0.25), (1 / 3, 2 / 3, 0.25)),
     ("F d -3 m:2", (0.125, 0.125, 0.125), (0.125, 0.125, 0.125)),
     ("R -3 m:H", (0.5, 0.0, 0.0), (0.5, 0.0, 0.0)),
-    ("F m -3 m", (0.0, 0.0, 0.0), (-1e-9, 1e-9, 0.0)),
+    # GSAS-II's cell-edge defect (misreads values just below an integer): the
+    # canonical exact 0 avoids it
+    ("F m -3 m", (-1e-9, 1e-9, 0.0), (0.0, 0.0, 0.0)),
+    # free axis kept as stated, fixed axes exact
+    ("P 63/m m c", (0.333333, 0.666667, 0.06), (1 / 3, 2 / 3, 0.06)),
 ])
-def test_canonical_coordinates_are_read_identically_by_gsasii(space_group, exact, rounded):
-    """6-decimal input is canonicalized; GSAS-II gets the same site from the canonical values.
-
-    The last case is GSAS-II's cell-edge defect (it misreads values just below an
-    integer): the canonical exact 0 avoids it.
-    """
+def test_canonical_coordinates(space_group, rounded, expected):
+    """6-decimal input is canonicalized exactly; GSAS-II reads the same site from it."""
     site = analyze_site(space_group, rounded)
-    sg = gemmi.find_spacegroup_by_name(space_group)
-    _symbol, sgdata = _gsas_symbol(sg)
+    assert site.canonical == expected
+    _symbol, sgdata = _gsas_symbol(gemmi.find_spacegroup_by_name(space_group))
     assert G2spc.SytSym(list(site.canonical), sgdata)[1] == site.multiplicity
-    assert G2spc.SytSym(list(exact), sgdata)[1] == site.multiplicity
-    exact_site = analyze_site(space_group, exact)
-    assert np.allclose(site.canonical, exact_site.canonical, atol=1e-12)
+
+
+def test_coupled_coordinates_canonicalized_by_least_change():
+    """6h (x, 2x, 1/4): the relation is restored with the smallest change; z is exact."""
+    site = analyze_site("P 63/m m c", (0.166667, 0.333333, 0.25))
+    x, y, z = site.canonical
+    assert site.axes == ("COUPLED", "COUPLED", "FIXED") and site.adjusted
+    assert z == 0.25 and abs(y - 2 * x) < 1e-15
+    # orthogonal projection onto (t, 2t): t = (x + 2y) / 5
+    assert abs(x - (0.166667 + 2 * 0.333333) / 5) < 1e-15
+    _symbol, sgdata = _gsas_symbol(gemmi.find_spacegroup_by_name("P 63/m m c"))
+    assert G2spc.SytSym(list(site.canonical), sgdata)[1] == site.multiplicity == 6
 
 
 @pytest.mark.parametrize("space_group, xyz", [

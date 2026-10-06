@@ -364,7 +364,8 @@ class SiteAnalysis:
         stated: the coordinates as given.
         canonical: the coordinates every gateway uses -- equal to ``stated`` for
             a general position; on a special position, symmetry-fixed axes are
-            exact (see ``exact``) and coupled axes satisfy their relation.
+            exact (see ``exact``) and coupled axes satisfy their relation (to
+            floating-point precision), by the least change from ``stated``.
         exact: per axis, the exact rational value of a symmetry-fixed
             coordinate (``None`` for a free or coupled axis).
         axes: ``"FREE"`` / ``"FIXED"`` / ``"COUPLED"`` per axis.
@@ -408,6 +409,19 @@ def _axes(stab_rots) -> list[str]:
     return _classify(sum(stab_rots) / len(stab_rots))
 
 
+def _orthogonal_projector(reynolds: np.ndarray) -> np.ndarray:
+    """Orthogonal projector onto the image of a (possibly oblique) Reynolds projector.
+
+    The Reynolds average ``mean(R)`` projects onto the symmetric subspace, but not
+    orthogonally when the rotations are not orthogonal (hexagonal/trigonal axes).
+    The orthogonal projector gives the *least change* onto the same subspace, so
+    a free component stays as stated and only inconsistent ones move (A73, A78).
+    """
+    u, sv, _vt = np.linalg.svd(reynolds)
+    basis = u[:, sv > 0.5]  # a projector's singular values are ~1 on its image, 0 off it
+    return basis @ basis.T
+
+
 def analyze_site(space_group: str, xyz) -> SiteAnalysis:
     """Validate one site under the core schema rules and return its :class:`SiteAnalysis`.
 
@@ -447,7 +461,11 @@ def analyze_site(space_group: str, xyz) -> SiteAnalysis:
         raise SymmetryError("empty stabilizer (should be impossible)")
     axes = _axes([R for R, _t in stab])
 
-    canonical = _barycenter(x, stab)
+    # Least change onto the stabilizer's fixed set: anchor at a fixed point (the
+    # barycenter), then project the offset orthogonally onto the allowed directions.
+    anchor = _barycenter(x, stab)
+    canonical = anchor + _orthogonal_projector(sum(R for R, _t in stab) / len(stab)) @ (x - anchor)
+    canonical = np.where(np.abs(canonical - x) <= ADJUSTMENT_REPORT_TOL, x, canonical)  # drop float noise
     exact: list[Fraction | None] = []
     for j in range(3):
         if axes[j] != "FIXED":
@@ -481,3 +499,91 @@ def analyze_site(space_group: str, xyz) -> SiteAnalysis:
         multiplicity=len(ops) // len(stab),
         stabilizer_order=len(stab),
     )
+
+
+# --- (e) cell and Uij consistency with symmetry (A76-A78) -------------------
+
+#: Cell parameters must equal their symmetric values up to floating-point noise
+#: (relative on lengths, degrees on angles): no adjustment, only an error (A77).
+CELL_TOL = 1e-9
+#: Uij within this of their site-symmetric values (Angstrom^2) are set to those
+#: values and reported; beyond it is an error (A78). Allows for values printed
+#: to ~6 decimals breaking relations such as U12 = U22/2.
+UIJ_TOL = 1e-6
+
+_CELL_NAMES = ("a", "b", "c", "alpha", "beta", "gamma")
+
+
+def _metric(cell) -> np.ndarray:
+    a, b, c, al, be, ga = cell
+    ca, cb, cg = (np.cos(np.radians(v)) for v in (al, be, ga))
+    return np.array([[a * a, a * b * cg, a * c * cb],
+                     [a * b * cg, b * b, b * c * ca],
+                     [a * c * cb, b * c * ca, c * c]])
+
+
+def _cell_from_metric(g: np.ndarray) -> tuple[float, ...]:
+    a, b, c = np.sqrt(np.diag(g))
+    al = np.degrees(np.arccos(np.clip(g[1, 2] / (b * c), -1.0, 1.0)))
+    be = np.degrees(np.arccos(np.clip(g[0, 2] / (a * c), -1.0, 1.0)))
+    ga = np.degrees(np.arccos(np.clip(g[0, 1] / (a * b), -1.0, 1.0)))
+    return tuple(float(v) for v in (a, b, c, al, be, ga))
+
+
+def check_cell(space_group: str, cell) -> tuple[float, ...]:
+    """Raise :class:`SymmetryError` unless ``cell`` (a, b, c, alpha, beta, gamma) fits the group.
+
+    The cell's metric tensor must be invariant under every rotation of the
+    space group (``R^T G R = G``). The check compares the stated cell with the
+    cell of the group-averaged metric, within :data:`CELL_TOL`. Returns the
+    symmetric cell. Covers every crystal system, including monoclinic unique
+    axes and the rhombohedral ``:R`` setting.
+    """
+    rots = [R for R, _t in _expanded_ops(resolve_space_group(space_group, explicit_setting=True))]
+    stated = tuple(float(v) for v in cell)
+    g = _metric(stated)
+    symmetric = _cell_from_metric(sum(R.T @ g @ R for R in rots) / len(rots))
+    bad = []
+    for name, v, s in zip(_CELL_NAMES, stated, symmetric):
+        off = abs(v - s) / s if name in ("a", "b", "c") else abs(v - s)
+        if off > CELL_TOL:
+            bad.append(f"{name} = {v:g} (symmetric value {s:.10g})")
+    if bad:
+        system = resolve_space_group(space_group, explicit_setting=True).crystal_system_str()
+        raise SymmetryError(
+            f"unit cell is inconsistent with {space_group!r} ({system}): " + "; ".join(bad)
+            + ". Symmetry-equivalent lengths must be equal and symmetry-fixed angles exact "
+            "(e.g. 90 or 120 degrees)"
+        )
+    return symmetric
+
+
+_UIJ_NAMES = ("U11", "U22", "U33", "U12", "U13", "U23")
+
+
+def check_uij(space_group: str, xyz, uij) -> tuple[tuple[float, ...], bool]:
+    """Fit the anisotropic ADPs ``uij`` (U11, U22, U33, U12, U13, U23) to the site symmetry.
+
+    ``U`` must be invariant under the site's stabilizer (``R U R^T = U``, the
+    convention GSAS-II uses). The site-symmetric tensor is the least-change
+    (orthogonal) projection of ``uij`` onto the invariant tensors. Components further than :data:`UIJ_TOL` from it raise
+    :class:`SymmetryError`; otherwise the symmetric values are returned, with a
+    flag saying whether any component changed (by more than 1e-12).
+    """
+    site = analyze_site(space_group, xyz)
+    ops = _expanded_ops(resolve_space_group(space_group, explicit_setting=True))
+    x = np.asarray(site.canonical)
+    stab = [R for R, t in ops if np.max(np.abs(_wrap_symmetric(R @ x + t - x))) < SPECIAL_POSITION_TOL]
+    stated = np.asarray(uij, dtype=float)
+    symmetric = _orthogonal_projector(_adp_projector(stab)) @ stated
+    symmetric = np.where(np.abs(symmetric - stated) <= ADJUSTMENT_REPORT_TOL, stated, symmetric)
+    bad = [f"{n} = {v:g} (site-symmetric value {s:.6g})"
+           for n, v, s in zip(_UIJ_NAMES, stated, symmetric) if abs(v - s) > UIJ_TOL]
+    if bad:
+        raise SymmetryError(
+            f"anisotropic ADPs break the site symmetry at {_fmt_xyz(x)} in {space_group!r}: "
+            + "; ".join(bad)
+        )
+    if not np.any(np.abs(symmetric - stated) > ADJUSTMENT_REPORT_TOL):
+        return tuple(float(v) for v in stated), False
+    return tuple(float(v) for v in symmetric), True
