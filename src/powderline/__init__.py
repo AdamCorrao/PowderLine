@@ -14,6 +14,9 @@ __version__ = "0.1.1"
 # requiring GSAS-II. The remaining GSAS-II-backed helpers are imported eagerly
 # when GSAS-II is available and skipped otherwise (the TOPAS path stays usable).
 from powderline.engine import run
+# Declared schema-version support per gateway (A65); outside __all__ until the
+# public-API rework.
+from powderline.compat import support_matrix
 
 try:  # GSAS-II-backed helpers + client (require the GSAS-II package)
     from powderline.kicker import (

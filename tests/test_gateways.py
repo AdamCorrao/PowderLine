@@ -465,6 +465,8 @@ import powderline.exceptions
 import powderline.fitstats
 import powderline.reports
 import powderline.symmetry
+import powderline.schema_core
+import powderline.compat
 import powderline.gateways.gsasii
 import powderline.gateways.gsasii.gateway
 import powderline.gateways.gsasii.validation
@@ -485,6 +487,9 @@ for name, recipe in recipes.items():
     caps = gw.capabilities()
     assert caps["name"] == name and "engine_version_spec" in caps
     assert type(gw.validate(recipe)).__name__ == "RecipeModel"
+
+# The support matrix loads every gateway factory (A65)
+assert {{row["gateway"] for row in powderline.support_matrix()}} >= set(recipes)
 
 # Assert GSASII and easydiffraction are NOT in sys.modules
 assert "GSASII" not in sys.modules, "GSASII was imported despite the block"
