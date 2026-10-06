@@ -1,10 +1,78 @@
 # Schema Evolution History
 
+PowderLine recipes are validated against a **core schema** (the shared top level
+and structural models, owned by PowderLine) plus one **engine schema** per
+gateway (`gsasii`, `topas`, `easydiffraction`), each in its engine's native
+conventions. Every schema has its own version. A recipe states both
+(`core_schema_version`, `engine_schema_version`), and each PowderLine release
+**declares** which versions it accepts. Compatibility is never inferred from the
+version numbers (`powderline.support_matrix()` lists the declarations).
+
+> **Refactor in progress (v0.2.0).** The schemas below are being introduced on
+> the `refactor/multi-engine` branch. Until the 0.26.0 schema is removed (re/07),
+> `powderline.run()` / `validate()` still validate recipes against the
+> **unified 0.26.0 schema** documented in the archive at the bottom of this page.
+
+---
+
+## Core schema
+
+### 1.0.0 — introduced in PowderLine 0.2.0 (in development)
+
+Defined in `src/powderline/schema_core.py`. Not used by any gateway yet: the
+engine schemas adopt it in re/04–06.
+
+- **Recipe frame** (`CoreRecipe`): `schema_name` (`"<engine>.<workflow>"`),
+  `core_schema_version`, `engine_schema_version`, `metadata`, `payload` (typed
+  by the engine schema). Unknown keys are errors at every level.
+- **`metadata`**: free-form and never interpreted; must be JSON-serializable and
+  at most **1 MiB** as UTF-8 JSON. The cap is the constant
+  `schema_core.METADATA_MAX_BYTES`; change it there and record the change here.
+- **Parameters**: `[value, refine_flag]` (no bounds) or
+  `[value, refine_flag, min, max]` (bounds the engine honors). A bounded list
+  where bounds aren't supported is an error. `refine_flag` is a JSON boolean.
+  `value` may be `null` (= start from the phase structure's value) only for
+  quantities that mirror a structure value.
+- **Data and ranges**: `xrd_data` (2θ in degrees, weights 1/σ², validated as in
+  0.26.0); `fit_range` `[min, max]`, with `max > min`, inside the data's 2θ range.
+- **Background**: Chebyshev (`num_coefficients`, `coefficients`, `refine_flag`).
+  Coefficient semantics are documented per engine.
+- **Units** are fixed per field in the schema, never written in a recipe.
+- **Accepted core versions** (this release): `==1.0.0`.
+
+Phase structure and symmetry validation (space-group setting, element symbols,
+special positions) are documented here when they land.
+
+## gsasii engine schema
+
+### 1.0.0 — introduced in PowderLine 0.2.0
+
+Entries added by re/04 (`gsasii.rietveld`, `gsasii.spf`).
+
+## topas engine schema
+
+### 1.0.0 — introduced in PowderLine 0.2.0
+
+Entries added by re/05 (`topas.rietveld`, `topas.spf`).
+
+## easydiffraction engine schema
+
+### 1.0.0 — introduced in PowderLine 0.2.0
+
+Entries added by re/06 (`easydiffraction.rietveld`).
+
+---
+
+## Archive: unified-schema era (0.21–0.26)
+
+The single schema shared by all engines up to PowderLine 0.1.1, kept verbatim
+(headings moved one level down).
+
 This document provides a concise summary of PowderLine's schema evolution for context. For detailed commit history, see the repository's git log. Current schema: **0.26.0**
 
 ---
 
-## Schema 0.26.0: Per-Parameter Refinement Flags Honored (Current)
+### Schema 0.26.0: Per-Parameter Refinement Flags Honored (Current)
 
 **Status**: Active (Q3 2026)
 
@@ -64,7 +132,7 @@ file reader/parser that builds the block.
 
 ---
 
-## Schema 0.25.4: Consistent Failure Metadata
+### Schema 0.25.4: Consistent Failure Metadata
 
 **Status**: Superseded by 0.26.0
 
@@ -90,7 +158,7 @@ No other recipe changes required.
 
 ---
 
-## Schema 0.25.3: Refinement Failure Detection and Windows Support
+### Schema 0.25.3: Refinement Failure Detection and Windows Support
 
 **Status**: Superseded by 0.25.4
 
@@ -110,7 +178,7 @@ No other recipe changes required.
 
 ---
 
-## Schema 0.25.2: Programmatic Python API
+### Schema 0.25.2: Programmatic Python API
 
 **Status**: Superseded by 0.25.3
 
@@ -147,7 +215,7 @@ No other recipe changes required.
 
 ---
 
-## Schema 0.25.1: Refined Parameters Export + Extended SPF Returns
+### Schema 0.25.1: Refined Parameters Export + Extended SPF Returns
 
 **Status**: Superseded by 0.25.2
 
@@ -175,7 +243,7 @@ No other recipe changes required.
 
 ---
 
-## Schema 0.25: Simplification
+### Schema 0.25: Simplification
 
 **Status**: Superseded by 0.25.1
 
@@ -202,7 +270,7 @@ No other recipe changes required.
 
 ---
 
-## Schema 0.24: Multi-Strategy Refinement System
+### Schema 0.24: Multi-Strategy Refinement System
 
 **Status**: Deprecated (replaced by schema 0.25)
 
@@ -222,7 +290,7 @@ No other recipe changes required.
 
 ---
 
-## Schema 0.23: Initial Multi-Strategy Exploration
+### Schema 0.23: Initial Multi-Strategy Exploration
 
 **Status**: Deprecated
 
@@ -235,7 +303,7 @@ No other recipe changes required.
 
 ---
 
-## Schema 0.22: ADP Field Requirements
+### Schema 0.22: ADP Field Requirements
 
 **Status**: Deprecated
 
@@ -249,7 +317,7 @@ No other recipe changes required.
 
 ---
 
-## Schema 0.21 and Earlier
+### Schema 0.21 and Earlier
 
 **Status**: Historical
 
@@ -262,7 +330,7 @@ Early development versions focused on basic Rietveld refinement capabilities:
 
 ---
 
-## Origin (Schema 0.21–0.24)
+### Origin (Schema 0.21–0.24)
 
 PowderLine began as a minimal proof-of-concept to confirm that GSAS-II could be driven
 from a JSON file via the G2scripts API. The initial scope established the directory
@@ -276,7 +344,7 @@ configuration system, programmatic Python API) were subsequently delivered in sc
 
 ---
 
-## Schema Design Philosophy
+### Schema Design Philosophy
 
 **Example-Driven Development**: Features are added when real refinement examples need them, not speculatively. Schema evolution is guided by committed examples in `examples/` directory.
 
@@ -288,7 +356,7 @@ configuration system, programmatic Python API) were subsequently delivered in sc
 
 ---
 
-## Migration Philosophy
+### Migration Philosophy
 
 - **Explicit schema versions**: Every recipe declares its `"schema_version"`. The code
   accepts one current version — **0.26.0** — and recipes written for older versions must
