@@ -25,6 +25,11 @@ from powderline.schema_core import (
 # --- XRDData ----------------------------------------------------------------
 
 
+def _errors(exc_info) -> list:
+    """(location, type) of every error, so a test pins which field failed and why."""
+    return [(e["loc"], e["type"]) for e in exc_info.value.errors()]
+
+
 def test_xrd_arrays_same_length_mismatch_raises():
     with pytest.raises(ValidationError, match="same length"):
         XRDData(tth=[1.0, 2.0, 3.0], Itth=[10.0, 20.0], Itth_weights=[1.0, 1.0])
@@ -1308,3 +1313,74 @@ def test_phase_structure_multiple_atom_problems_all_reported():
     msg = str(exc_info.value)
     assert "La1" in msg
     assert "B1" in msg
+
+
+# --- PhaseStructure: error locations, reporting, no side effects (A70) -------
+
+
+def _uaniso(u11, u22, u33, u12=0.0, u13=0.0, u23=0.0):
+    return {"U11": u11, "U22": u22, "U33": u33, "U12": u12, "U13": u13, "U23": u23}
+
+
+def test_phase_structure_all_problems_of_one_atom_reported():
+    """A wrong Multiplicity does not hide the same atom's Uaniso error."""
+    d = _valid_pmm_lab6_phase_dict()
+    la = d["atoms"]["La1"]
+    la["Multiplicity"] = 2
+    la["ADP"] = "Uaniso"
+    del la["Uiso"]
+    la["Uaniso"] = _uaniso(0.01, 0.02, 0.01)
+    with pytest.raises(ValidationError) as exc_info:
+        PhaseStructure.model_validate(d)
+    assert _errors(exc_info) == [
+        (("atoms", "La1", "Multiplicity"), "value_error"),
+        (("atoms", "La1", "Uaniso"), "value_error"),
+    ]
+
+
+def test_phase_structure_problems_reported_at_their_locations():
+    """Cell, position and multiplicity problems: one error each, at its own field."""
+    d = _valid_pmm_lab6_phase_dict()
+    d["unit_cell"]["b"] = 4.2
+    d["atoms"]["La1"]["x"] = 0.001  # ambiguous band
+    d["atoms"]["B1"]["Multiplicity"] = 12
+    with pytest.raises(ValidationError) as exc_info:
+        PhaseStructure.model_validate(d)
+    assert _errors(exc_info) == [
+        (("unit_cell",), "value_error"),
+        (("atoms", "La1"), "value_error"),
+        (("atoms", "B1", "Multiplicity"), "value_error"),
+    ]
+    msgs = [e["msg"] for e in exc_info.value.errors()]
+    assert "b = 4.2" in msgs[0]
+    assert "without being on it" in msgs[1]
+    assert "stated Multiplicity 12, derived 6" in msgs[2]
+
+
+def test_phase_structure_locations_nest_in_enclosing_models():
+    """Engine schemas embed PhaseStructure: the locations get the enclosing path, also from JSON."""
+    from pydantic import BaseModel
+
+    class Payload(BaseModel):
+        structure: PhaseStructure
+
+    d = _valid_pmm_lab6_phase_dict()
+    d["atoms"]["B1"]["Multiplicity"] = 12
+    with pytest.raises(ValidationError) as exc_info:
+        Payload.model_validate_json(json.dumps({"structure": d}))
+    assert _errors(exc_info) == [(("structure", "atoms", "B1", "Multiplicity"), "value_error")]
+
+
+def test_phase_structure_does_not_modify_caller_atoms():
+    """Canonicalization replaces the atom in the structure; the caller's Atom is untouched."""
+    atom = Atom.model_validate({"element": "C", "x": 0.3333333, "y": 0.6666667, "z": 0.25,
+                                "ADP": "Uiso", "Uiso": 0.01})
+    phase = PhaseStructure.model_validate({
+        "phase_name": "test",
+        "space_group": "P 63/m m c",
+        "unit_cell": {"a": 3.2, "b": 3.2, "c": 5.2, "alpha": 90, "beta": 90, "gamma": 120},
+        "atoms": {"C1": atom},
+    })
+    assert (atom.x, atom.y) == (0.3333333, 0.6666667)
+    assert (phase.atoms["C1"].x, phase.atoms["C1"].y) == (1 / 3, 2 / 3)
+    assert phase.atoms["C1"] is not atom

@@ -42,7 +42,10 @@ engine schemas adopt it in re/04–06.
 
 - **Phase structure** (`PhaseStructure`): `phase_name`, `space_group`,
   `unit_cell`, `atoms` (keyed by label). Structural interpretation is checked
-  once, in core, so every engine gets the same structure:
+  once, in core, so every engine gets the same structure. All structural
+  problems are reported together, each at its own field (`unit_cell`,
+  `atoms.<label>`, `atoms.<label>.Multiplicity`, `atoms.<label>.Uaniso`); they
+  are checked once the individual fields are valid:
   - **Space group**: a Hermann–Mauguin symbol. Two-origin groups need an explicit
     `:1`/`:2` and rhombohedral groups `:H`/`:R` (e.g. `"F d -3 m:2"`,
     `"R -3 m:H"`). Individual engines may accept fewer settings.

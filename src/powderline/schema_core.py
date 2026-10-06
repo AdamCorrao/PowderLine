@@ -33,10 +33,12 @@ from pydantic import (
     Field,
     PrivateAttr,
     StrictBool,
+    ValidationError,
     field_validator,
     model_serializer,
     model_validator,
 )
+from pydantic_core import InitErrorDetails
 
 from powderline.exceptions import StructuredWarning, SymmetryError
 from powderline.symmetry import analyze_site, check_cell, check_uij, resolve_space_group
@@ -565,6 +567,15 @@ class PhaseStructure(BaseModel):
     Each adjustment is reported by :meth:`warnings` (A73). The unit cell must
     fit the space group exactly (A77), and anisotropic ADPs the site symmetry
     (A78).
+
+    Every structural problem is reported at its own location (A70):
+    ``unit_cell``, ``atoms.<label>`` (the position), ``atoms.<label>.Multiplicity``,
+    ``atoms.<label>.Uaniso``; all of them together, in one ``ValidationError``.
+    These checks run only once every field is valid: pydantic does not run
+    model-level validators after a field error, so e.g. an unknown element is
+    reported first, and the symmetry checks follow once it is fixed.
+    Validation never modifies the caller's :class:`Atom` objects; adjusted atoms
+    are copies.
     """
 
     model_config = _STRICT
@@ -586,42 +597,46 @@ class PhaseStructure(BaseModel):
 
     @model_validator(mode="after")
     def _sites_check(self) -> "PhaseStructure":
-        problems: list[str] = []
+        problems: list[InitErrorDetails] = []
+
+        def problem(loc: tuple, message: str, value: Any) -> None:
+            problems.append(InitErrorDetails(type="value_error", loc=loc, input=value,
+                                             ctx={"error": ValueError(message)}))
+
         cell = self.unit_cell
         try:
             check_cell(self.space_group, (cell.a, cell.b, cell.c, cell.alpha, cell.beta, cell.gamma))
         except SymmetryError as exc:
-            problems.append(str(exc))
-        for label, atom in self.atoms.items():
+            problem(("unit_cell",), str(exc), cell.model_dump())
+        for label, atom in list(self.atoms.items()):
             try:
                 site = analyze_site(self.space_group, (atom.x, atom.y, atom.z))
             except SymmetryError as exc:
-                problems.append(f"atom {label!r}: {exc}")
-                continue
+                problem(("atoms", label), str(exc), atom.model_dump())
+                continue  # the checks below need the site
+            update: dict[str, Any] = {}
             if atom.Multiplicity is not None and atom.Multiplicity != site.multiplicity:
-                problems.append(
-                    f"atom {label!r}: stated Multiplicity {atom.Multiplicity}, derived "
-                    f"{site.multiplicity} ({self.space_group!r}, site {site.stated})"
-                )
-                continue
+                problem(("atoms", label, "Multiplicity"),
+                        f"stated Multiplicity {atom.Multiplicity}, derived {site.multiplicity} "
+                        f"({self.space_group!r}, site {site.stated})", atom.Multiplicity)
             if atom.Uaniso is not None:
                 stated_u = tuple(atom.Uaniso[k] for k in _UANISO_KEYS)
                 try:
                     symmetric_u, u_adjusted = check_uij(self.space_group, site.canonical, stated_u)
                 except SymmetryError as exc:
-                    problems.append(f"atom {label!r}: {exc}")
-                    continue
-                if u_adjusted:
-                    atom.Uaniso = dict(zip(_UANISO_KEYS, symmetric_u))
-                    self._warnings.append(StructuredWarning(
-                        code="adp_symmetry_adjusted",
-                        message=(f"atom {label!r}: Uaniso {dict(zip(_UANISO_KEYS, stated_u))} adjusted to "
-                                 f"the site-symmetric values {atom.Uaniso}"),
-                        field_path=f"atoms.{label}.Uaniso",
-                    ))
+                    problem(("atoms", label, "Uaniso"), str(exc), atom.Uaniso)
+                else:
+                    if u_adjusted:
+                        update["Uaniso"] = dict(zip(_UANISO_KEYS, symmetric_u))
+                        self._warnings.append(StructuredWarning(
+                            code="adp_symmetry_adjusted",
+                            message=(f"atom {label!r}: Uaniso {dict(zip(_UANISO_KEYS, stated_u))} "
+                                     f"adjusted to the site-symmetric values {update['Uaniso']}"),
+                            field_path=f"atoms.{label}.Uaniso",
+                        ))
             self._sites[label] = site
             if site.adjusted:
-                atom.x, atom.y, atom.z = site.canonical
+                update.update(zip(("x", "y", "z"), site.canonical))
                 self._warnings.append(StructuredWarning(
                     code="special_position_adjusted",
                     message=(f"atom {label!r}: coordinates {site.stated} are on a special position "
@@ -629,8 +644,10 @@ class PhaseStructure(BaseModel):
                              f"{site.canonical}"),
                     field_path=f"atoms.{label}",
                 ))
+            if update:
+                self.atoms[label] = atom.model_copy(update=update)
         if problems:
-            raise ValueError("; ".join(problems))
+            raise ValidationError.from_exception_data(type(self).__name__, problems)
         return self
 
     def site(self, label: str):
