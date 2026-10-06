@@ -73,6 +73,11 @@ def required_core_schemas(requires: RequiresCore, engine_schema_version: str) ->
     """
     if isinstance(requires, str):
         return requires
+    if not isinstance(requires, Mapping):
+        raise ValueError(
+            "requires_core_schema must be a specifier string or a mapping "
+            f"{{engine-schema specifier: core specifier}}, got {type(requires).__name__}"
+        )
     version = parse_version("engine_schema_version", engine_schema_version)
     for engine_spec, core_spec in requires.items():
         if version in _specifier("requires_core_schema key", engine_spec):
@@ -117,7 +122,9 @@ def support_matrix() -> List[Dict[str, Any]]:
     """One row per registered gateway: its declarations plus core's (A40).
 
     Loads each gateway's engine-free factory through the registry; imports no
-    engine. Undeclared gateways get ``"declared": False``. Consumed by the docs
+    engine. Undeclared gateways get ``"declared": False``. A gateway whose
+    declarations are malformed (only some keys present) raises ``ValueError``
+    naming it, rather than being listed as undeclared. Consumed by the docs
     generation in re/10.
     """
     from powderline import registry

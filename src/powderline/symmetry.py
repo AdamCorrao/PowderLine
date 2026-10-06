@@ -405,6 +405,15 @@ def _barycenter(x: np.ndarray, ops) -> np.ndarray:
     return x + np.mean([_wrap_symmetric(R @ x + t - x) for R, t in ops], axis=0)
 
 
+def _is_group(ops) -> bool:
+    """True when ``ops`` is closed under composition (translations mod 1)."""
+    def key(R, t):
+        return (tuple(np.rint(R).astype(int).ravel()), tuple(np.round(t % 1.0, 9) % 1.0))
+
+    keys = {key(R, t) for R, t in ops}
+    return all(key(R1 @ R2, R1 @ t2 + t1) in keys for R1, t1 in ops for R2, t2 in ops)
+
+
 def _axes(stab_rots) -> list[str]:
     return _classify(sum(stab_rots) / len(stab_rots))
 
@@ -418,7 +427,7 @@ def _orthogonal_projector(reynolds: np.ndarray) -> np.ndarray:
     a free component stays as stated and only inconsistent ones move (A73, A78).
     """
     u, sv, _vt = np.linalg.svd(reynolds)
-    basis = u[:, sv > 0.5]  # a projector's singular values are ~1 on its image, 0 off it
+    basis = u[:, sv > 0.5]  # a projector's nonzero singular values are >= 1 (1 if orthogonal)
     return basis @ basis.T
 
 
@@ -444,13 +453,17 @@ def analyze_site(space_group: str, xyz) -> SiteAnalysis:
     ambiguous = [d for d in dist if SPECIAL_POSITION_TOL <= d < AMBIGUOUS_BAND]
     if ambiguous:
         near = [op for op, d in zip(ops, dist) if d < AMBIGUOUS_BAND]
-        target = _barycenter(x, near)
-        axes = _axes([R for R, _t in near])
-        exact = [Fraction(float(v)).limit_denominator(_MAX_DENOMINATOR) if a == "FIXED" else None
-                 for v, a in zip(target, axes)]
+        if _is_group(near):
+            target = _barycenter(x, near)
+            axes = _axes([R for R, _t in near])
+            exact = [Fraction(float(v)).limit_denominator(_MAX_DENOMINATOR) if a == "FIXED" else None
+                     for v, a in zip(target, axes)]
+            where = (f"the special position {_fmt_exact(target, exact)} "
+                     f"(multiplicity {len(ops) // len(near)})")
+        else:  # near more than one special position: no single one to name
+            where = "a special position"
         raise SymmetryError(
-            f"position {_fmt_xyz(x)} is {max(ambiguous):.2g} from the special position "
-            f"{_fmt_exact(target, exact)} (multiplicity {len(ops) // len(near)}) in "
+            f"position {_fmt_xyz(x)} is {max(ambiguous):.2g} from {where} in "
             f"{space_group!r} without being on it: state the special-position "
             f"coordinates to at least 6 decimals, or move the atom at least "
             f"{AMBIGUOUS_BAND:g} (fractional) off it"

@@ -56,21 +56,27 @@ def test_required_core_schemas_plain_string_returned_as_is():
 
 
 def test_required_core_schemas_mapping_picks_first_matching_key():
+    # 2.5.0 matches both keys; the first one in declaration order wins, even
+    # though the second has the higher lower bound.
+    requires = {
+        ">=1.0.0": "==1.0.0",
+        ">=2.0.0": "==2.0.0",
+    }
+    assert required_core_schemas(requires, "2.5.0") == "==1.0.0"
+    assert required_core_schemas(dict(reversed(list(requires.items()))), "2.5.0") == "==2.0.0"
+
+
+def test_required_core_schemas_mapping_skips_non_matching_keys():
     requires = {
         ">=2.0.0": "==2.0.0",
         ">=1.0.0": "==1.0.0",
     }
-    result = required_core_schemas(requires, "1.5.0")
-    assert result == "==1.0.0"
+    assert required_core_schemas(requires, "1.5.0") == "==1.0.0"
 
 
-def test_required_core_schemas_mapping_picks_highest_version_match():
-    requires = {
-        ">=2.0.0": "==2.0.0",
-        ">=1.0.0": "==1.0.0",
-    }
-    result = required_core_schemas(requires, "2.5.0")
-    assert result == "==2.0.0"
+def test_required_core_schemas_rejects_non_mapping():
+    with pytest.raises(ValueError, match="specifier string or a mapping"):
+        required_core_schemas(["==1.0.0"], "1.0.0")
 
 
 def test_required_core_schemas_no_matching_key_raises():

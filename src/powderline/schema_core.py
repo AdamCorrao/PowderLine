@@ -281,8 +281,11 @@ def check_element_symbol(symbol: str) -> str:
             f"element {symbol!r}: charged scattering types are not supported in core schema "
             f"{CORE_SCHEMA_VERSION} yet; give the bare element symbol"
         )
-    if element.atomic_number > 0:
-        raise ValueError(f"element {symbol!r}: write the element symbol as {element.name!r}")
+    # Suggest a spelling only for case/whitespace differences. gemmi also reads
+    # a prefix (' Fe' -> F, 'Nax' -> Na), which must never be offered as a fix.
+    stripped = gemmi.Element(symbol.strip())
+    if stripped.atomic_number > 0 and stripped.name.lower() == symbol.strip().lower():
+        raise ValueError(f"element {symbol!r}: write the element symbol as {stripped.name!r}")
     raise ValueError(f"element {symbol!r} is not a known element symbol")
 
 
@@ -463,13 +466,20 @@ class ChebyshevBackground(BaseModel):
             raise ValueError(f"Number of coefficients ({len(v)}) must match num_coefficients ({num_coef})")
         return v
 
+    @field_validator('coefficients')
+    @classmethod
+    def _coefficients_finite(cls, v):
+        for i, c in enumerate(v):
+            _finite(f"coefficients[{i}]", c)
+        return v
+
 
 # --- phase structure (A32, A35, A62, A63, A69, A73) -------------------------
 
 
 class UnitCell(BaseModel):
     """Cell constants (values, not refinables). No ``volume``: every engine
-    derives it from a..gamma (A74)."""
+    derives it from a..gamma (A75)."""
 
     model_config = _STRICT
 

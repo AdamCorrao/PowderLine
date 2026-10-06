@@ -220,6 +220,13 @@ def test_chebyshev_coefficient_count_mismatch_rejected():
         ChebyshevBackground(num_coefficients=3, coefficients=[1.0, 2.0], refine_flag=False)
 
 
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+def test_chebyshev_non_finite_coefficient_rejected(bad):
+    with pytest.raises(ValidationError, match=r"coefficients\[1\] must be finite") as exc_info:
+        ChebyshevBackground(num_coefficients=2, coefficients=[1.0, bad], refine_flag=False)
+    assert _errors(exc_info) == [(("coefficients",), "value_error")]
+
+
 def test_chebyshev_coefficient_count_match_ok():
     m = ChebyshevBackground(num_coefficients=3, coefficients=[1.0, 2.0, 3.0], refine_flag=False)
     assert len(m.coefficients) == 3
@@ -888,7 +895,7 @@ def test_element_symbol_accepted(symbol):
     assert check_element_symbol(symbol) == symbol
 
 
-@pytest.mark.parametrize("symbol, canonical", [("fe", "Fe"), ("FE", "Fe"), ("la", "La"), ("Fe ", "Fe")])
+@pytest.mark.parametrize("symbol, canonical", [("fe", "Fe"), ("FE", "Fe"), ("la", "La"), ("Fe ", "Fe"), (" Fe", "Fe"), ("co", "Co")])
 def test_element_symbol_misspelled_rejected_with_spelling(symbol, canonical):
     with pytest.raises(ValueError, match=f"write the element symbol as '{canonical}'"):
         check_element_symbol(symbol)
@@ -902,10 +909,12 @@ def test_charged_types_rejected_not_stripped(symbol):
         check_element_symbol(symbol)
 
 
-@pytest.mark.parametrize("symbol", ["X", "Xx", "", "  Fe"])
+@pytest.mark.parametrize("symbol", ["X", "Xx", "", "Nax", "Fex"])
 def test_unknown_element_rejected(symbol):
-    with pytest.raises(ValueError, match="not a known element symbol"):
+    # gemmi reads a prefix ("Nax" -> Na); that must not be offered as a spelling.
+    with pytest.raises(ValueError, match="not a known element symbol") as exc_info:
         check_element_symbol(symbol)
+    assert "write the element symbol" not in str(exc_info.value)
 
 
 # --- phase structure ---

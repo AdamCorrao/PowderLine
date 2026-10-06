@@ -234,3 +234,21 @@ def test_analyze_site_hexagonal_6h_multiplicity_6():
     xyz = (0.2, 0.4, 0.25)
     site = analyze_site(sg, xyz)
     assert site.multiplicity == 6
+
+
+# --- ambiguous-band message ----------------------------------------------------
+
+
+def test_is_group_detects_closure():
+    from powderline.symmetry import _expanded_ops, _is_group, resolve_space_group
+
+    ops = _expanded_ops(resolve_space_group("P 63/m m c"))
+    assert _is_group(ops)
+    assert _is_group(ops[:1])  # identity alone
+    two_fold = [op for op in ops if round(float(op[0].trace())) == -1][0]
+    assert not _is_group([two_fold])  # missing the identity
+
+
+def test_ambiguous_band_message_names_the_special_position():
+    with pytest.raises(SymmetryError, match=r"from the special position \(1/3, 2/3, 1/4\) \(multiplicity 2\)"):
+        analyze_site("P 63/m m c", (0.3333, 0.6667, 0.25))
