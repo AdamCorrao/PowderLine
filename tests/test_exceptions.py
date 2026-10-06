@@ -11,14 +11,13 @@ from powderline.exceptions import (
     EngineVersionError,
     GatewayNotInstalledError,
     PowderLineError,
-    RecipeValidationError,
     StructuredWarning,
     SymmetryError,
 )
 
 
 @pytest.mark.parametrize("cls", [
-    RecipeValidationError, GatewayNotInstalledError, EngineNotAvailableError,
+    GatewayNotInstalledError, EngineNotAvailableError,
     EngineVersionError, EngineExecutionError, SymmetryError,
 ])
 def test_all_derive_from_powderline_error(cls):
@@ -57,19 +56,27 @@ def test_gateway_not_installed_keeps_name():
     assert str(err) == "no gateway 'foo'"
 
 
-class _M(BaseModel):
-    x: int
+def test_symmetry_error_raised_in_a_validator_is_reported_by_pydantic():
+    # A61/A70: a SymmetryError raised inside a validator joins pydantic's
+    # aggregated ValidationError with its field location.
+    from pydantic import field_validator
 
+    from powderline.exceptions import SymmetryError
 
-def test_recipe_validation_error_from_pydantic():
+    class _S(BaseModel):
+        sg: str
+        n: int
+
+        @field_validator("sg")
+        @classmethod
+        def _sg(cls, v):
+            raise SymmetryError(f"bad group {v!r}")
+
     with pytest.raises(ValidationError) as info:
-        _M.model_validate({"x": "not-an-int"})
-    err = RecipeValidationError.from_pydantic(info.value, schema_name="GSASII_Rietveld")
-    assert isinstance(err, ValueError)
-    assert err.schema_name == "GSASII_Rietveld"
-    assert err.errors and err.errors[0]["loc"] == ("x",)
-    assert err.__cause__ is info.value
-    assert str(err).startswith("GSASII_Rietveld recipe failed validation:")
+        _S.model_validate({"sg": "Q", "n": "x"})
+    locs = {e["loc"]: e["msg"] for e in info.value.errors()}
+    assert set(locs) == {("sg",), ("n",)}
+    assert "bad group 'Q'" in locs[("sg",)]
 
 
 def test_structured_warning_shape():

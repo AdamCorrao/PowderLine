@@ -13,10 +13,13 @@ gateway errors split along the schema/runtime layers (master plan A23, A5/A8):
 - :class:`EngineVersionError` — the installed engine is outside the gateway's
   supported ``ENGINE_VERSION_SPEC``. A hard error (A44).
 - :class:`EngineExecutionError` — the engine ran and failed.
-- :class:`RecipeValidationError` — a recipe failed validation.
 - :class:`SymmetryError` — core symmetry helpers (``powderline.symmetry``)
   cannot interpret a space group or site. Gateways convert it to their own
   error type (A61).
+
+An invalid recipe raises pydantic's own ``ValidationError``, which lists every
+problem with its field location. Recipe checks live in the schema models
+(core + engine), so there is no PowderLine wrapper for it (A70).
 
 This module must never import an engine (enforced by an import-block test).
 """
@@ -28,29 +31,6 @@ from typing import Optional, TypedDict
 
 class PowderLineError(Exception):
     """Base class for all PowderLine errors."""
-
-
-class RecipeValidationError(PowderLineError, ValueError):
-    """A recipe failed validation.
-
-    Wraps (and may annotate) the underlying pydantic errors. ``errors`` holds
-    pydantic's ``ValidationError.errors()`` list when built from one.
-    """
-
-    def __init__(self, message: str, *, errors: Optional[list] = None,
-                 schema_name: Optional[str] = None) -> None:
-        super().__init__(message)
-        self.errors = list(errors or [])
-        self.schema_name = schema_name
-
-    @classmethod
-    def from_pydantic(cls, exc, *, schema_name: Optional[str] = None) -> "RecipeValidationError":
-        """Build from a ``pydantic.ValidationError``, keeping its error list."""
-        prefix = f"{schema_name} recipe" if schema_name else "recipe"
-        err = cls(f"{prefix} failed validation:\n{exc}", errors=exc.errors(),
-                  schema_name=schema_name)
-        err.__cause__ = exc
-        return err
 
 
 class SymmetryError(PowderLineError, ValueError):
