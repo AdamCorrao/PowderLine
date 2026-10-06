@@ -22,7 +22,7 @@ from powderline.easydiff.conversions import (
 )
 from powderline.easydiff.errors import EasyDiffractionTranslationError
 from powderline.easydiff.policy import check_unsupported, param_flag, param_value
-from powderline.topas.errors import TopasTranslationError
+from powderline.exceptions import SymmetryError
 from powderline.symmetry import cell_constraints
 
 
@@ -359,7 +359,7 @@ def build_project(recipe: dict, workdir) -> BuildResult:
         # Get symmetry rules
         try:
             rules = cell_constraints(sg_name)
-        except TopasTranslationError as e:
+        except SymmetryError as e:
             raise EasyDiffractionTranslationError(str(e)) from e
 
         length_map = {

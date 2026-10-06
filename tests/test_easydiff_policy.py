@@ -192,3 +192,11 @@ def test_unknown_space_group_raises():
     r["payload"]["phases"]["LaB6"]["structure"]["space_group"] = "NOT A GROUP"
     with pytest.raises(EasyDiffractionTranslationError, match="NOT A GROUP"):
         check_unsupported(r)
+
+
+def test_rhombohedral_R_setting_rejected():
+    # A62: the easydiffraction layer rejects :R itself (core accepts it).
+    r = base_recipe()
+    r["payload"]["phases"]["LaB6"]["structure"]["space_group"] = "R -3 m :R"
+    with pytest.raises(EasyDiffractionTranslationError, match="rhombohedral ':R'"):
+        check_unsupported(r)

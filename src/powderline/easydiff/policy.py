@@ -35,8 +35,8 @@ def _iparm_current(iparm1: dict, key: str, default=0.0):
 
 
 def check_unsupported(recipe: dict) -> list[str]:
-    from powderline.symmetry import cell_constraints
-    from powderline.topas.errors import TopasTranslationError
+    from powderline.exceptions import SymmetryError
+    from powderline.symmetry import cell_constraints, resolve_space_group
 
     warnings: list[str] = []
     schema_name = recipe.get("schema_name")
@@ -106,8 +106,13 @@ def check_unsupported(recipe: dict) -> list[str]:
         sg_name = structure.get("space_group")
         if sg_name:
             try:
+                if resolve_space_group(sg_name).ext == "R":
+                    raise EasyDiffractionTranslationError(
+                        f"rhombohedral ':R' setting not supported for {sg_name!r}; "
+                        "use the hexagonal (:H) setting"
+                    )
                 cell_constraints(sg_name)
-            except TopasTranslationError as exc:
+            except SymmetryError as exc:
                 raise EasyDiffractionTranslationError(str(exc)) from exc
 
         pz = phase.get("parameterization") or {}

@@ -1,7 +1,9 @@
 """Shared exception type for the TOPAS translation path.
 
-Kept in its own module so both ``symmetry`` and ``writer`` can raise it without
-a circular import. Re-exported from ``powderline.topas`` for convenience.
+Kept in its own module so ``writer`` and the TOPAS engine can share it without
+a circular import. Re-exported from ``powderline.topas`` for convenience. Core
+:class:`~powderline.exceptions.SymmetryError` is converted to it by the writer
+(A61).
 """
 
 from __future__ import annotations
