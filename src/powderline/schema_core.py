@@ -50,7 +50,7 @@ from pydantic import (
 from pydantic.json_schema import DEFAULT_REF_TEMPLATE, GenerateJsonSchema, JsonSchemaMode
 from pydantic_core import InitErrorDetails, PydanticCustomError
 
-from powderline.exceptions import SymmetryError
+from powderline.exceptions import StructuredWarning, SymmetryError
 from powderline.symmetry import (
     ADJUSTMENT_REPORT_TOL,
     Ties,
@@ -797,6 +797,9 @@ class Phase(CoreModel, Generic[P]):
     These checks run only once every field is valid: pydantic does not run
     model-level validators after a field error, so e.g. an unknown element is
     reported first, and the symmetry checks follow once it is fixed.
+
+    :meth:`warnings` holds informative findings that change nothing: a
+    ``Uaniso`` that is not positive definite (A118).
     """
 
     space_group: str = Field(description="gemmi's canonical extended Hermann-Mauguin name, e.g. "
@@ -807,6 +810,7 @@ class Phase(CoreModel, Generic[P]):
         description="Atoms keyed by unique label: a letter, then ASCII letters, digits or '_'")
 
     _sites: dict = PrivateAttr(default_factory=dict)
+    _warnings: list = PrivateAttr(default_factory=list)
 
     @classmethod
     def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
@@ -916,6 +920,15 @@ class Phase(CoreModel, Generic[P]):
                     problem(("atoms", label, "Uaniso"), str(exc), atom.model_dump()["Uaniso"])
                 else:
                     uaniso_ok = True
+                    principal = np.linalg.eigvalsh(_uij_matrix(stated_u))
+                    if principal[0] <= 0:  # informative, not an error (A118): never changes a value
+                        self._warnings.append(StructuredWarning(
+                            code="uaniso_not_positive_definite",
+                            message=(f"{context}: Uaniso is not positive definite (principal values "
+                                     f"{', '.join(f'{v:.3g}' for v in principal)} A^2), so it describes no "
+                                     "thermal ellipsoid; it is used as stated"),
+                            field_path=f"atoms.{label}.Uaniso",
+                        ))
                     if u_adjusted:  # A78, A115: within 1e-6 A^2 of symmetric, but not exactly
                         problem(("atoms", label, "Uaniso"),
                                 f"{context}: Uaniso is not exactly site-symmetric "
@@ -937,6 +950,14 @@ class Phase(CoreModel, Generic[P]):
         """The :class:`~powderline.symmetry.SiteAnalysis` of atom ``label``."""
         return self._sites[label]
 
+    def warnings(self) -> list:
+        """Structured warnings from validating this phase (paths relative to it).
+
+        Informative only: a warning never comes with a changed value (A115), so
+        validating the same recipe again gives the same warnings.
+        """
+        return list(self._warnings)
+
 
 def _reserved_phase_members() -> frozenset[str]:
     """Names core's :class:`Phase` defines besides its fields: validators, private attributes, methods."""
@@ -951,6 +972,17 @@ def _reserved_phase_members() -> frozenset[str]:
 
 
 _CELL_FIELDS = ("a", "b", "c", "alpha", "beta", "gamma")
+
+
+def _uij_matrix(u) -> np.ndarray:
+    """The symmetric 3x3 matrix of (U11, U22, U33, U12, U13, U23).
+
+    Its eigenvalues have the signs of the Cartesian tensor's (a congruence
+    transform keeps them, Sylvester's law of inertia), so it tells whether the
+    thermal ellipsoid exists without the cell.
+    """
+    u11, u22, u33, u12, u13, u23 = u
+    return np.array([[u11, u12, u13], [u12, u22, u23], [u13, u23, u33]], dtype=float)
 
 
 def _same(got: float, want: float) -> bool:

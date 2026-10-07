@@ -1443,7 +1443,8 @@ def test_phase_reserved_members_are_core_validators_private_attributes_and_metho
     """Pinned, so a new core validator or method is seen to be reserved too (review A1)."""
     from powderline.schema_core import _reserved_phase_members
 
-    assert _reserved_phase_members() == {"_parameter_type_chosen", "_space_group", "_sites_check", "_sites", "site"}
+    assert _reserved_phase_members() == {"_parameter_type_chosen", "_space_group", "_sites_check", "_sites",
+                                         "_warnings", "site", "warnings"}
 
 
 @pytest.mark.parametrize("name, body", [
@@ -2161,3 +2162,33 @@ def test_cell_open_bounds_and_positive_bounds_accepted():
                   bounds={"a": (8.0, 10.0), "b": (None, 6.0), "beta": (95.0, 115.0)})
     phase = Phase[BRP].model_validate(_phasep("C 1 2/m 1", cell, {"O": _atomp(_GENERAL, bounds={})}))
     assert phase.unit_cell.a.model_dump() == [9.0, True, 8.0, 10.0]
+
+
+# --- non-positive-definite Uaniso (A118) -------------------------------------
+
+
+def _p1_uaniso_phase(u):
+    keys = ("U11", "U22", "U33", "U12", "U13", "U23")
+    atom = {"element": "O", "x": [0.1, False], "y": [0.2, False], "z": [0.3, False], "occupancy": [1.0, False],
+            "ADP": "Uaniso", "Uaniso": {k: [v, False] for k, v in zip(keys, u)}}
+    return {"space_group": "P 1",
+            "unit_cell": {k: [v, False] for k, v in zip(_CELL_NAMES, (5.0, 6.0, 7.0, 80.0, 85.0, 95.0))},
+            "atoms": {"O1": atom}}
+
+
+def test_uaniso_not_positive_definite_warns_and_keeps_the_values():
+    """A118: informative, never an error or a change; the same recipe gives the same warning again."""
+    d = _p1_uaniso_phase((0.01, 0.01, 0.01, 0.02, 0.0, 0.0))  # principal values -0.01, 0.01, 0.03
+    phase = Phase[RP].model_validate(d)
+    assert phase.model_dump() == d
+    expected = [{"code": "uaniso_not_positive_definite",
+                 "message": "atom 'O1' (multiplicity 1 in 'P 1'): Uaniso is not positive definite (principal "
+                            "values -0.01, 0.01, 0.03 A^2), so it describes no thermal ellipsoid; it is used as stated",
+                 "field_path": "atoms.O1.Uaniso"}]
+    assert phase.warnings() == expected
+    assert Phase[RP].model_validate(phase.model_dump()).warnings() == expected
+
+
+def test_uaniso_positive_definite_gives_no_warning():
+    phase = Phase[RP].model_validate(_p1_uaniso_phase((0.01, 0.012, 0.009, 0.002, -0.001, 0.0005)))
+    assert phase.warnings() == []

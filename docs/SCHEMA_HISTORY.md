@@ -124,6 +124,11 @@ engine schemas adopt it in re/04–06.
     Anisotropic ADPs must respect the site symmetry exactly; otherwise it is an
     error, which within 1e-6 Å² gives the values to write (derived from each tie
     group's first component, e.g. `write U12 = 0.0061735` for `U12 = U22/2`).
+    A `Uaniso` that is not positive definite (a principal mean-square
+    displacement ≤ 0, so no thermal ellipsoid exists) is **accepted with a
+    structured warning** (`uaniso_not_positive_definite`), like a negative
+    `Uiso`: it can show that the parameter compensates for something the model
+    lacks (e.g. absorption). Engines carry it as given.
   - **Refinement intent follows the symmetry.** Parameters tied by symmetry
     are **one** parameter, and every member is stated: cubic `a, b, c`;
     tetragonal/hexagonal `a, b`; rhombohedral axes (`:R`) `a, b, c` and
