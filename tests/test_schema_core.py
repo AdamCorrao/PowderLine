@@ -945,44 +945,89 @@ def test_atom_occupancy_above_one_rejected():
         Atom[RefinableParameter](element="Fe", x=[0.0, False], y=[0.0, False], z=[0.0, False], occupancy=[1.01, False], ADP="Uiso", Uiso=[0.01, False])
 
 
+_U6 = {"U11": [0.01, False], "U22": [0.01, False], "U33": [0.01, False],
+       "U12": [0.0, False], "U13": [0.0, False], "U23": [0.0, False]}
+
+
+def _adp_atom(**adp):
+    return {"element": "Fe", "x": [0.0, False], "y": [0.0, False], "z": [0.0, False],
+            "occupancy": [1.0, False], **adp}
+
+
+def _adp_errors(exc_info) -> list:
+    return [(e["loc"], e["type"], e["msg"]) for e in exc_info.value.errors()]
+
+
 def test_atom_adp_uiso_without_value_rejected():
-    """Atom: ADP='Uiso' without Uiso rejected."""
-    with pytest.raises(ValidationError, match="requires a Uiso value"):
-        Atom[RefinableParameter](element="Fe", x=[0.0, False], y=[0.0, False], z=[0.0, False], occupancy=[1.0, False], ADP="Uiso")
+    """ADP selects the required thermal parameter: 'Uiso' without Uiso is missing at Uiso."""
+    with pytest.raises(ValidationError) as exc_info:
+        Atom[RefinableParameter].model_validate(_adp_atom(ADP="Uiso"))
+    assert _adp_errors(exc_info) == [(("Uiso",), "missing", "Uiso is required when ADP is 'Uiso'")]
 
 
 def test_atom_adp_uiso_with_uaniso_rejected():
-    """Atom: ADP='Uiso' with Uaniso also given rejected."""
-    with pytest.raises(ValidationError, match="must not also give Uaniso"):
-        Atom[RefinableParameter](element="Fe", x=[0.0, False], y=[0.0, False], z=[0.0, False], occupancy=[1.0, False], ADP="Uiso", Uiso=[0.01, False],
-             Uaniso={"U11": [0.01, False], "U22": [0.01, False], "U33": [0.01, False], "U12": [0, False], "U13": [0, False], "U23": [0, False]})
+    """ADP 'Uiso': Uaniso must be left out (error at Uaniso)."""
+    with pytest.raises(ValidationError) as exc_info:
+        Atom[RefinableParameter].model_validate(_adp_atom(ADP="Uiso", Uiso=[0.01, False], Uaniso=_U6))
+    assert _adp_errors(exc_info) == [
+        (("Uaniso",), "extra_forbidden", "Uaniso must be left out when ADP is 'Uiso'")]
 
 
 def test_atom_adp_uaniso_missing_component_rejected():
-    """Atom: ADP='Uaniso' missing U23 rejected."""
-    with pytest.raises(ValidationError, match="requires all of U11"):
-        Atom[RefinableParameter](element="Fe", x=[0.0, False], y=[0.0, False], z=[0.0, False], occupancy=[1.0, False], ADP="Uaniso",
-             Uaniso={"U11": [0.01, False], "U22": [0.01, False], "U33": [0.01, False], "U12": [0, False], "U13": [0, False]})
+    """ADP 'Uaniso' needs all six components; a missing one is reported at that component."""
+    u = {k: v for k, v in _U6.items() if k != "U23"}
+    with pytest.raises(ValidationError) as exc_info:
+        Atom[RefinableParameter].model_validate(_adp_atom(ADP="Uaniso", Uaniso=u))
+    assert _adp_errors(exc_info) == [(("Uaniso", "U23"), "missing", "Field required")]
 
 
 def test_atom_adp_uaniso_unknown_key_rejected():
-    """Atom: ADP='Uaniso' with U14 rejected."""
-    with pytest.raises(ValidationError, match="Input should be"):
-        Atom[RefinableParameter](element="Fe", x=[0.0, False], y=[0.0, False], z=[0.0, False], occupancy=[1.0, False], ADP="Uaniso",
-             Uaniso={"U11": [0.01, False], "U22": [0.01, False], "U33": [0.01, False], "U12": [0, False], "U13": [0, False], "U23": [0, False], "U14": [0, False]})
+    """ADP 'Uaniso' with U14: an unknown component, reported at it."""
+    with pytest.raises(ValidationError) as exc_info:
+        Atom[RefinableParameter].model_validate(_adp_atom(ADP="Uaniso", Uaniso={**_U6, "U14": [0.0, False]}))
+    assert _adp_errors(exc_info) == [(("Uaniso", "U14"), "extra_forbidden", "Extra inputs are not permitted")]
 
 
 def test_atom_adp_uaniso_with_uiso_rejected():
-    """Atom: ADP='Uaniso' with Uiso also given rejected."""
-    with pytest.raises(ValidationError, match="must not also give Uiso"):
-        Atom[RefinableParameter](element="Fe", x=[0.0, False], y=[0.0, False], z=[0.0, False], occupancy=[1.0, False], ADP="Uaniso", Uiso=[0.01, False],
-             Uaniso={"U11": [0.01, False], "U22": [0.01, False], "U33": [0.01, False], "U12": [0, False], "U13": [0, False], "U23": [0, False]})
+    """ADP 'Uaniso': Uiso must be left out (error at Uiso)."""
+    with pytest.raises(ValidationError) as exc_info:
+        Atom[RefinableParameter].model_validate(_adp_atom(ADP="Uaniso", Uiso=[0.01, False], Uaniso=_U6))
+    assert _adp_errors(exc_info) == [
+        (("Uiso",), "extra_forbidden", "Uiso must be left out when ADP is 'Uaniso'")]
 
 
 def test_atom_adp_wrong_value_rejected():
-    """Atom: ADP='Uaniso' but only Uiso given rejected."""
-    with pytest.raises(ValidationError, match="requires all of U11"):
-        Atom[RefinableParameter](element="Fe", x=[0.0, False], y=[0.0, False], z=[0.0, False], occupancy=[1.0, False], ADP="Uaniso", Uiso=[0.01, False])
+    """ADP 'Uaniso' but only Uiso given: Uaniso missing and Uiso not allowed, both reported."""
+    with pytest.raises(ValidationError) as exc_info:
+        Atom[RefinableParameter].model_validate(_adp_atom(ADP="Uaniso", Uiso=[0.01, False]))
+    assert _adp_errors(exc_info) == [
+        (("Uaniso",), "missing", "Uaniso is required when ADP is 'Uaniso'"),
+        (("Uiso",), "extra_forbidden", "Uiso must be left out when ADP is 'Uaniso'"),
+    ]
+
+
+def test_atom_adp_errors_located_inside_the_phase():
+    """Nested in a phase, the ADP pairing error is at atoms.<label>.<field> (A70)."""
+    d = _valid_pmm_lab6_phase_dict()
+    del d["atoms"]["La1"]["Uiso"]
+    with pytest.raises(ValidationError) as exc_info:
+        Phase[RefinableParameter].model_validate(d)
+    assert _adp_errors(exc_info) == [(("atoms", "La1", "Uiso"), "missing", "Uiso is required when ADP is 'Uiso'")]
+
+
+def test_atom_json_schema_states_the_adp_pairing():
+    """The JSON Schema says ADP selects the required one of Uiso / Uaniso and forbids the other;
+    UanisoTensor requires all six components."""
+    schema = Phase[RefinableParameter].model_json_schema()["$defs"]
+    assert schema["Atom"]["allOf"] == [
+        {"if": {"properties": {"ADP": {"const": "Uiso"}}},
+         "then": {"required": ["Uiso"], "not": {"required": ["Uaniso"]}}},
+        {"if": {"properties": {"ADP": {"const": "Uaniso"}}},
+         "then": {"required": ["Uaniso"], "not": {"required": ["Uiso"]}}},
+    ]
+    assert schema["Atom"]["properties"]["Uaniso"]["$ref"] == "#/$defs/UanisoTensor"
+    assert schema["UanisoTensor"]["required"] == ["U11", "U22", "U33", "U12", "U13", "U23"]
+    assert schema["UanisoTensor"]["additionalProperties"] is False
 
 
 def test_atom_xyz_non_finite_rejected():
@@ -1197,14 +1242,14 @@ def test_phase_uaniso_hexagonal_6h_adjusted():
     }
     phase = Phase[RefinableParameter].model_validate(d)
     # Check U11 stayed (now need to read .value)
-    assert phase.atoms["A1"].Uaniso["U11"].value == 0.012  # free: returned exactly as stated
+    assert phase.atoms["A1"].Uaniso.U11.value == 0.012  # free: returned exactly as stated
     # Check U12 became U22/2 (reading .value)
-    u22 = phase.atoms["A1"].Uaniso["U22"].value
-    u12 = phase.atoms["A1"].Uaniso["U12"].value
+    u22 = phase.atoms["A1"].Uaniso.U22.value
+    u12 = phase.atoms["A1"].Uaniso.U12.value
     assert abs(u12 - u22 / 2) < 1e-15
     # Check refine flags are preserved
-    assert phase.atoms["A1"].Uaniso["U11"].refine_flag is False
-    assert phase.atoms["A1"].Uaniso["U12"].refine_flag is False
+    assert phase.atoms["A1"].Uaniso.U11.refine_flag is False
+    assert phase.atoms["A1"].Uaniso.U12.refine_flag is False
     # Check warning
     warnings = phase.warnings()
     assert any(w["code"] == "adp_symmetry_adjusted" for w in warnings)
@@ -1462,11 +1507,11 @@ def test_phase_json_schema_names_and_no_null():
         scale: RP
 
     schema = EnginePhase.model_json_schema()
-    assert sorted(schema["$defs"]) == ["Atom", "RefinableParameter", "UnitCell"]
+    assert sorted(schema["$defs"]) == ["Atom", "RefinableParameter", "UanisoTensor", "UnitCell"]
     atom = schema["$defs"]["Atom"]
     assert atom["required"] == ["element", "x", "y", "z", "occupancy", "ADP"]
     assert atom["properties"]["Uiso"] == {"$ref": "#/$defs/RefinableParameter", "unit": "angstrom^2",
-                                          "description": "Isotropic ADP; given when ADP is 'Uiso'"}
+                                          "description": "Isotropic ADP; required when ADP is 'Uiso', else left out"}
     assert atom["properties"]["Multiplicity"]["type"] == "integer"
     assert "null" not in json.dumps(schema)
     assert schema["$defs"]["RefinableParameter"]["prefixItems"] == [{"type": "number"}, {"type": "boolean"}]
@@ -1898,7 +1943,7 @@ def test_tied_uij_bounds_factor_two():
 
     assert Phase[BRP].model_validate(phase((0.0, 0.01))).warnings() == []
     snapped = Phase[BRP].model_validate(phase((0.0, 0.0100009)))
-    assert snapped.atoms["C"].Uaniso["U12"].model_dump() == [0.006, True, 0.0, 0.01]
+    assert snapped.atoms["C"].Uaniso.U12.model_dump() == [0.006, True, 0.0, 0.01]
     assert [w["field_path"] for w in snapped.warnings()] == ["atoms.C.Uaniso.U12"]
     with pytest.raises(ValidationError) as exc_info:
         Phase[BRP].model_validate(phase((0.0, 0.0100011)))

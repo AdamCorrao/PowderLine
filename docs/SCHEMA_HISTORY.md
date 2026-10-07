@@ -59,8 +59,8 @@ engine schemas adopt it in re/04–06.
   or `[value, flag, min, max]` in engines with bounds): cell `a`–`gamma`; atom
   `x`, `y`, `z`, `occupancy`, `Uiso` or `U11`…`U23`. `element`, `ADP`,
   `Multiplicity` and `space_group` are plain values. Nothing is `null` and
-  nothing has a default: `occupancy` must be stated; an optional field
-  (`Multiplicity`, the unused one of `Uiso`/`Uaniso`) is left out, not `null`.
+  nothing has a default: `occupancy` must be stated; `Multiplicity` (derived,
+  so optional) is left out when not stated, never `null`.
   Structural interpretation is checked once, in core, so every engine gets the
   same structure. All problems are reported together, each at its own field
   (`unit_cell`, `atoms.<label>` for the position, `atoms.<label>.Multiplicity`,
@@ -96,8 +96,12 @@ engine schemas adopt it in re/04–06.
     warning, and these exact values are what every engine receives.
   - **Multiplicity**: optional; when stated it must equal the multiplicity
     derived from the space group.
-  - **ADPs**: `ADP` is `"Uiso"` (with `Uiso`, Å²) or `"Uaniso"` (with all of
-    `U11 U22 U33 U12 U13 U23`, Å²). Anisotropic ADPs must respect the site
+  - **ADPs**: `ADP` selects the thermal parameter that is **required**:
+    `"Uiso"` requires `Uiso` (Å²); `"Uaniso"` requires `Uaniso` with all six of
+    `U11 U22 U33 U12 U13 U23` (Å²). The other one must be left out. A missing
+    or extra one is an error at that field (`atoms.<label>.Uiso`,
+    `atoms.<label>.Uaniso.U23`), and the JSON Schema states the same rule.
+    Anisotropic ADPs must respect the site
     symmetry: within 1e-6 Å² they are set to the symmetric values and reported;
     beyond that it is an error.
   - **Refinement intent follows the symmetry.** Parameters tied by symmetry

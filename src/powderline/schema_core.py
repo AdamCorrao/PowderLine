@@ -573,6 +573,26 @@ class UnitCell(CoreModel, Generic[P]):
 _UANISO_KEYS = ("U11", "U22", "U33", "U12", "U13", "U23")
 
 
+class UanisoTensor(CoreModel, Generic[P]):
+    """Anisotropic ADPs: all six of U11, U22, U33, U12, U13, U23, each a parameter (A^2)."""
+
+    U11: P = Field(json_schema_extra=_unit(UNIT_ANGSTROM2))
+    U22: P = Field(json_schema_extra=_unit(UNIT_ANGSTROM2))
+    U33: P = Field(json_schema_extra=_unit(UNIT_ANGSTROM2))
+    U12: P = Field(json_schema_extra=_unit(UNIT_ANGSTROM2))
+    U13: P = Field(json_schema_extra=_unit(UNIT_ANGSTROM2))
+    U23: P = Field(json_schema_extra=_unit(UNIT_ANGSTROM2))
+
+
+#: JSON Schema of the ADP pairing (A96): ``ADP`` selects which one of ``Uiso`` /
+#: ``Uaniso`` is required; the other must be left out.
+_ADP_PAIRING_SCHEMA = {"allOf": [
+    {"if": {"properties": {"ADP": {"const": adp}}},
+     "then": {"required": [adp], "not": {"required": [other]}}}
+    for adp, other in (("Uiso", "Uaniso"), ("Uaniso", "Uiso"))
+]}
+
+
 class Atom(CoreModel, Generic[P]):
     """One atom of a phase: coordinates, occupancy and ADPs are refinable parameters.
 
@@ -580,11 +600,15 @@ class Atom(CoreModel, Generic[P]):
     stating it to at least 6 decimals; the validated phase holds the canonical
     (exact) values and reports every adjustment (A73). ``occupancy`` is required
     and 0 to 1 inclusive (A76, A96). ``Multiplicity`` is optional and, when
-    stated, must match the derived value (A69 T3). ``ADP`` selects ``Uiso`` or
-    ``Uaniso`` (all six of U11..U23); the other is left out. ``Uaniso`` must
-    respect the site symmetry: within 1e-6 A^2 it is set to the symmetric values
-    and reported, beyond that it is an error (A78). Nothing is ``null`` (A96).
+    stated, must match the derived value (A69 T3). ``ADP`` selects which
+    thermal parameter is **required**: ``Uiso``, or ``Uaniso`` with all six of
+    U11..U23; the other must be left out (an error at that field otherwise, and
+    the JSON Schema states the rule). ``Uaniso`` must respect the site symmetry:
+    within 1e-6 A^2 it is set to the symmetric values and reported, beyond that
+    it is an error (A78). Nothing is ``null`` (A96).
     """
+
+    model_config = ConfigDict(extra="forbid", json_schema_extra=_ADP_PAIRING_SCHEMA)
 
     element: str = Field(description="Bare element symbol, exactly as in the periodic table (e.g. 'Fe')")
     x: P = Field(description="Fractional x coordinate")
@@ -595,10 +619,10 @@ class Atom(CoreModel, Generic[P]):
                                             description="Site multiplicity; optional, cross-checked when stated")
     ADP: Literal["Uiso", "Uaniso"] = Field(description="Displacement-parameter type")
     Uiso: Optional[P] = Field(default=None, json_schema_extra=_absent_not_null_schema(UNIT_ANGSTROM2),
-                              description="Isotropic ADP; given when ADP is 'Uiso'")
-    Uaniso: Optional[dict[Literal["U11", "U22", "U33", "U12", "U13", "U23"], P]] = Field(
-        default=None, json_schema_extra=_absent_not_null_schema(UNIT_ANGSTROM2),
-        description="All six of U11, U22, U33, U12, U13, U23; given when ADP is 'Uaniso'")
+                              description="Isotropic ADP; required when ADP is 'Uiso', else left out")
+    Uaniso: Optional[UanisoTensor[P]] = Field(
+        default=None, json_schema_extra=_absent_not_null_schema(),
+        description="All six of U11, U22, U33, U12, U13, U23; required when ADP is 'Uaniso', else left out")
 
     _not_null = field_validator("Multiplicity", "Uiso", "Uaniso", mode="before")(_absent_not_null)
 
@@ -625,16 +649,21 @@ class Atom(CoreModel, Generic[P]):
 
     @model_validator(mode="after")
     def _adp_block(self) -> "Atom":
-        if self.ADP == "Uiso":
-            if self.Uiso is None:
-                raise ValueError("ADP 'Uiso' requires a Uiso value")
-            if self.Uaniso is not None:
-                raise ValueError("ADP 'Uiso' must not also give Uaniso")
-        else:
-            if self.Uaniso is None or set(self.Uaniso) != set(_UANISO_KEYS):
-                raise ValueError(f"ADP 'Uaniso' requires all of {', '.join(_UANISO_KEYS)}")
-            if self.Uiso is not None:
-                raise ValueError("ADP 'Uaniso' must not also give Uiso")
+        """``ADP`` selects the required thermal parameter; errors at the field concerned."""
+        required, other = ("Uiso", "Uaniso") if self.ADP == "Uiso" else ("Uaniso", "Uiso")
+        problems = []
+        if getattr(self, required) is None:
+            problems.append(InitErrorDetails(
+                type=PydanticCustomError("missing", "{field} is required when ADP is '{adp}'",
+                                         {"field": required, "adp": self.ADP}),
+                loc=(required,), input=None))
+        if getattr(self, other) is not None:
+            problems.append(InitErrorDetails(
+                type=PydanticCustomError("extra_forbidden", "{field} must be left out when ADP is '{adp}'",
+                                         {"field": other, "adp": self.ADP}),
+                loc=(other,), input=getattr(self, other).model_dump()))
+        if problems:
+            raise ValidationError.from_exception_data(type(self).__name__, problems)
         return self
 
 
@@ -757,7 +786,7 @@ class Phase(CoreModel, Generic[P]):
                         f"({sg!r}, site {site.stated})", atom.Multiplicity)
             uaniso_ok = u_adjusted = False
             if atom.Uaniso is not None:
-                stated_u = tuple(atom.Uaniso[k].value for k in _UANISO_KEYS)
+                stated_u = tuple(getattr(atom.Uaniso, k).value for k in _UANISO_KEYS)
                 try:
                     symmetric_u, u_adjusted = check_uij(sg, site.canonical, stated_u)
                 except SymmetryError as exc:
@@ -765,8 +794,8 @@ class Phase(CoreModel, Generic[P]):
                 else:
                     uaniso_ok = True
                     if u_adjusted:
-                        update["Uaniso"] = {k: _with_value(atom.Uaniso[k], u)
-                                            for k, u in zip(_UANISO_KEYS, symmetric_u)}
+                        update["Uaniso"] = atom.Uaniso.model_copy(update={
+                            k: _with_value(getattr(atom.Uaniso, k), u) for k, u in zip(_UANISO_KEYS, symmetric_u)})
                         self._warnings.append(StructuredWarning(
                             code="adp_symmetry_adjusted",
                             message=(f"atom {label!r}: Uaniso {dict(zip(_UANISO_KEYS, stated_u))} "
@@ -793,16 +822,17 @@ class Phase(CoreModel, Generic[P]):
                                           lambda _name, _expected: SPECIAL_POSITION_TOL,
                                           lambda name: str(site.exact["xyz".index(name)])))
             if uaniso_ok:
-                uij = dict(update.get("Uaniso", atom.Uaniso))
-                uij.update(apply_tie_rules(("atoms", label, "Uaniso"), uij, ties.uij, context,
-                                           lambda _name, _expected: UIJ_TOL, lambda _name: "0"))
-                update["Uaniso"] = uij
+                uaniso = update.get("Uaniso", atom.Uaniso)
+                bounds = apply_tie_rules(("atoms", label, "Uaniso"), {k: getattr(uaniso, k) for k in _UANISO_KEYS},
+                                         ties.uij, context, lambda _name, _expected: UIJ_TOL, lambda _name: "0")
+                if bounds:
+                    update["Uaniso"] = uaniso.model_copy(update=bounds)
 
             # Review N4: a value moved by canonicalization is re-checked against its (final) bounds.
             moved = [(("atoms", label, k), k, update.get(k, getattr(atom, k)), getattr(atom, k).value,
                       "the exact special-position value") for k in "xyz" if site.adjusted]
             if u_adjusted and uaniso_ok:
-                moved += [(("atoms", label, "Uaniso", k), k, update["Uaniso"][k], atom.Uaniso[k].value,
+                moved += [(("atoms", label, "Uaniso", k), k, getattr(update["Uaniso"], k), getattr(atom.Uaniso, k).value,
                            "the site-symmetric value") for k in _UANISO_KEYS]
             for loc, name, param, stated, what in moved:
                 message = _canonical_out_of_bounds(param)
