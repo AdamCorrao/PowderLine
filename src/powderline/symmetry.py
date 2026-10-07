@@ -143,6 +143,43 @@ def resolve_space_group(space_group: str, *, explicit_setting: bool = False) -> 
     return sg
 
 
+def canonical_space_group(space_group: str) -> gemmi.SpaceGroup:
+    """Return the gemmi group whose canonical name is exactly ``space_group`` (core rule, A105).
+
+    The canonical name is gemmi's extended Hermann-Mauguin symbol ``xhm()``
+    (``"P m -3 m"``, ``"C 1 2/m 1"``, ``"R -3 m:H"``, ``"F d -3 m:2"``); it is
+    unique over gemmi's table and names the setting. Any other spelling raises
+    :class:`SymmetryError` whose message names the canonical form. gemmi's
+    lenient lookup is used only to build that suggestion, never to accept: it
+    would silently pick a default (``"Fd-3m"`` -> origin 1, ``"R-3m"`` -> ``:H``,
+    ``"C2/m"`` -> b-unique). A symbol without a setting lists both choices.
+    The legacy 0.26.0 paths keep the lenient :func:`resolve_space_group`.
+    """
+    raw = str(space_group)
+    sg = gemmi.find_spacegroup_by_name(raw)
+    if sg is not None and sg.xhm() == raw:
+        return sg
+    if sg is None:
+        sg = gemmi.find_spacegroup_by_name(raw.replace(" ", ""))
+    if sg is None:
+        raise SymmetryError(
+            f"unrecognized space-group symbol {raw!r}; write gemmi's canonical name "
+            "(e.g. 'P m -3 m', 'C 1 2/m 1', 'R -3 m:H', 'F d -3 m:2')"
+        )
+    if ":" not in raw and sg.ext in ("H", "R"):
+        hexagonal, rhombohedral = (gemmi.find_spacegroup_by_name(f"{sg.hm}:{s}").xhm() for s in "HR")
+        raise SymmetryError(
+            f"space group {raw!r} does not name its setting; write {hexagonal!r} (hexagonal axes) "
+            f"or {rhombohedral!r} (rhombohedral axes)"
+        )
+    if ":" not in raw and sg.ext in ("1", "2"):
+        origin1, origin2 = (gemmi.find_spacegroup_by_name(f"{sg.hm}:{s}").xhm() for s in "12")
+        raise SymmetryError(
+            f"space group {raw!r} has two origin choices; write {origin1!r} or {origin2!r}"
+        )
+    raise SymmetryError(f"space group {raw!r} is not in the canonical form; write {sg.xhm()!r}")
+
+
 def _expanded_ops(sg: gemmi.SpaceGroup) -> list[tuple[np.ndarray, np.ndarray]]:
     """All symmetry operations (centering expanded) as (R float 3x3, t float 3)."""
     den = float(gemmi.Op.DEN)
@@ -603,3 +640,4 @@ def check_uij(space_group: str, xyz, uij) -> tuple[tuple[float, ...], bool]:
     if not np.any(np.abs(symmetric - stated) > ADJUSTMENT_REPORT_TOL):
         return tuple(float(v) for v in stated), False
     return tuple(float(v) for v in symmetric), True
+

@@ -502,8 +502,6 @@ def test_check_core_schema_version_rejects_unsupported():
 from powderline.schema_core import (
     BoundedRefinableParameter,
     RefinableParameter,
-    StructureBoundedRefinableParameter,
-    StructureRefinableParameter,
     check_within_bounds,
 )
 from pydantic import BaseModel
@@ -518,16 +516,6 @@ class _WrapperRP(BaseModel):
 class _WrapperBRP(BaseModel):
     """Wrapper for BoundedRefinableParameter testing."""
     a: BoundedRefinableParameter
-
-
-class _WrapperSRP(BaseModel):
-    """Wrapper for StructureRefinableParameter testing."""
-    a: StructureRefinableParameter
-
-
-class _WrapperSBRP(BaseModel):
-    """Wrapper for StructureBoundedRefinableParameter testing."""
-    a: StructureBoundedRefinableParameter
 
 
 # --- 1. JSON shape round-trip -----------------------------------------------
@@ -551,26 +539,6 @@ def test_bounded_refinable_parameter_model_dump():
 def test_bounded_refinable_parameter_model_dump_json():
     brp = BoundedRefinableParameter.model_validate([1.5, True, 0.0, 2.0])
     assert json.loads(brp.model_dump_json()) == [1.5, True, 0.0, 2.0]
-
-
-def test_structure_refinable_parameter_model_dump():
-    srp = StructureRefinableParameter.model_validate([None, True])
-    assert srp.model_dump() == [None, True]
-
-
-def test_structure_refinable_parameter_model_dump_with_value():
-    srp = StructureRefinableParameter.model_validate([1.5, False])
-    assert srp.model_dump() == [1.5, False]
-
-
-def test_structure_bounded_refinable_parameter_model_dump():
-    sbrp = StructureBoundedRefinableParameter.model_validate([None, True, 0.0, 2.0])
-    assert sbrp.model_dump() == [None, True, 0.0, 2.0]
-
-
-def test_structure_bounded_refinable_parameter_model_dump_with_value():
-    sbrp = StructureBoundedRefinableParameter.model_validate([1.5, True, 0.0, 2.0])
-    assert sbrp.model_dump() == [1.5, True, 0.0, 2.0]
 
 
 # --- 2. RefinableParameter validation ---------------------------------------
@@ -716,62 +684,7 @@ def test_bounded_refinable_parameter_null_value_rejected():
     assert _errors(exc_info) == [(('a', 'value'), 'float_type')]
 
 
-# --- 4. StructureRefinableParameter / StructureBoundedRefinableParameter ----
-
-
-def test_structure_refinable_parameter_null_value_accepted_refine_true():
-    srp = StructureRefinableParameter.model_validate([None, True])
-    assert srp.value is None
-    assert srp.refine_flag is True
-
-
-def test_structure_refinable_parameter_null_value_accepted_refine_false():
-    srp = StructureRefinableParameter.model_validate([None, False])
-    assert srp.value is None
-    assert srp.refine_flag is False
-
-
-def test_structure_refinable_parameter_4_element_list_rejected():
-    with pytest.raises(ValidationError) as exc_info:
-        _WrapperSRP(a=[1.5, True, 0.0, 2.0])
-    err = exc_info.value
-    assert any("bounds are not supported" in e["msg"] for e in err.errors())
-
-
-def test_structure_refinable_parameter_refine_flag_null_rejected():
-    with pytest.raises(ValidationError) as exc_info:
-        _WrapperSRP(a=[None, None])
-    assert _errors(exc_info) == [(('a', 'refine_flag'), 'bool_type')]
-
-
-def test_structure_bounded_refinable_parameter_null_value_accepted():
-    sbrp = StructureBoundedRefinableParameter.model_validate([None, True, 0.0, 2.0])
-    assert sbrp.value is None
-    assert sbrp.refine_flag is True
-
-
-def test_structure_bounded_refinable_parameter_null_value_min_max_order_enforced():
-    with pytest.raises(ValidationError, match="min .* must be <= max"):
-        _WrapperSBRP(a=[None, True, 2.0, 1.0])
-
-
-def test_structure_bounded_refinable_parameter_non_null_value_enforces_bounds_below():
-    with pytest.raises(ValidationError, match="below min"):
-        _WrapperSBRP(a=[0.5, True, 1.0, 2.0])
-
-
-def test_structure_bounded_refinable_parameter_non_null_value_enforces_bounds_above():
-    with pytest.raises(ValidationError, match="above max"):
-        _WrapperSBRP(a=[2.5, True, 1.0, 2.0])
-
-
-def test_structure_bounded_refinable_parameter_refine_flag_null_rejected():
-    with pytest.raises(ValidationError) as exc_info:
-        _WrapperSBRP(a=[None, None, 0.0, 2.0])
-    assert _errors(exc_info) == [(('a', 'refine_flag'), 'bool_type')]
-
-
-# --- 5. check_within_bounds -------------------------------------------------
+# --- 4. check_within_bounds -------------------------------------------------
 
 
 def test_check_within_bounds_inside_passes():
@@ -816,7 +729,7 @@ def test_check_within_bounds_above_max_raises():
         check_within_bounds(2.5, param, "test_field")
 
 
-# --- 6. JSON schema ---------------------------------------------------------
+# --- 5. JSON schema ---------------------------------------------------------
 
 
 def test_refinable_parameter_json_schema():
@@ -843,33 +756,7 @@ def test_bounded_refinable_parameter_json_schema():
     assert param_schema["prefixItems"][3] == {"anyOf": [{"type": "number"}, {"type": "null"}]}
 
 
-def test_structure_refinable_parameter_json_schema():
-    schema = _WrapperSRP.model_json_schema()
-    param_schema = schema["$defs"]["StructureRefinableParameter"]
-    assert param_schema["type"] == "array"
-    assert len(param_schema["prefixItems"]) == 2
-    assert param_schema["minItems"] == 2
-    assert param_schema["maxItems"] == 2
-    assert param_schema["prefixItems"][0] == {"anyOf": [{"type": "number"}, {"type": "null"}]}
-    assert param_schema["prefixItems"][1] == {"type": "boolean"}
-    assert "structure" in param_schema["description"].lower()
-
-
-def test_structure_bounded_refinable_parameter_json_schema():
-    schema = _WrapperSBRP.model_json_schema()
-    param_schema = schema["$defs"]["StructureBoundedRefinableParameter"]
-    assert param_schema["type"] == "array"
-    assert len(param_schema["prefixItems"]) == 4
-    assert param_schema["minItems"] == 4
-    assert param_schema["maxItems"] == 4
-    assert param_schema["prefixItems"][0] == {"anyOf": [{"type": "number"}, {"type": "null"}]}
-    assert param_schema["prefixItems"][1] == {"type": "boolean"}
-    assert param_schema["prefixItems"][2] == {"anyOf": [{"type": "number"}, {"type": "null"}]}
-    assert param_schema["prefixItems"][3] == {"anyOf": [{"type": "number"}, {"type": "null"}]}
-    assert "structure" in param_schema["description"].lower()
-
-
-# --- 7. Identity preservation -----------------------------------------------
+# --- 6. Identity preservation -----------------------------------------------
 
 
 def test_refinable_parameter_instance_identity_preserved():
@@ -881,18 +768,6 @@ def test_refinable_parameter_instance_identity_preserved():
 def test_bounded_refinable_parameter_instance_identity_preserved():
     p = BoundedRefinableParameter.model_validate([1.5, True, 0.0, 2.0])
     w = _WrapperBRP(a=p)
-    assert w.a is p
-
-
-def test_structure_refinable_parameter_instance_identity_preserved():
-    p = StructureRefinableParameter.model_validate([1.5, True])
-    w = _WrapperSRP(a=p)
-    assert w.a is p
-
-
-def test_structure_bounded_refinable_parameter_instance_identity_preserved():
-    p = StructureBoundedRefinableParameter.model_validate([1.5, True, 0.0, 2.0])
-    w = _WrapperSBRP(a=p)
     assert w.a is p
 
 
@@ -934,55 +809,54 @@ import pytest  # noqa: E402
 from fractions import Fraction  # noqa: E402
 from pydantic import ValidationError  # noqa: E402
 
-from powderline.schema_core import UnitCell, Atom, PhaseStructure  # noqa: E402
+from powderline.schema_core import UnitCell, Atom, Phase, RefinableParameter  # noqa: E402
 from powderline.exceptions import SymmetryError  # noqa: E402
 
 
 def _valid_pmm_lab6_phase_dict():
     """Helper: valid P m -3 m LaB6-like phase (cubic a=4.15692, La at origin, B at 0.5,0.5,0.2021)."""
     return {
-        "phase_name": "LaB6",
         "space_group": "P m -3 m",
         "unit_cell": {
-            "a": 4.15692,
-            "b": 4.15692,
-            "c": 4.15692,
-            "alpha": 90.0,
-            "beta": 90.0,
-            "gamma": 90.0,
+            "a": [4.15692, False],
+            "b": [4.15692, False],
+            "c": [4.15692, False],
+            "alpha": [90.0, False],
+            "beta": [90.0, False],
+            "gamma": [90.0, False],
         },
         "atoms": {
             "La1": {
                 "element": "La",
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0,
-                "occupancy": 1.0,
+                "x": [0.0, False],
+                "y": [0.0, False],
+                "z": [0.0, False],
+                "occupancy": [1.0, False],
                 "ADP": "Uiso",
-                "Uiso": 0.005,
+                "Uiso": [0.005, False],
             },
             "B1": {
                 "element": "B",
-                "x": 0.5,
-                "y": 0.5,
-                "z": 0.2021,
-                "occupancy": 1.0,
+                "x": [0.5, False],
+                "y": [0.5, False],
+                "z": [0.2021, False],
+                "occupancy": [1.0, False],
                 "ADP": "Uiso",
-                "Uiso": 0.006,
+                "Uiso": [0.006, False],
             },
         },
     }
 
 
-def test_phase_structure_valid_validates():
+def test_phase_valid_validates():
     """Valid phase validates with no warnings."""
-    phase = PhaseStructure.model_validate(_valid_pmm_lab6_phase_dict())
+    phase = Phase[RefinableParameter].model_validate(_valid_pmm_lab6_phase_dict())
     assert phase.warnings() == []
 
 
-def test_phase_structure_site_multiplicity():
+def test_phase_site_multiplicity():
     """Site multiplicity: La (origin) -> 1, B (0.5,0.5,0.2021) -> 6 in P m -3 m."""
-    phase = PhaseStructure.model_validate(_valid_pmm_lab6_phase_dict())
+    phase = Phase[RefinableParameter].model_validate(_valid_pmm_lab6_phase_dict())
     assert phase.site("La1").multiplicity == 1
     assert phase.site("B1").multiplicity == 6
 
@@ -990,191 +864,203 @@ def test_phase_structure_site_multiplicity():
 def test_unit_cell_length_zero_rejected():
     """UnitCell: a=0 rejected."""
     with pytest.raises(ValidationError, match="must be positive"):
-        UnitCell(a=0.0, b=4.0, c=4.0, alpha=90, beta=90, gamma=90)
+        UnitCell[RefinableParameter](a=[0.0, False], b=[4.0, False], c=[4.0, False], alpha=[90, False], beta=[90, False], gamma=[90, False])
 
 
 def test_unit_cell_length_negative_rejected():
     """UnitCell: b=-1 rejected."""
     with pytest.raises(ValidationError, match="must be positive"):
-        UnitCell(a=4.0, b=-1.0, c=4.0, alpha=90, beta=90, gamma=90)
+        UnitCell[RefinableParameter](a=[4.0, False], b=[-1.0, False], c=[4.0, False], alpha=[90, False], beta=[90, False], gamma=[90, False])
 
 
 def test_unit_cell_length_non_finite_rejected():
     """UnitCell: c=nan rejected."""
-    with pytest.raises(ValidationError, match="must be positive"):
-        UnitCell(a=4.0, b=4.0, c=float("nan"), alpha=90, beta=90, gamma=90)
+    with pytest.raises(ValidationError, match="must be finite"):
+        UnitCell[RefinableParameter](a=[4.0, False], b=[4.0, False], c=[float("nan"), False], alpha=[90, False], beta=[90, False], gamma=[90, False])
 
 
 def test_unit_cell_angle_zero_rejected():
     """UnitCell: alpha=0 rejected."""
     with pytest.raises(ValidationError, match="must be between 0 and 180"):
-        UnitCell(a=4.0, b=4.0, c=4.0, alpha=0.0, beta=90, gamma=90)
+        UnitCell[RefinableParameter](a=[4.0, False], b=[4.0, False], c=[4.0, False], alpha=[0.0, False], beta=[90, False], gamma=[90, False])
 
 
 def test_unit_cell_angle_180_rejected():
     """UnitCell: beta=180 rejected."""
     with pytest.raises(ValidationError, match="must be between 0 and 180"):
-        UnitCell(a=4.0, b=4.0, c=4.0, alpha=90, beta=180.0, gamma=90)
+        UnitCell[RefinableParameter](a=[4.0, False], b=[4.0, False], c=[4.0, False], alpha=[90, False], beta=[180.0, False], gamma=[90, False])
 
 
 def test_unit_cell_angle_above_180_rejected():
     """UnitCell: gamma=181 rejected."""
     with pytest.raises(ValidationError, match="must be between 0 and 180"):
-        UnitCell(a=4.0, b=4.0, c=4.0, alpha=90, beta=90, gamma=181.0)
+        UnitCell[RefinableParameter](a=[4.0, False], b=[4.0, False], c=[4.0, False], alpha=[90, False], beta=[90, False], gamma=[181.0, False])
 
 
 def test_unit_cell_angle_non_finite_rejected():
     """UnitCell: alpha=inf rejected."""
-    with pytest.raises(ValidationError, match="must be between 0 and 180"):
-        UnitCell(a=4.0, b=4.0, c=4.0, alpha=float("inf"), beta=90, gamma=90)
+    with pytest.raises(ValidationError, match="must be finite"):
+        UnitCell[RefinableParameter](a=[4.0, False], b=[4.0, False], c=[4.0, False], alpha=[float("inf"), False], beta=[90, False], gamma=[90, False])
 
 
 def test_unit_cell_extra_key_rejected():
     """UnitCell: 'volume' key rejected (extra='forbid')."""
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
-        UnitCell(a=4.0, b=4.0, c=4.0, alpha=90, beta=90, gamma=90, volume=64.0)
+        UnitCell[RefinableParameter](a=[4.0, False], b=[4.0, False], c=[4.0, False], alpha=[90, False], beta=[90, False], gamma=[90, False], volume=64.0)
 
 
 def test_atom_element_uppercase_rejected_with_suggestion():
     """Atom: 'FE' -> message suggests 'Fe'."""
     with pytest.raises(ValidationError, match="write the element symbol as 'Fe'"):
-        Atom(element="FE", x=0.0, y=0.0, z=0.0, ADP="Uiso", Uiso=0.01)
+        Atom[RefinableParameter](element="FE", x=[0.0, False], y=[0.0, False], z=[0.0, False], occupancy=[1.0, False], ADP="Uiso", Uiso=[0.01, False])
 
 
 def test_atom_element_charged_rejected():
     """Atom: 'Fe3+' rejected as charged."""
     with pytest.raises(ValidationError, match="charged scattering types are not supported"):
-        Atom(element="Fe3+", x=0.0, y=0.0, z=0.0, ADP="Uiso", Uiso=0.01)
+        Atom[RefinableParameter](element="Fe3+", x=[0.0, False], y=[0.0, False], z=[0.0, False], occupancy=[1.0, False], ADP="Uiso", Uiso=[0.01, False])
 
 
 def test_atom_occupancy_zero_accepted():
     """Atom: occupancy=0 accepted."""
-    atom = Atom(element="Fe", x=0.0, y=0.0, z=0.0, occupancy=0.0, ADP="Uiso", Uiso=0.01)
-    assert atom.occupancy == 0.0
+    atom = Atom[RefinableParameter](element="Fe", x=[0.0, False], y=[0.0, False], z=[0.0, False], occupancy=[0.0, False], ADP="Uiso", Uiso=[0.01, False])
+    assert atom.occupancy.value == 0.0
 
 
 def test_atom_occupancy_one_accepted():
     """Atom: occupancy=1 accepted."""
-    atom = Atom(element="Fe", x=0.0, y=0.0, z=0.0, occupancy=1.0, ADP="Uiso", Uiso=0.01)
-    assert atom.occupancy == 1.0
+    atom = Atom[RefinableParameter](element="Fe", x=[0.0, False], y=[0.0, False], z=[0.0, False], occupancy=[1.0, False], ADP="Uiso", Uiso=[0.01, False])
+    assert atom.occupancy.value == 1.0
 
 
 def test_atom_occupancy_negative_rejected():
     """Atom: occupancy=-0.01 rejected."""
-    with pytest.raises(ValidationError, match="greater than or equal to 0"):
-        Atom(element="Fe", x=0.0, y=0.0, z=0.0, occupancy=-0.01, ADP="Uiso", Uiso=0.01)
+    with pytest.raises(ValidationError, match="occupancy must be between 0 and 1"):
+        Atom[RefinableParameter](element="Fe", x=[0.0, False], y=[0.0, False], z=[0.0, False], occupancy=[-0.01, False], ADP="Uiso", Uiso=[0.01, False])
 
 
 def test_atom_occupancy_above_one_rejected():
     """Atom: occupancy=1.01 rejected."""
-    with pytest.raises(ValidationError, match="less than or equal to 1"):
-        Atom(element="Fe", x=0.0, y=0.0, z=0.0, occupancy=1.01, ADP="Uiso", Uiso=0.01)
+    with pytest.raises(ValidationError, match="occupancy must be between 0 and 1"):
+        Atom[RefinableParameter](element="Fe", x=[0.0, False], y=[0.0, False], z=[0.0, False], occupancy=[1.01, False], ADP="Uiso", Uiso=[0.01, False])
 
 
 def test_atom_adp_uiso_without_value_rejected():
     """Atom: ADP='Uiso' without Uiso rejected."""
     with pytest.raises(ValidationError, match="requires a Uiso value"):
-        Atom(element="Fe", x=0.0, y=0.0, z=0.0, ADP="Uiso")
+        Atom[RefinableParameter](element="Fe", x=[0.0, False], y=[0.0, False], z=[0.0, False], occupancy=[1.0, False], ADP="Uiso")
 
 
 def test_atom_adp_uiso_with_uaniso_rejected():
     """Atom: ADP='Uiso' with Uaniso also given rejected."""
     with pytest.raises(ValidationError, match="must not also give Uaniso"):
-        Atom(element="Fe", x=0.0, y=0.0, z=0.0, ADP="Uiso", Uiso=0.01,
-             Uaniso={"U11": 0.01, "U22": 0.01, "U33": 0.01, "U12": 0, "U13": 0, "U23": 0})
+        Atom[RefinableParameter](element="Fe", x=[0.0, False], y=[0.0, False], z=[0.0, False], occupancy=[1.0, False], ADP="Uiso", Uiso=[0.01, False],
+             Uaniso={"U11": [0.01, False], "U22": [0.01, False], "U33": [0.01, False], "U12": [0, False], "U13": [0, False], "U23": [0, False]})
 
 
 def test_atom_adp_uaniso_missing_component_rejected():
     """Atom: ADP='Uaniso' missing U23 rejected."""
     with pytest.raises(ValidationError, match="requires all of U11"):
-        Atom(element="Fe", x=0.0, y=0.0, z=0.0, ADP="Uaniso",
-             Uaniso={"U11": 0.01, "U22": 0.01, "U33": 0.01, "U12": 0, "U13": 0})
+        Atom[RefinableParameter](element="Fe", x=[0.0, False], y=[0.0, False], z=[0.0, False], occupancy=[1.0, False], ADP="Uaniso",
+             Uaniso={"U11": [0.01, False], "U22": [0.01, False], "U33": [0.01, False], "U12": [0, False], "U13": [0, False]})
 
 
 def test_atom_adp_uaniso_unknown_key_rejected():
     """Atom: ADP='Uaniso' with U14 rejected."""
     with pytest.raises(ValidationError, match="Input should be"):
-        Atom(element="Fe", x=0.0, y=0.0, z=0.0, ADP="Uaniso",
-             Uaniso={"U11": 0.01, "U22": 0.01, "U33": 0.01, "U12": 0, "U13": 0, "U23": 0, "U14": 0})
+        Atom[RefinableParameter](element="Fe", x=[0.0, False], y=[0.0, False], z=[0.0, False], occupancy=[1.0, False], ADP="Uaniso",
+             Uaniso={"U11": [0.01, False], "U22": [0.01, False], "U33": [0.01, False], "U12": [0, False], "U13": [0, False], "U23": [0, False], "U14": [0, False]})
 
 
 def test_atom_adp_uaniso_with_uiso_rejected():
     """Atom: ADP='Uaniso' with Uiso also given rejected."""
     with pytest.raises(ValidationError, match="must not also give Uiso"):
-        Atom(element="Fe", x=0.0, y=0.0, z=0.0, ADP="Uaniso", Uiso=0.01,
-             Uaniso={"U11": 0.01, "U22": 0.01, "U33": 0.01, "U12": 0, "U13": 0, "U23": 0})
+        Atom[RefinableParameter](element="Fe", x=[0.0, False], y=[0.0, False], z=[0.0, False], occupancy=[1.0, False], ADP="Uaniso", Uiso=[0.01, False],
+             Uaniso={"U11": [0.01, False], "U22": [0.01, False], "U33": [0.01, False], "U12": [0, False], "U13": [0, False], "U23": [0, False]})
 
 
 def test_atom_adp_wrong_value_rejected():
     """Atom: ADP='Uaniso' but only Uiso given rejected."""
     with pytest.raises(ValidationError, match="requires all of U11"):
-        Atom(element="Fe", x=0.0, y=0.0, z=0.0, ADP="Uaniso", Uiso=0.01)
+        Atom[RefinableParameter](element="Fe", x=[0.0, False], y=[0.0, False], z=[0.0, False], occupancy=[1.0, False], ADP="Uaniso", Uiso=[0.01, False])
 
 
 def test_atom_xyz_non_finite_rejected():
     """Atom: x=nan rejected."""
     with pytest.raises(ValidationError, match="must be finite"):
-        Atom(element="Fe", x=float("nan"), y=0.0, z=0.0, ADP="Uiso", Uiso=0.01)
+        Atom[RefinableParameter](element="Fe", x=[float("nan"), False], y=[0.0, False], z=[0.0, False], occupancy=[1.0, False], ADP="Uiso", Uiso=[0.01, False])
 
 
-def test_phase_structure_space_group_no_origin_rejected():
-    """PhaseStructure: 'F d -3 m' (no :1/:2) rejected."""
+def test_phase_space_group_no_origin_rejected():
+    """Phase: 'F d -3 m' (no :1/:2) rejected."""
     d = _valid_pmm_lab6_phase_dict()
     d["space_group"] = "F d -3 m"
-    with pytest.raises(ValidationError, match="two origin choices"):
-        PhaseStructure.model_validate(d)
+    with pytest.raises(ValidationError) as exc_info:
+        Phase[RefinableParameter].model_validate(d)
+    errors = exc_info.value.errors()
+    assert len(errors) == 1
+    assert errors[0]["loc"] == ("space_group",)
+    assert "space group 'F d -3 m' has two origin choices" in errors[0]["msg"]
+    assert "write 'F d -3 m:1' or 'F d -3 m:2'" in errors[0]["msg"]
 
 
-def test_phase_structure_space_group_no_rhombohedral_setting_rejected():
-    """PhaseStructure: 'R -3 m' (no :H/:R) rejected."""
+def test_phase_space_group_no_rhombohedral_setting_rejected():
+    """Phase: 'R -3 m' (no :H/:R) rejected."""
     d = _valid_pmm_lab6_phase_dict()
     d["space_group"] = "R -3 m"
-    with pytest.raises(ValidationError, match="rhombohedral"):
-        PhaseStructure.model_validate(d)
+    with pytest.raises(ValidationError) as exc_info:
+        Phase[RefinableParameter].model_validate(d)
+    errors = exc_info.value.errors()
+    assert len(errors) == 1
+    assert errors[0]["loc"] == ("space_group",)
+    assert "space group 'R -3 m' does not name its setting" in errors[0]["msg"]
+    assert "write 'R -3 m:H'" in errors[0]["msg"]
+    assert "or 'R -3 m:R'" in errors[0]["msg"]
 
 
-def test_phase_structure_space_group_fd3m_origin2_accepted():
-    """PhaseStructure: 'F d -3 m:2' (cubic) accepted."""
+def test_phase_space_group_fd3m_origin2_accepted():
+    """Phase: 'F d -3 m:2' (cubic) accepted."""
     d = _valid_pmm_lab6_phase_dict()
     d["space_group"] = "F d -3 m:2"
     # Adjust cell to cubic (already is in the helper, but be explicit)
-    d["unit_cell"] = {"a": 8.0, "b": 8.0, "c": 8.0, "alpha": 90, "beta": 90, "gamma": 90}
+    d["unit_cell"] = {"a": [8.0, False], "b": [8.0, False], "c": [8.0, False], "alpha": [90, False], "beta": [90, False], "gamma": [90, False]}
     # Put an atom at a general position to avoid special-position complications
     d["atoms"] = {
-        "A1": {"element": "O", "x": 0.125, "y": 0.125, "z": 0.125, "ADP": "Uiso", "Uiso": 0.01}
+        "A1": {"element": "O", "x": [0.125, False], "y": [0.125, False], "z": [0.125, False], "occupancy": [1.0, False], "ADP": "Uiso", "Uiso": [0.01, False]}
     }
-    phase = PhaseStructure.model_validate(d)
+    phase = Phase[RefinableParameter].model_validate(d)
     assert phase.space_group == "F d -3 m:2"
 
 
-def test_phase_structure_space_group_r3m_hexagonal_accepted():
-    """PhaseStructure: 'R -3 m:H' (hexagonal a=b, gamma=120) accepted."""
+def test_phase_space_group_r3m_hexagonal_accepted():
+    """Phase: 'R -3 m:H' (hexagonal a=b, gamma=120) accepted."""
     d = {
-        "phase_name": "test",
         "space_group": "R -3 m:H",
-        "unit_cell": {"a": 3.2, "b": 3.2, "c": 5.0, "alpha": 90, "beta": 90, "gamma": 120},
+        "unit_cell": {"a": [3.2, False], "b": [3.2, False], "c": [5.0, False], "alpha": [90, False], "beta": [90, False], "gamma": [120, False]},
         "atoms": {
-            "A1": {"element": "O", "x": 0.2, "y": 0.4, "z": 0.1, "ADP": "Uiso", "Uiso": 0.01}
+            "A1": {"element": "O", "x": [0.2, False], "y": [0.4, False], "z": [0.1, False], "occupancy": [1.0, False], "ADP": "Uiso", "Uiso": [0.01, False]}
         },
     }
-    phase = PhaseStructure.model_validate(d)
+    phase = Phase[RefinableParameter].model_validate(d)
     assert phase.space_group == "R -3 m:H"
 
 
-def test_phase_structure_special_position_adjusted():
-    """PhaseStructure: P 63/m m c atom at (0.333333,0.666667,0.25) adjusted to 1/3,2/3,1/4."""
+def test_phase_special_position_adjusted():
+    """Phase: P 63/m m c atom at (0.333333,0.666667,0.25) adjusted to 1/3,2/3,1/4."""
     d = {
-        "phase_name": "test",
         "space_group": "P 63/m m c",
-        "unit_cell": {"a": 3.2, "b": 3.2, "c": 5.2, "alpha": 90, "beta": 90, "gamma": 120},
+        "unit_cell": {"a": [3.2, False], "b": [3.2, False], "c": [5.2, False], "alpha": [90, False], "beta": [90, False], "gamma": [120, False]},
         "atoms": {
-            "A1": {"element": "O", "x": 0.333333, "y": 0.666667, "z": 0.25, "ADP": "Uiso", "Uiso": 0.01}
+            "A1": {"element": "O", "x": [0.333333, False], "y": [0.666667, False], "z": [0.25, False], "occupancy": [1.0, False], "ADP": "Uiso", "Uiso": [0.01, False]}
         },
     }
-    phase = PhaseStructure.model_validate(d)
-    # Check coordinates are exact fractions
-    assert phase.atoms["A1"].x == 1/3
-    assert phase.atoms["A1"].y == 2/3
+    phase = Phase[RefinableParameter].model_validate(d)
+    # Check coordinates are exact fractions (now need to read .value)
+    assert phase.atoms["A1"].x.value == 1/3
+    assert phase.atoms["A1"].y.value == 2/3
+    # Check refine flags are preserved
+    assert phase.atoms["A1"].x.refine_flag is False
+    assert phase.atoms["A1"].y.refine_flag is False
     # Check warning
     warnings = phase.warnings()
     assert len(warnings) == 1
@@ -1183,167 +1069,167 @@ def test_phase_structure_special_position_adjusted():
     assert warnings[0]["field_path"] == "atoms.A1"
 
 
-def test_phase_structure_special_position_ambiguous_rejected():
-    """PhaseStructure: atom at (0.3333,0.6667,0.25) in P 63/m m c rejected (ambiguous)."""
+def test_phase_special_position_ambiguous_rejected():
+    """Phase: atom at (0.3333,0.6667,0.25) in P 63/m m c rejected (ambiguous)."""
     d = {
-        "phase_name": "test",
         "space_group": "P 63/m m c",
-        "unit_cell": {"a": 3.2, "b": 3.2, "c": 5.2, "alpha": 90, "beta": 90, "gamma": 120},
+        "unit_cell": {"a": [3.2, False], "b": [3.2, False], "c": [5.2, False], "alpha": [90, False], "beta": [90, False], "gamma": [120, False]},
         "atoms": {
-            "A1": {"element": "O", "x": 0.3333, "y": 0.6667, "z": 0.25, "ADP": "Uiso", "Uiso": 0.01}
+            "A1": {"element": "O", "x": [0.3333, False], "y": [0.6667, False], "z": [0.25, False], "occupancy": [1.0, False], "ADP": "Uiso", "Uiso": [0.01, False]}
         },
     }
     with pytest.raises(ValidationError, match="without being on it") as exc_info:
-        PhaseStructure.model_validate(d)
+        Phase[RefinableParameter].model_validate(d)
     # Check that the atom label appears in the error
     assert "A1" in str(exc_info.value)
 
 
-def test_phase_structure_multiplicity_match_accepted():
-    """PhaseStructure: stated Multiplicity equal to derived accepted."""
+def test_phase_multiplicity_match_accepted():
+    """Phase: stated Multiplicity equal to derived accepted."""
     d = _valid_pmm_lab6_phase_dict()
     d["atoms"]["La1"]["Multiplicity"] = 1
     d["atoms"]["B1"]["Multiplicity"] = 6
-    phase = PhaseStructure.model_validate(d)
+    phase = Phase[RefinableParameter].model_validate(d)
     assert phase.site("La1").multiplicity == 1
     assert phase.site("B1").multiplicity == 6
 
 
-def test_phase_structure_multiplicity_mismatch_rejected():
-    """PhaseStructure: stated Multiplicity != derived rejected."""
+def test_phase_multiplicity_mismatch_rejected():
+    """Phase: stated Multiplicity != derived rejected."""
     d = _valid_pmm_lab6_phase_dict()
     d["atoms"]["B1"]["Multiplicity"] = 12  # should be 6
     with pytest.raises(ValidationError) as exc_info:
-        PhaseStructure.model_validate(d)
+        Phase[RefinableParameter].model_validate(d)
     msg = str(exc_info.value)
     assert "stated Multiplicity" in msg
     assert "derived" in msg
 
 
-def test_phase_structure_cell_cubic_b_neq_a_rejected():
-    """PhaseStructure: cubic with b != a rejected."""
+def test_phase_cell_cubic_b_neq_a_rejected():
+    """Phase: cubic with b != a rejected."""
     d = _valid_pmm_lab6_phase_dict()
-    d["unit_cell"]["b"] = 4.2
+    d["unit_cell"]["b"] = [4.2, False]
     with pytest.raises(ValidationError) as exc_info:
-        PhaseStructure.model_validate(d)
+        Phase[RefinableParameter].model_validate(d)
     msg = str(exc_info.value)
     assert "b = 4.2 (symmetric value" in msg
     assert "inconsistent" in msg
     assert _errors(exc_info) == [(("unit_cell",), "value_error")]
 
 
-def test_phase_structure_cell_cubic_gamma_91_rejected():
-    """PhaseStructure: cubic with gamma=91 rejected."""
+def test_phase_cell_cubic_gamma_91_rejected():
+    """Phase: cubic with gamma=91 rejected."""
     d = _valid_pmm_lab6_phase_dict()
-    d["unit_cell"]["gamma"] = 91.0
+    d["unit_cell"]["gamma"] = [91.0, False]
     with pytest.raises(ValidationError, match="inconsistent"):
-        PhaseStructure.model_validate(d)
+        Phase[RefinableParameter].model_validate(d)
 
 
-def test_phase_structure_cell_hexagonal_gamma_90_rejected():
-    """PhaseStructure: hexagonal with gamma=90 rejected."""
+def test_phase_cell_hexagonal_gamma_90_rejected():
+    """Phase: hexagonal with gamma=90 rejected."""
     d = {
-        "phase_name": "test",
         "space_group": "P 63/m m c",
-        "unit_cell": {"a": 3.2, "b": 3.2, "c": 5.2, "alpha": 90, "beta": 90, "gamma": 90},
+        "unit_cell": {"a": [3.2, False], "b": [3.2, False], "c": [5.2, False], "alpha": [90, False], "beta": [90, False], "gamma": [90, False]},
         "atoms": {
-            "A1": {"element": "O", "x": 0.2, "y": 0.4, "z": 0.1, "ADP": "Uiso", "Uiso": 0.01}
+            "A1": {"element": "O", "x": [0.2, False], "y": [0.4, False], "z": [0.1, False], "occupancy": [1.0, False], "ADP": "Uiso", "Uiso": [0.01, False]}
         },
     }
     with pytest.raises(ValidationError, match="inconsistent"):
-        PhaseStructure.model_validate(d)
+        Phase[RefinableParameter].model_validate(d)
 
 
-def test_phase_structure_cell_monoclinic_accepted():
-    """PhaseStructure: valid monoclinic C 1 2/m 1 with beta=104.3 accepted."""
+def test_phase_cell_monoclinic_accepted():
+    """Phase: valid monoclinic C 1 2/m 1 with beta=104.3 accepted."""
     d = {
-        "phase_name": "test",
         "space_group": "C 1 2/m 1",
-        "unit_cell": {"a": 5.0, "b": 6.0, "c": 7.0, "alpha": 90, "beta": 104.3, "gamma": 90},
+        "unit_cell": {"a": [5.0, False], "b": [6.0, False], "c": [7.0, False], "alpha": [90, False], "beta": [104.3, False], "gamma": [90, False]},
         "atoms": {
-            "A1": {"element": "O", "x": 0.2, "y": 0.0, "z": 0.1, "ADP": "Uiso", "Uiso": 0.01}
+            "A1": {"element": "O", "x": [0.2, False], "y": [0.0, False], "z": [0.1, False], "occupancy": [1.0, False], "ADP": "Uiso", "Uiso": [0.01, False]}
         },
     }
-    phase = PhaseStructure.model_validate(d)
+    phase = Phase[RefinableParameter].model_validate(d)
     assert phase.space_group == "C 1 2/m 1"
 
 
-def test_phase_structure_uaniso_cubic_m3m_isotropic_accepted():
-    """PhaseStructure: La at (0,0,0) in P m -3 m with isotropic Uaniso (U11=U22=U33, off-diag 0) accepted."""
+def test_phase_uaniso_cubic_m3m_isotropic_accepted():
+    """Phase: La at (0,0,0) in P m -3 m with isotropic Uaniso (U11=U22=U33, off-diag 0) accepted."""
     d = _valid_pmm_lab6_phase_dict()
     d["atoms"]["La1"]["ADP"] = "Uaniso"
-    d["atoms"]["La1"]["Uaniso"] = {"U11": 0.01, "U22": 0.01, "U33": 0.01, "U12": 0, "U13": 0, "U23": 0}
+    d["atoms"]["La1"]["Uaniso"] = {"U11": [0.01, False], "U22": [0.01, False], "U33": [0.01, False], "U12": [0, False], "U13": [0, False], "U23": [0, False]}
     del d["atoms"]["La1"]["Uiso"]
-    phase = PhaseStructure.model_validate(d)
+    phase = Phase[RefinableParameter].model_validate(d)
     assert phase.warnings() == []
 
 
-def test_phase_structure_uaniso_cubic_m3m_anisotropic_rejected():
-    """PhaseStructure: La at (0,0,0) in P m -3 m with U11!=U22 rejected (breaks symmetry)."""
+def test_phase_uaniso_cubic_m3m_anisotropic_rejected():
+    """Phase: La at (0,0,0) in P m -3 m with U11!=U22 rejected (breaks symmetry)."""
     d = _valid_pmm_lab6_phase_dict()
     d["atoms"]["La1"]["ADP"] = "Uaniso"
-    d["atoms"]["La1"]["Uaniso"] = {"U11": 0.01, "U22": 0.02, "U33": 0.01, "U12": 0, "U13": 0, "U23": 0}
+    d["atoms"]["La1"]["Uaniso"] = {"U11": [0.01, False], "U22": [0.02, False], "U33": [0.01, False], "U12": [0, False], "U13": [0, False], "U23": [0, False]}
     del d["atoms"]["La1"]["Uiso"]
     with pytest.raises(ValidationError, match="break the site symmetry"):
-        PhaseStructure.model_validate(d)
+        Phase[RefinableParameter].model_validate(d)
 
 
-def test_phase_structure_uaniso_hexagonal_6h_adjusted():
-    """PhaseStructure: P 63/m m c, site 6h, Uaniso with U11=U22/2 adjusted and reported."""
+def test_phase_uaniso_hexagonal_6h_adjusted():
+    """Phase: P 63/m m c, site 6h, Uaniso with U11=U22/2 adjusted and reported."""
     d = {
-        "phase_name": "test",
         "space_group": "P 63/m m c",
-        "unit_cell": {"a": 3.2, "b": 3.2, "c": 5.2, "alpha": 90, "beta": 90, "gamma": 120},
+        "unit_cell": {"a": [3.2, False], "b": [3.2, False], "c": [5.2, False], "alpha": [90, False], "beta": [90, False], "gamma": [120, False]},
         "atoms": {
             "A1": {
                 "element": "O",
-                "x": 0.2,
-                "y": 0.4,
-                "z": 0.25,
+                "x": [0.2, False],
+                "y": [0.4, False],
+                "z": [0.25, False],
+                "occupancy": [1.0, False],
                 "ADP": "Uaniso",
                 "Uaniso": {
-                    "U11": 0.012,
-                    "U22": 0.012347,
-                    "U33": 0.02,
-                    "U12": 0.006174,
-                    "U13": 0.0,
-                    "U23": 0.0,
+                    "U11": [0.012, False],
+                    "U22": [0.012347, False],
+                    "U33": [0.02, False],
+                    "U12": [0.006174, False],
+                    "U13": [0.0, False],
+                    "U23": [0.0, False],
                 },
             }
         },
     }
-    phase = PhaseStructure.model_validate(d)
-    # Check U11 stayed
-    assert phase.atoms["A1"].Uaniso["U11"] == 0.012  # free: returned exactly as stated
-    # Check U12 became U22/2
-    u22 = phase.atoms["A1"].Uaniso["U22"]
-    u12 = phase.atoms["A1"].Uaniso["U12"]
+    phase = Phase[RefinableParameter].model_validate(d)
+    # Check U11 stayed (now need to read .value)
+    assert phase.atoms["A1"].Uaniso["U11"].value == 0.012  # free: returned exactly as stated
+    # Check U12 became U22/2 (reading .value)
+    u22 = phase.atoms["A1"].Uaniso["U22"].value
+    u12 = phase.atoms["A1"].Uaniso["U12"].value
     assert abs(u12 - u22 / 2) < 1e-15
+    # Check refine flags are preserved
+    assert phase.atoms["A1"].Uaniso["U11"].refine_flag is False
+    assert phase.atoms["A1"].Uaniso["U12"].refine_flag is False
     # Check warning
     warnings = phase.warnings()
     assert any(w["code"] == "adp_symmetry_adjusted" for w in warnings)
 
 
-def test_phase_structure_multiple_atom_problems_all_reported():
-    """PhaseStructure: two atoms with wrong Multiplicity -> both labels appear in one error."""
+def test_phase_multiple_atom_problems_all_reported():
+    """Phase: two atoms with wrong Multiplicity -> both labels appear in one error."""
     d = _valid_pmm_lab6_phase_dict()
     d["atoms"]["La1"]["Multiplicity"] = 2
     d["atoms"]["B1"]["Multiplicity"] = 12
     with pytest.raises(ValidationError) as exc_info:
-        PhaseStructure.model_validate(d)
+        Phase[RefinableParameter].model_validate(d)
     msg = str(exc_info.value)
     assert "La1" in msg
     assert "B1" in msg
 
 
-# --- PhaseStructure: error locations, reporting, no side effects (A70) -------
+# --- Phase: error locations, reporting, no side effects (A70) -------
 
 
 def _uaniso(u11, u22, u33, u12=0.0, u13=0.0, u23=0.0):
-    return {"U11": u11, "U22": u22, "U33": u33, "U12": u12, "U13": u13, "U23": u23}
+    return {"U11": [u11, False], "U22": [u22, False], "U33": [u33, False], "U12": [u12, False], "U13": [u13, False], "U23": [u23, False]}
 
 
-def test_phase_structure_all_problems_of_one_atom_reported():
+def test_phase_all_problems_of_one_atom_reported():
     """A wrong Multiplicity does not hide the same atom's Uaniso error."""
     d = _valid_pmm_lab6_phase_dict()
     la = d["atoms"]["La1"]
@@ -1352,21 +1238,21 @@ def test_phase_structure_all_problems_of_one_atom_reported():
     del la["Uiso"]
     la["Uaniso"] = _uaniso(0.01, 0.02, 0.01)
     with pytest.raises(ValidationError) as exc_info:
-        PhaseStructure.model_validate(d)
+        Phase[RefinableParameter].model_validate(d)
     assert _errors(exc_info) == [
         (("atoms", "La1", "Multiplicity"), "value_error"),
         (("atoms", "La1", "Uaniso"), "value_error"),
     ]
 
 
-def test_phase_structure_problems_reported_at_their_locations():
+def test_phase_problems_reported_at_their_locations():
     """Cell, position and multiplicity problems: one error each, at its own field."""
     d = _valid_pmm_lab6_phase_dict()
-    d["unit_cell"]["b"] = 4.2
-    d["atoms"]["La1"]["x"] = 0.001  # ambiguous band
+    d["unit_cell"]["b"] = [4.2, False]
+    d["atoms"]["La1"]["x"] = [0.001, False]  # ambiguous band
     d["atoms"]["B1"]["Multiplicity"] = 12
     with pytest.raises(ValidationError) as exc_info:
-        PhaseStructure.model_validate(d)
+        Phase[RefinableParameter].model_validate(d)
     assert _errors(exc_info) == [
         (("unit_cell",), "value_error"),
         (("atoms", "La1"), "value_error"),
@@ -1378,12 +1264,12 @@ def test_phase_structure_problems_reported_at_their_locations():
     assert "stated Multiplicity 12, derived 6" in msgs[2]
 
 
-def test_phase_structure_locations_nest_in_enclosing_models():
-    """Engine schemas embed PhaseStructure: the locations get the enclosing path, also from JSON."""
+def test_phase_locations_nest_in_enclosing_models():
+    """Engine schemas embed Phase: the locations get the enclosing path, also from JSON."""
     from pydantic import BaseModel
 
     class Payload(BaseModel):
-        structure: PhaseStructure
+        structure: Phase[RefinableParameter]
 
     d = _valid_pmm_lab6_phase_dict()
     d["atoms"]["B1"]["Multiplicity"] = 12
@@ -1392,19 +1278,251 @@ def test_phase_structure_locations_nest_in_enclosing_models():
     assert _errors(exc_info) == [(("structure", "atoms", "B1", "Multiplicity"), "value_error")]
 
 
-def test_phase_structure_does_not_modify_caller_atoms():
+def test_phase_does_not_modify_caller_atoms():
     """Canonicalization replaces the atom in the structure; the caller's Atom is untouched."""
-    atom = Atom.model_validate({"element": "C", "x": 0.3333333, "y": 0.6666667, "z": 0.25,
-                                "ADP": "Uiso", "Uiso": 0.01})
-    phase = PhaseStructure.model_validate({
-        "phase_name": "test",
+    atom = Atom[RefinableParameter].model_validate({"element": "C", "x": [0.3333333, False], "y": [0.6666667, False], "z": [0.25, False],
+                                "occupancy": [1.0, False], "ADP": "Uiso", "Uiso": [0.01, False]})
+    phase = Phase[RefinableParameter].model_validate({
         "space_group": "P 63/m m c",
-        "unit_cell": {"a": 3.2, "b": 3.2, "c": 5.2, "alpha": 90, "beta": 90, "gamma": 120},
+        "unit_cell": {"a": [3.2, False], "b": [3.2, False], "c": [5.2, False], "alpha": [90, False], "beta": [90, False], "gamma": [120, False]},
         "atoms": {"C1": atom},
     })
-    assert (atom.x, atom.y) == (0.3333333, 0.6666667)
-    assert (phase.atoms["C1"].x, phase.atoms["C1"].y) == (1 / 3, 2 / 3)
+    assert (atom.x.value, atom.y.value) == (0.3333333, 0.6666667)
+    assert (phase.atoms["C1"].x.value, phase.atoms["C1"].y.value) == (1 / 3, 2 / 3)
     assert phase.atoms["C1"] is not atom
+
+
+# --- Phase[P]: the phase block (re/03b; A93-A96, A100, A105) -----------------
+
+from powderline.schema_core import (  # noqa: E402
+    RESERVED_PHASE_FIELDS,
+    BoundedRefinableParameter,
+    CoreModel,
+)
+
+RP, BRP = RefinableParameter, BoundedRefinableParameter
+
+
+def _bounded(d: dict, lo=None, hi=None) -> dict:
+    """The phase dict with every [value, flag] made [value, flag, lo, hi]."""
+    def conv(v):
+        if isinstance(v, list):
+            return [*v, lo, hi]
+        if isinstance(v, dict):
+            return {k: conv(x) for k, x in v.items()}
+        return v
+    return conv(d)
+
+
+@pytest.mark.parametrize("space_group, cell, xyz", [
+    ("P m -3 m", (4.0, 4.0, 4.0, 90, 90, 90), (0.1, 0.2, 0.3)),
+    ("C 1 2/m 1", (9.0, 5.0, 7.0, 90, 105.0, 90), (0.1, 0.2, 0.3)),
+    ("P 1 21/c 1", (5.0, 6.0, 7.0, 90, 98.0, 90), (0.1, 0.2, 0.3)),
+    ("P 1 1 21/a", (5.0, 6.0, 7.0, 90, 90, 98.0), (0.1, 0.2, 0.3)),
+    ("A 1 1 2/a", (5.0, 6.0, 7.0, 90, 90, 98.0), (0.1, 0.2, 0.3)),
+    ("C c 1 1", (5.0, 6.0, 7.0, 98.0, 90, 90), (0.1, 0.2, 0.3)),
+    ("P 1 c 1", (5.0, 6.0, 7.0, 90, 98.0, 90), (0.1, 0.2, 0.3)),
+    ("R -3 m:H", (4.0, 4.0, 20.0, 90, 90, 120), (0.1, 0.2, 0.3)),
+    ("R -3 m:R", (5.0, 5.0, 5.0, 70.0, 70.0, 70.0), (0.1, 0.2, 0.3)),
+    ("F d -3 m:2", (8.0, 8.0, 8.0, 90, 90, 90), (0.125, 0.125, 0.125)),
+    ("F d -3 m:1", (8.0, 8.0, 8.0, 90, 90, 90), (0.0, 0.0, 0.0)),
+    ("P 63/m m c", (3.2, 3.2, 5.2, 90, 90, 120), (1 / 3, 2 / 3, 0.25)),
+])
+def test_phase_canonical_space_group_accepted(space_group, cell, xyz):
+    """Canonical names validate, incl. non-standard settings, ':R' and both origins (A105)."""
+    d = {"space_group": space_group,
+         "unit_cell": dict(zip(("a", "b", "c", "alpha", "beta", "gamma"), ([v, False] for v in cell))),
+         "atoms": {"A1": {"element": "Fe", **{k: [v, False] for k, v in zip("xyz", xyz)},
+                          "occupancy": [1.0, False], "ADP": "Uiso", "Uiso": [0.01, False]}}}
+    assert Phase[RP].model_validate(d).space_group == space_group
+
+
+@pytest.mark.parametrize("symbol, message", [
+    ("Pm-3m", "space group 'Pm-3m' is not in the canonical form; write 'P m -3 m'"),
+    ("p m -3 m", "space group 'p m -3 m' is not in the canonical form; write 'P m -3 m'"),
+    ("C2/m", "space group 'C2/m' is not in the canonical form; write 'C 1 2/m 1'"),
+    ("C 2/m", "space group 'C 2/m' is not in the canonical form; write 'C 1 2/m 1'"),
+    ("P 21/c", "space group 'P 21/c' is not in the canonical form; write 'P 1 21/c 1'"),
+    ("R-3m:H", "space group 'R-3m:H' is not in the canonical form; write 'R -3 m:H'"),
+    ("R -3 m", "space group 'R -3 m' does not name its setting; write 'R -3 m:H' (hexagonal axes) "
+               "or 'R -3 m:R' (rhombohedral axes)"),
+    ("Fd-3m", "space group 'Fd-3m' has two origin choices; write 'F d -3 m:1' or 'F d -3 m:2'"),
+    ("F d -3 m", "space group 'F d -3 m' has two origin choices; write 'F d -3 m:1' or 'F d -3 m:2'"),
+    ("P2_1/c", "unrecognized space-group symbol 'P2_1/c'; write gemmi's canonical name "
+               "(e.g. 'P m -3 m', 'C 1 2/m 1', 'R -3 m:H', 'F d -3 m:2')"),
+])
+def test_phase_non_canonical_space_group_rejected(symbol, message):
+    """Any other spelling is an error at space_group naming the canonical form (A105)."""
+    d = _valid_pmm_lab6_phase_dict()
+    d["space_group"] = symbol
+    with pytest.raises(ValidationError) as exc_info:
+        Phase[RP].model_validate(d)
+    assert _errors(exc_info) == [(("space_group",), "value_error")]
+    assert exc_info.value.errors()[0]["msg"] == "Value error, " + message
+
+
+def test_canonical_space_group_every_gemmi_name_round_trips():
+    """gemmi's xhm() names are unique over its table and each validates as itself (A105)."""
+    import gemmi
+    from powderline.symmetry import canonical_space_group
+
+    names = [sg.xhm() for sg in gemmi.spacegroup_table()]
+    assert len(names) == len(set(names)) == 564
+    assert all(canonical_space_group(n).xhm() == n for n in names)
+
+
+@pytest.mark.parametrize("field", RESERVED_PHASE_FIELDS)
+def test_phase_reserved_field_cannot_be_redeclared(field):
+    """An engine subclass may not redefine space_group, unit_cell or atoms (A93)."""
+    with pytest.raises(TypeError) as exc_info:
+        type("EnginePhase", (Phase[RP],), {"__annotations__": {field: int}, "__module__": __name__})
+    assert str(exc_info.value) == (f"EnginePhase redeclares the core phase field(s) {field}; "
+                                   "core owns space_group, unit_cell and atoms (A93)")
+
+
+def test_phase_reserved_fields_guarded_below_an_engine_subclass():
+    class EnginePhase(Phase[RP]):
+        scale: RP
+
+    with pytest.raises(TypeError, match=r"^Child redeclares the core phase field\(s\) atoms;"):
+        class Child(EnginePhase):
+            atoms: dict
+
+
+def test_phase_engine_subclass_adds_flat_fields_and_keeps_core_validation():
+    """The gsasii shape: engine fields flat in the phase; core rules still run; locs nest."""
+    class EnginePhase(Phase[RP]):
+        scale: RP
+
+    d = _valid_pmm_lab6_phase_dict()
+    d["atoms"]["B1"]["x"] = [0.4999999, False]
+    phase = EnginePhase.model_validate({**d, "scale": [1.0, True]})
+    assert phase.scale.model_dump() == [1.0, True]
+    assert phase.atoms["B1"].x.value == 0.5  # canonicalized by the core validator
+    d["atoms"]["B1"]["Multiplicity"] = 12
+    with pytest.raises(ValidationError) as exc_info:
+        EnginePhase.model_validate({**d, "scale": [1.0, True]})
+    assert _errors(exc_info) == [(("atoms", "B1", "Multiplicity"), "value_error")]
+    with pytest.raises(ValidationError) as exc_info:
+        EnginePhase.model_validate(d)
+    assert _errors(exc_info) == [(("scale",), "missing")]
+
+
+def test_phase_has_no_phase_name():
+    """The phase name is the key of the payload's phases dict (A100)."""
+    d = {"phase_name": "LaB6", **_valid_pmm_lab6_phase_dict()}
+    with pytest.raises(ValidationError) as exc_info:
+        Phase[RP].model_validate(d)
+    assert _errors(exc_info) == [(("phase_name",), "extra_forbidden")]
+
+
+def test_atom_occupancy_required():
+    """No default: occupancy must be stated (A96)."""
+    d = _valid_pmm_lab6_phase_dict()
+    del d["atoms"]["La1"]["occupancy"]
+    with pytest.raises(ValidationError) as exc_info:
+        Phase[RP].model_validate(d)
+    assert _errors(exc_info) == [(("atoms", "La1", "occupancy"), "missing")]
+
+
+@pytest.mark.parametrize("field", ["Multiplicity", "Uiso", "Uaniso"])
+def test_atom_optional_fields_are_never_null(field):
+    """A field that may be left out is never null (A96); leaving it out is the way."""
+    d = _valid_pmm_lab6_phase_dict()
+    d["atoms"]["B1"][field] = None
+    with pytest.raises(ValidationError) as exc_info:
+        Phase[RP].model_validate(d)
+    assert _errors(exc_info) == [(("atoms", "B1", field), "value_error")]
+    assert exc_info.value.errors()[0]["msg"] == f"Value error, {field} must not be null; leave it out instead"
+
+
+@pytest.mark.parametrize("param", [[None, False], [0.5, None]])
+def test_phase_parameter_value_and_flag_never_null(param):
+    d = _valid_pmm_lab6_phase_dict()
+    d["atoms"]["B1"]["z"] = param
+    with pytest.raises(ValidationError) as exc_info:
+        Phase[RP].model_validate(d)
+    slot = "value" if param[0] is None else "refine_flag"
+    assert _errors(exc_info) == [(("atoms", "B1", "z", slot), "float_type" if slot == "value" else "bool_type")]
+
+
+def test_phase_dump_round_trips_and_leaves_absent_fields_out():
+    d = _valid_pmm_lab6_phase_dict()
+    d["atoms"]["B1"]["Multiplicity"] = 6
+    phase = Phase[RP].model_validate(d)
+    dump = phase.model_dump(mode="json")
+    assert dump == d
+    assert "Uaniso" not in dump["atoms"]["La1"] and "Multiplicity" not in dump["atoms"]["La1"]
+    assert Phase[RP].model_validate_json(phase.model_dump_json()).model_dump() == phase.model_dump()
+
+
+def test_phase_json_schema_names_and_no_null():
+    """Readable $defs (no 'Atom_RefinableParameter_'); optional fields are not nullable (A96)."""
+    class EnginePhase(Phase[RP]):
+        scale: RP
+
+    schema = EnginePhase.model_json_schema()
+    assert sorted(schema["$defs"]) == ["Atom", "RefinableParameter", "UnitCell"]
+    atom = schema["$defs"]["Atom"]
+    assert atom["required"] == ["element", "x", "y", "z", "occupancy", "ADP"]
+    assert atom["properties"]["Uiso"] == {"$ref": "#/$defs/RefinableParameter", "unit": "angstrom^2",
+                                          "description": "Isotropic ADP; given when ADP is 'Uiso'"}
+    assert atom["properties"]["Multiplicity"]["type"] == "integer"
+    assert "null" not in json.dumps(schema)
+    assert schema["$defs"]["RefinableParameter"]["prefixItems"] == [{"type": "number"}, {"type": "boolean"}]
+
+
+def test_phase_json_schema_two_parameter_types_in_one_document_stay_distinct():
+    """If two parametrizations ever share a document, the names fall back and the refs stay right."""
+    class Both(CoreModel):
+        g: Phase[RP]
+        t: Phase[BRP]
+
+    defs = Both.model_json_schema()["$defs"]
+    atom_refs = {k: v["properties"]["atoms"]["additionalProperties"]["$ref"].rsplit("/", 1)[1]
+                 for k, v in defs.items() if "Phase" in k}
+    assert len(set(atom_refs.values())) == 2
+    for name, ref in atom_refs.items():
+        expected = "BoundedRefinableParameter" if "Bounded" in name else "RefinableParameter"
+        assert defs[ref]["properties"]["x"]["$ref"] == f"#/$defs/{expected}"
+
+
+def test_phase_rejects_bounds_where_the_parameter_type_has_none():
+    d = _valid_pmm_lab6_phase_dict()
+    d["unit_cell"]["a"] = [4.15692, False, 4.0, 4.3]
+    with pytest.raises(ValidationError) as exc_info:
+        Phase[RP].model_validate(d)
+    assert _errors(exc_info) == [(("unit_cell", "a"), "value_error")]
+    assert "bounds are not supported" in exc_info.value.errors()[0]["msg"]
+
+
+def test_bounded_phase_canonicalization_keeps_flag_and_bounds():
+    """Phase[BoundedRefinableParameter]: the canonical value replaces .value; flag and bounds stay."""
+    d = _bounded(_valid_pmm_lab6_phase_dict())
+    d["atoms"]["B1"]["x"] = [0.4999999, False, None, None]
+    d["atoms"]["B1"]["z"] = [0.2021, True, 0.15, 0.25]
+    phase = Phase[BRP].model_validate(d)
+    assert phase.atoms["B1"].x.model_dump() == [0.5, False, None, None]
+    assert phase.atoms["B1"].z.model_dump() == [0.2021, True, 0.15, 0.25]
+    assert [w["code"] for w in phase.warnings()] == ["special_position_adjusted"]
+
+
+def test_phase_value_rules_act_on_value():
+    """Cell, occupancy and element rules read .value; each error at its own field (A70)."""
+    d = _valid_pmm_lab6_phase_dict()
+    d["unit_cell"]["a"] = [-4.0, False]
+    d["atoms"]["La1"]["occupancy"] = [1.5, False]
+    d["atoms"]["B1"]["element"] = "b"
+    with pytest.raises(ValidationError) as exc_info:
+        Phase[RP].model_validate(d)
+    assert _errors(exc_info) == [(("unit_cell", "a"), "value_error"),
+                                 (("atoms", "La1", "occupancy"), "value_error"),
+                                 (("atoms", "B1", "element"), "value_error")]
+    assert [e["msg"] for e in exc_info.value.errors()] == [
+        "Value error, cell length a must be positive, got -4.0",
+        "Value error, occupancy must be between 0 and 1 inclusive, got 1.5",
+        "Value error, element 'b': write the element symbol as 'B'",
+    ]
 
 
 # --- numbers are JSON numbers: no strings, no booleans (A80) -----------------
@@ -1415,11 +1533,15 @@ from powderline.schema_core import FitRange, XRDData  # noqa: E402
 
 
 def _cell(**kw):
-    return {"a": 4.0, "b": 4.0, "c": 4.0, "alpha": 90, "beta": 90, "gamma": 90, **kw}
+    base = {"a": [4.0, False], "b": [4.0, False], "c": [4.0, False], "alpha": [90, False], "beta": [90, False], "gamma": [90, False]}
+    base.update(kw)
+    return base
 
 
 def _atom(**kw):
-    return {"element": "Na", "x": 0.1, "y": 0.2, "z": 0.3, "ADP": "Uiso", "Uiso": 0.01, **kw}
+    base = {"element": "Na", "x": [0.1, False], "y": [0.2, False], "z": [0.3, False], "occupancy": [1.0, False], "ADP": "Uiso", "Uiso": [0.01, False]}
+    base.update(kw)
+    return base
 
 
 def _xrd(**kw):
@@ -1432,9 +1554,6 @@ _NUMERIC_FIELDS = [
     ("BoundedRefinableParameter.value", lambda v: BoundedRefinableParameter.model_validate([v, True, None, None]), ("value",)),
     ("BoundedRefinableParameter.min", lambda v: BoundedRefinableParameter.model_validate([1.0, True, v, None]), ("min",)),
     ("BoundedRefinableParameter.max", lambda v: BoundedRefinableParameter.model_validate([0.5, True, None, v]), ("max",)),
-    ("StructureRefinableParameter.value", lambda v: StructureRefinableParameter.model_validate([v, True]), ("value",)),
-    ("StructureBoundedRefinableParameter.value",
-     lambda v: StructureBoundedRefinableParameter.model_validate([v, True, None, None]), ("value",)),
     ("FitRange.min", lambda v: FitRange.model_validate([v, None]), ("min",)),
     ("FitRange.max", lambda v: FitRange.model_validate([None, v]), ("max",)),
     ("XRDData.tth", lambda v: XRDData.model_validate(_xrd(tth=[v, 20.0])), ("tth", 0)),
@@ -1442,12 +1561,13 @@ _NUMERIC_FIELDS = [
     ("XRDData.Itth_weights", lambda v: XRDData.model_validate(_xrd(Itth_weights=[v, 1.0])), ("Itth_weights", 0)),
     ("ChebyshevBackground.coefficients",
      lambda v: ChebyshevBackground(num_coefficients=1, coefficients=[v], refine_flag=False), ("coefficients", 0)),
-    *[(f"UnitCell.{k}", (lambda k: lambda v: UnitCell.model_validate(_cell(**{k: v})))(k), (k,))
+    *[(f"UnitCell.{k}", (lambda k: lambda v: UnitCell[RefinableParameter].model_validate(_cell(**{k: [v, False]})))(k), (k, "value"))
       for k in ("a", "b", "c", "alpha", "beta", "gamma")],
-    *[(f"Atom.{k}", (lambda k: lambda v: Atom.model_validate(_atom(**{k: v})))(k), (k,))
+    *[(f"Atom.{k}", (lambda k: lambda v: Atom[RefinableParameter].model_validate(_atom(**{k: [v, False]})))(k), (k, "value"))
       for k in ("x", "y", "z", "occupancy", "Uiso")],
-    ("Atom.Uaniso", lambda v: Atom.model_validate(_atom(ADP="Uaniso", Uiso=None, Uaniso={
-        "U11": v, "U22": 0.01, "U33": 0.01, "U12": 0.0, "U13": 0.0, "U23": 0.0})), ("Uaniso", "U11")),
+    ("Atom.Uaniso", lambda v: Atom[RefinableParameter].model_validate({
+        "element": "Na", "x": [0.1, False], "y": [0.2, False], "z": [0.3, False], "occupancy": [1.0, False], "ADP": "Uaniso",
+        "Uaniso": {"U11": [v, False], "U22": [0.01, False], "U33": [0.01, False], "U12": [0.0, False], "U13": [0.0, False], "U23": [0.0, False]}}), ("Uaniso", "U11", "value")),
 ]
 _FLOAT_IDS = [f[0] for f in _NUMERIC_FIELDS]
 
@@ -1473,14 +1593,14 @@ def test_numeric_field_accepts_numbers(label, build, loc, good):
 def test_numeric_json_strings_rejected():
     """From JSON too: a quoted number is not a number."""
     with pytest.raises(ValidationError) as exc_info:
-        Atom.model_validate_json(json.dumps(_atom(x="0.25")))
-    assert _errors(exc_info) == [(("x",), "float_type")]
-    assert Atom.model_validate_json(json.dumps(_atom(x=1))).x == 1.0
+        Atom[RefinableParameter].model_validate_json(json.dumps(_atom(x=["0.25", False])))
+    assert _errors(exc_info) == [(("x", "value"), "float_type")]
+    assert Atom[RefinableParameter].model_validate_json(json.dumps(_atom(x=[1, False]))).x.value == 1.0
 
 
 @pytest.mark.parametrize("good", [4, 4.0, np.int64(4), np.float64(4.0)])
 def test_integer_fields_accept_whole_numbers(good):
-    assert Atom.model_validate(_atom(Multiplicity=good)).Multiplicity == 4
+    assert Atom[RefinableParameter].model_validate(_atom(Multiplicity=good)).Multiplicity == 4
     assert ChebyshevBackground(num_coefficients=good, coefficients=[0.0] * 4, refine_flag=False).num_coefficients == 4
 
 
@@ -1489,7 +1609,7 @@ def test_integer_fields_accept_whole_numbers(good):
 ])
 def test_integer_fields_reject_fractions_strings_and_booleans(bad, error_type):
     with pytest.raises(ValidationError) as exc_info:
-        Atom.model_validate(_atom(Multiplicity=bad))
+        Atom[RefinableParameter].model_validate(_atom(Multiplicity=bad))
     assert _errors(exc_info) == [(("Multiplicity",), error_type)]
     with pytest.raises(ValidationError) as exc_info:
         ChebyshevBackground(num_coefficients=bad, coefficients=[0.0] * 4, refine_flag=False)
@@ -1497,4 +1617,4 @@ def test_integer_fields_reject_fractions_strings_and_booleans(bad, error_type):
 
 
 def test_integer_json_whole_float_accepted():
-    assert Atom.model_validate_json(json.dumps(_atom(Multiplicity=4.0))).Multiplicity == 4
+    assert Atom[RefinableParameter].model_validate_json(json.dumps(_atom(Multiplicity=4.0))).Multiplicity == 4

@@ -21,9 +21,11 @@ This module must never import an engine (enforced by an import-block test).
 
 from __future__ import annotations
 
+import inspect
 import json
 import math
-from typing import Annotated, Any, Literal, Optional
+import re
+from typing import Annotated, Any, Generic, Literal, Optional, TypeVar
 
 import gemmi
 import numpy as np
@@ -42,10 +44,11 @@ from pydantic import (
     model_serializer,
     model_validator,
 )
+from pydantic.json_schema import DEFAULT_REF_TEMPLATE, GenerateJsonSchema, JsonSchemaMode
 from pydantic_core import InitErrorDetails, PydanticCustomError
 
 from powderline.exceptions import StructuredWarning, SymmetryError
-from powderline.symmetry import analyze_site, check_cell, check_uij, resolve_space_group
+from powderline.symmetry import analyze_site, canonical_space_group, check_cell, check_uij
 
 # --- versions (A40, A65) ---------------------------------------------------
 
@@ -112,6 +115,40 @@ _BOOLEAN = {"type": "boolean"}
 _STRICT = ConfigDict(extra="forbid")
 
 
+class CoreJsonSchema(GenerateJsonSchema):
+    """JSON Schema generator that names a parametrized core model after its origin.
+
+    pydantic names ``Atom[RefinableParameter]`` ``Atom_RefinableParameter_`` in
+    ``$defs``; a recipe document holds one engine's schema (one parameter type),
+    so plain ``Atom`` is unambiguous and readable. Only the short candidate names
+    (no module path, no id) are shortened: pydantic's content-based dedup then
+    falls back to its qualified names if two parametrizations ever share one
+    document, and the id-bearing name it needs unique is left intact (devkit
+    ``tasks/re03b-spike-generics.md``).
+    """
+
+    def normalize_name(self, name: str) -> str:
+        if "." not in name and ":" not in name:
+            name = re.sub(r"\[[^\]]*\]", "", name)
+        return super().normalize_name(name)
+
+
+class CoreModel(BaseModel):
+    """Base of the core models: ``extra='forbid'`` and :class:`CoreJsonSchema` by default.
+
+    Engine schemas build on it (directly, or through :class:`CoreRecipe` and
+    :class:`Phase`), so their generated JSON Schema is readable too.
+    """
+
+    model_config = _STRICT
+
+    @classmethod
+    def model_json_schema(cls, by_alias: bool = True, ref_template: str = DEFAULT_REF_TEMPLATE,
+                          schema_generator: type[GenerateJsonSchema] = CoreJsonSchema,
+                          mode: JsonSchemaMode = "validation", **kwargs) -> dict[str, Any]:
+        return super().model_json_schema(by_alias, ref_template, schema_generator, mode, **kwargs)
+
+
 # --- numbers -----------------------------------------------------------------
 
 
@@ -131,7 +168,7 @@ CoreFloat = Annotated[float, Strict()]
 CoreInt = Annotated[int, BeforeValidator(_integer_not_text_or_bool)]
 
 
-# --- parameter models (A20, A32, A71) ---------------------------------------
+# --- parameter models (A20, A32, A93) ---------------------------------------
 
 
 def _finite(name: str, v: Optional[float]) -> Optional[float]:
@@ -145,8 +182,7 @@ class RefinableParameter(BaseModel):
 
     Used where the engine has no native bounds for the quantity. A 4-element
     list here is an error, never silently truncated (A20). ``value`` is
-    required; see :class:`StructureRefinableParameter` for the quantities whose
-    starting value may come from the phase structure.
+    required (never ``null``, A93/A96).
     """
 
     model_config = _STRICT
@@ -184,9 +220,7 @@ class RefinableParameter(BaseModel):
 
     @classmethod
     def __get_pydantic_json_schema__(cls, core_schema, handler) -> dict:
-        nullable = cls.model_fields["value"].annotation is not float
-        return _array_schema(cls.__name__, [_NUMBER_OR_NULL if nullable else _NUMBER, _BOOLEAN],
-                             "[value, refine_flag]" + (_NULL_VALUE_NOTE if nullable else ""))
+        return _array_schema(cls.__name__, [_NUMBER, _BOOLEAN], "[value, refine_flag]")
 
 
 class BoundedRefinableParameter(BaseModel):
@@ -194,8 +228,8 @@ class BoundedRefinableParameter(BaseModel):
 
     ``min``/``max`` may each be ``null`` (unbounded on that side). When given,
     ``min <= max`` and ``min <= value <= max``. Used only where the engine
-    honors the bounds natively (A20, A33). ``value`` is required; see
-    :class:`StructureBoundedRefinableParameter`.
+    honors the bounds natively (A20, A33). ``value`` is required (never
+    ``null``, A93/A96).
     """
 
     model_config = _STRICT
@@ -229,8 +263,7 @@ class BoundedRefinableParameter(BaseModel):
         lo, hi = self.min, self.max
         if lo is not None and hi is not None and lo > hi:
             raise ValueError(f"min ({lo}) must be <= max ({hi})")
-        if self.value is not None:
-            check_within_bounds(self.value, self, "value")
+        check_within_bounds(self.value, self, "value")
         return self
 
     @model_serializer
@@ -239,44 +272,15 @@ class BoundedRefinableParameter(BaseModel):
 
     @classmethod
     def __get_pydantic_json_schema__(cls, core_schema, handler) -> dict:
-        nullable = cls.model_fields["value"].annotation is not float
-        return _array_schema(cls.__name__,
-                             [_NUMBER_OR_NULL if nullable else _NUMBER, _BOOLEAN,
-                              _NUMBER_OR_NULL, _NUMBER_OR_NULL],
-                             "[value, refine_flag, min, max]; min/max may be null"
-                             + (_NULL_VALUE_NOTE if nullable else ""))
-
-
-_NULL_VALUE_NOTE = "; value null = start from the phase structure's value"
-
-
-class StructureRefinableParameter(RefinableParameter):
-    """:class:`RefinableParameter` for a quantity that mirrors a phase-structure value.
-
-    For cell lengths/angles and atom x/y/z, occupancy, Uiso/Uaniso only (A71):
-    ``value`` may be ``null``, meaning "start from the structure's value"
-    (today's behavior: the GSAS-II setters skip a null value).
-    """
-
-    value: Optional[CoreFloat]
-
-
-class StructureBoundedRefinableParameter(BoundedRefinableParameter):
-    """:class:`BoundedRefinableParameter` for a quantity that mirrors a phase-structure value.
-
-    ``value`` may be ``null`` (start from the structure's value, A71); the
-    bounds are then checked against that value by the phase-level validator
-    (:func:`check_within_bounds`).
-    """
-
-    value: Optional[CoreFloat]
+        return _array_schema(cls.__name__, [_NUMBER, _BOOLEAN, _NUMBER_OR_NULL, _NUMBER_OR_NULL],
+                             "[value, refine_flag, min, max]; min/max may be null")
 
 
 def check_within_bounds(value: float, param: BoundedRefinableParameter, field: str) -> None:
     """Raise ``ValueError`` unless ``param.min <= value <= param.max`` (open ends pass).
 
-    Also used at the phase level for a null-valued
-    :class:`StructureBoundedRefinableParameter`, with the structure's value.
+    Also used at the phase level, on a value canonicalized after the
+    parameter's own check (review N4).
     """
     if param.min is not None and value < param.min:
         raise ValueError(f"{field} ({value}) is below min ({param.min})")
@@ -497,83 +501,116 @@ class ChebyshevBackground(BaseModel):
         return v
 
 
-# --- phase structure (A32, A35, A62, A63, A69, A73) -------------------------
+# --- phase block (A93-A96, A100, A105; values: A63, A69, A73, A76-A78) -------
+
+#: The parameter type of a phase block: :class:`RefinableParameter`, or
+#: :class:`BoundedRefinableParameter` for an engine that honors bounds (A20).
+#: One type for every structural field, cell and atoms (review N6).
+P = TypeVar("P", RefinableParameter, BoundedRefinableParameter)
 
 
-class UnitCell(BaseModel):
-    """Cell constants (values, not refinables). No ``volume``: every engine
-    derives it from a..gamma (A75)."""
+def _absent_not_null(v: Any, info) -> Any:
+    """A field that may be left out is never ``null`` (A96): reject an explicit null."""
+    if v is None:
+        raise ValueError(f"{info.field_name} must not be null; leave it out instead")
+    return v
 
-    model_config = _STRICT
 
-    a: CoreFloat = Field(json_schema_extra=_unit(UNIT_ANGSTROM))
-    b: CoreFloat = Field(json_schema_extra=_unit(UNIT_ANGSTROM))
-    c: CoreFloat = Field(json_schema_extra=_unit(UNIT_ANGSTROM))
-    alpha: CoreFloat = Field(json_schema_extra=_unit(UNIT_DEGREE))
-    beta: CoreFloat = Field(json_schema_extra=_unit(UNIT_DEGREE))
-    gamma: CoreFloat = Field(json_schema_extra=_unit(UNIT_DEGREE))
+def _absent_not_null_schema(unit: Optional[str] = None):
+    """JSON Schema of a field that may be left out but is never null (A96).
+
+    The field is ``Optional`` only so that "left out" can be held as ``None``;
+    the schema shows the non-null type, no ``"default": null``, and the unit.
+    """
+    def extra(schema: dict) -> None:
+        schema.pop("default", None)
+        any_of = schema.pop("anyOf", None)
+        if any_of:
+            schema.update(next(s for s in any_of if s.get("type") != "null"))
+        if unit:
+            schema.update(_unit(unit))
+    return extra
+
+
+class UnitCell(CoreModel, Generic[P]):
+    """Cell constants, each a refinable parameter. No ``volume``: every engine
+    derives it from a..gamma (A75). The values must fit the space group (A77,
+    checked by :class:`Phase`)."""
+
+    a: P = Field(json_schema_extra=_unit(UNIT_ANGSTROM))
+    b: P = Field(json_schema_extra=_unit(UNIT_ANGSTROM))
+    c: P = Field(json_schema_extra=_unit(UNIT_ANGSTROM))
+    alpha: P = Field(json_schema_extra=_unit(UNIT_DEGREE))
+    beta: P = Field(json_schema_extra=_unit(UNIT_DEGREE))
+    gamma: P = Field(json_schema_extra=_unit(UNIT_DEGREE))
 
     @field_validator("a", "b", "c")
     @classmethod
     def _length(cls, v, info):
-        if not (math.isfinite(v) and v > 0):
-            raise ValueError(f"cell length {info.field_name} must be positive, got {v}")
+        if not v.value > 0:
+            raise ValueError(f"cell length {info.field_name} must be positive, got {v.value}")
         return v
 
     @field_validator("alpha", "beta", "gamma")
     @classmethod
     def _angle(cls, v, info):
-        if not (math.isfinite(v) and 0 < v < 180):
-            raise ValueError(f"cell angle {info.field_name} must be between 0 and 180 degrees, got {v}")
+        if not 0 < v.value < 180:
+            raise ValueError(f"cell angle {info.field_name} must be between 0 and 180 degrees, got {v.value}")
         return v
 
 
 _UANISO_KEYS = ("U11", "U22", "U33", "U12", "U13", "U23")
 
 
-class Atom(BaseModel):
-    """One atom of a phase structure (values, not refinables).
+class Atom(CoreModel, Generic[P]):
+    """One atom of a phase: coordinates, occupancy and ADPs are refinable parameters.
 
     Coordinates are fractional JSON numbers. A special position is declared by
-    stating it to at least 6 decimals. The validated phase holds canonical
-    (exact) coordinates and reports every adjustment (A73). ``Multiplicity`` is
-    optional and, when stated, must match the derived value (A69 T3).
-    ``occupancy`` is 0 to 1 inclusive, even where an engine would accept more
-    (A76). ``Uaniso`` must respect the site symmetry: within 1e-6 A^2 it is set
-    to the symmetric values and reported, beyond that it is an error (A78).
+    stating it to at least 6 decimals; the validated phase holds the canonical
+    (exact) values and reports every adjustment (A73). ``occupancy`` is required
+    and 0 to 1 inclusive (A76, A96). ``Multiplicity`` is optional and, when
+    stated, must match the derived value (A69 T3). ``ADP`` selects ``Uiso`` or
+    ``Uaniso`` (all six of U11..U23); the other is left out. ``Uaniso`` must
+    respect the site symmetry: within 1e-6 A^2 it is set to the symmetric values
+    and reported, beyond that it is an error (A78). Nothing is ``null`` (A96).
     """
 
-    model_config = _STRICT
-
     element: str = Field(description="Bare element symbol, exactly as in the periodic table (e.g. 'Fe')")
-    x: CoreFloat = Field(description="Fractional x coordinate")
-    y: CoreFloat = Field(description="Fractional y coordinate")
-    z: CoreFloat = Field(description="Fractional z coordinate")
-    occupancy: CoreFloat = Field(default=1.0, ge=0.0, le=1.0, description="Site occupancy, 0 to 1 inclusive (A76)")
-    Multiplicity: Optional[CoreInt] = Field(default=None, description="Site multiplicity; cross-checked when stated")
+    x: P = Field(description="Fractional x coordinate")
+    y: P = Field(description="Fractional y coordinate")
+    z: P = Field(description="Fractional z coordinate")
+    occupancy: P = Field(description="Site occupancy, 0 to 1 inclusive (A76)")
+    Multiplicity: Optional[CoreInt] = Field(default=None, json_schema_extra=_absent_not_null_schema(),
+                                            description="Site multiplicity; optional, cross-checked when stated")
     ADP: Literal["Uiso", "Uaniso"] = Field(description="Displacement-parameter type")
-    Uiso: Optional[CoreFloat] = Field(default=None, json_schema_extra=_unit(UNIT_ANGSTROM2))
-    Uaniso: Optional[dict[Literal["U11", "U22", "U33", "U12", "U13", "U23"], CoreFloat]] = Field(
-        default=None, json_schema_extra=_unit(UNIT_ANGSTROM2),
-        description="All six of U11, U22, U33, U12, U13, U23")
+    Uiso: Optional[P] = Field(default=None, json_schema_extra=_absent_not_null_schema(UNIT_ANGSTROM2),
+                              description="Isotropic ADP; given when ADP is 'Uiso'")
+    Uaniso: Optional[dict[Literal["U11", "U22", "U33", "U12", "U13", "U23"], P]] = Field(
+        default=None, json_schema_extra=_absent_not_null_schema(UNIT_ANGSTROM2),
+        description="All six of U11, U22, U33, U12, U13, U23; given when ADP is 'Uaniso'")
+
+    _not_null = field_validator("Multiplicity", "Uiso", "Uaniso", mode="before")(_absent_not_null)
 
     @field_validator("element")
     @classmethod
     def _element(cls, v: str) -> str:
         return check_element_symbol(v)
 
-    @field_validator("x", "y", "z", "occupancy", "Uiso")
+    @field_validator("occupancy")
     @classmethod
-    def _finite(cls, v, info):
-        return _finite(info.field_name, v)
-
-    @field_validator("Uaniso")
-    @classmethod
-    def _uaniso_finite(cls, v):
-        if v is not None:
-            for k, u in v.items():
-                _finite(k, u)
+    def _occupancy(cls, v):
+        if not 0.0 <= v.value <= 1.0:
+            raise ValueError(f"occupancy must be between 0 and 1 inclusive, got {v.value}")
         return v
+
+    @model_serializer(mode="wrap")
+    def _omit_absent(self, handler):
+        """Leave out absent optional fields, so a dump validates again (no ``null``, A96)."""
+        data = handler(self)
+        for name in ("Multiplicity", "Uiso", "Uaniso"):
+            if getattr(self, name) is None:
+                data.pop(name, None)
+        return data
 
     @model_validator(mode="after")
     def _adp_block(self) -> "Atom":
@@ -590,46 +627,67 @@ class Atom(BaseModel):
         return self
 
 
-class PhaseStructure(BaseModel):
-    """A phase's crystal structure: space group, cell, atoms (core-owned, A35).
+#: Phase fields owned by core; an engine subclass may not redeclare them (A93).
+RESERVED_PHASE_FIELDS = ("space_group", "unit_cell", "atoms")
 
-    Validation derives each atom's site (multiplicity, DOF) from the space group
-    (:func:`powderline.symmetry.analyze_site`). It rejects ambiguous positions
-    and stated multiplicities that don't match. It replaces stated coordinates
-    with the canonical ones, so every engine receives the same exact structure.
-    Each adjustment is reported by :meth:`warnings` (A73). The unit cell must
-    fit the space group exactly (A77), and anisotropic ADPs the site symmetry
-    (A78).
 
-    Every structural problem is reported at its own location (A70):
-    ``unit_cell``, ``atoms.<label>`` (the position), ``atoms.<label>.Multiplicity``,
+class Phase(CoreModel, Generic[P]):
+    """A phase block's core part: space group, cell and atoms (A93).
+
+    Engine schemas subclass ``Phase[TheirParameterType]`` and add their own
+    phase fields flat (gsasii: ``scale``, ``peak_broadening``); the phase name
+    is the key of the payload's ``phases`` dict (A100). Core's field names are
+    reserved (:data:`RESERVED_PHASE_FIELDS`): redeclaring one raises
+    ``TypeError`` when the subclass is defined.
+
+    ``space_group`` is gemmi's canonical name (A105). Validation derives each
+    atom's site (multiplicity, DOF) from it (:func:`powderline.symmetry.analyze_site`),
+    rejects ambiguous positions and stated multiplicities that don't match, and
+    replaces stated coordinates with the canonical ones (keeping each refine
+    flag and bounds), so every engine receives the same exact structure. Each
+    adjustment is reported by :meth:`warnings` (A73). The unit cell must fit the
+    space group exactly (A77), and anisotropic ADPs the site symmetry (A78).
+
+    Every problem is reported at its own location (A70): ``unit_cell``,
+    ``atoms.<label>`` (the position), ``atoms.<label>.Multiplicity``,
     ``atoms.<label>.Uaniso``; all of them together, in one ``ValidationError``.
     These checks run only once every field is valid: pydantic does not run
     model-level validators after a field error, so e.g. an unknown element is
     reported first, and the symmetry checks follow once it is fixed.
-    Validation never modifies the caller's :class:`Atom` objects; adjusted atoms
-    are copies.
+    Validation never modifies the caller's objects; adjusted atoms are copies.
     """
 
-    model_config = _STRICT
-
-    phase_name: str = Field(min_length=1)
-    space_group: str = Field(description="Hermann-Mauguin symbol with an explicit setting "
-                                         "for two-origin (':1'/':2') and rhombohedral (':H'/':R') groups")
-    unit_cell: UnitCell
-    atoms: dict[str, Atom] = Field(min_length=1, description="Atoms keyed by unique label")
+    space_group: str = Field(description="gemmi's canonical extended Hermann-Mauguin name, e.g. "
+                                         "'P m -3 m', 'C 1 2/m 1', 'R -3 m:H', 'F d -3 m:2' (A105)")
+    unit_cell: UnitCell[P]
+    atoms: dict[str, Atom[P]] = Field(min_length=1, description="Atoms keyed by unique label")
 
     _sites: dict = PrivateAttr(default_factory=dict)
     _warnings: list = PrivateAttr(default_factory=list)
 
+    @classmethod
+    def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
+        super().__pydantic_init_subclass__(**kwargs)
+        for klass in cls.__mro__:
+            if klass is Phase or not (isinstance(klass, type) and issubclass(klass, Phase)):
+                continue
+            if klass.__pydantic_generic_metadata__["origin"] is Phase:
+                continue  # Phase[SomeParameterType] itself
+            redeclared = [n for n in RESERVED_PHASE_FIELDS if n in inspect.get_annotations(klass)]
+            if redeclared:
+                raise TypeError(
+                    f"{klass.__name__} redeclares the core phase field(s) {', '.join(redeclared)}; "
+                    "core owns space_group, unit_cell and atoms (A93)"
+                )
+
     @field_validator("space_group")
     @classmethod
     def _space_group(cls, v: str) -> str:
-        resolve_space_group(v, explicit_setting=True)  # SymmetryError is a ValueError
+        canonical_space_group(v)  # SymmetryError is a ValueError
         return v
 
     @model_validator(mode="after")
-    def _sites_check(self) -> "PhaseStructure":
+    def _sites_check(self) -> "Phase":
         problems: list[InitErrorDetails] = []
 
         def problem(loc: tuple, message: str, value: Any) -> None:
@@ -638,12 +696,12 @@ class PhaseStructure(BaseModel):
 
         cell = self.unit_cell
         try:
-            check_cell(self.space_group, (cell.a, cell.b, cell.c, cell.alpha, cell.beta, cell.gamma))
+            check_cell(self.space_group, tuple(getattr(cell, k).value for k in _CELL_FIELDS))
         except SymmetryError as exc:
             problem(("unit_cell",), str(exc), cell.model_dump())
         for label, atom in list(self.atoms.items()):
             try:
-                site = analyze_site(self.space_group, (atom.x, atom.y, atom.z))
+                site = analyze_site(self.space_group, (atom.x.value, atom.y.value, atom.z.value))
             except SymmetryError as exc:
                 problem(("atoms", label), str(exc), atom.model_dump())
                 continue  # the checks below need the site
@@ -653,23 +711,25 @@ class PhaseStructure(BaseModel):
                         f"stated Multiplicity {atom.Multiplicity}, derived {site.multiplicity} "
                         f"({self.space_group!r}, site {site.stated})", atom.Multiplicity)
             if atom.Uaniso is not None:
-                stated_u = tuple(atom.Uaniso[k] for k in _UANISO_KEYS)
+                stated_u = tuple(atom.Uaniso[k].value for k in _UANISO_KEYS)
                 try:
                     symmetric_u, u_adjusted = check_uij(self.space_group, site.canonical, stated_u)
                 except SymmetryError as exc:
-                    problem(("atoms", label, "Uaniso"), str(exc), atom.Uaniso)
+                    problem(("atoms", label, "Uaniso"), str(exc), atom.model_dump()["Uaniso"])
                 else:
                     if u_adjusted:
-                        update["Uaniso"] = dict(zip(_UANISO_KEYS, symmetric_u))
+                        update["Uaniso"] = {k: _with_value(atom.Uaniso[k], u)
+                                            for k, u in zip(_UANISO_KEYS, symmetric_u)}
                         self._warnings.append(StructuredWarning(
                             code="adp_symmetry_adjusted",
                             message=(f"atom {label!r}: Uaniso {dict(zip(_UANISO_KEYS, stated_u))} "
-                                     f"adjusted to the site-symmetric values {update['Uaniso']}"),
+                                     f"adjusted to the site-symmetric values "
+                                     f"{dict(zip(_UANISO_KEYS, symmetric_u))}"),
                             field_path=f"atoms.{label}.Uaniso",
                         ))
             self._sites[label] = site
             if site.adjusted:
-                update.update(zip(("x", "y", "z"), site.canonical))
+                update.update({k: _with_value(getattr(atom, k), v) for k, v in zip("xyz", site.canonical)})
                 self._warnings.append(StructuredWarning(
                     code="special_position_adjusted",
                     message=(f"atom {label!r}: coordinates {site.stated} are on a special position "
@@ -688,9 +748,16 @@ class PhaseStructure(BaseModel):
         return self._sites[label]
 
     def warnings(self) -> list:
-        """Structured warnings raised while validating this structure (paths relative to it)."""
+        """Structured warnings raised while validating this phase (paths relative to it)."""
         return list(self._warnings)
 
+
+_CELL_FIELDS = ("a", "b", "c", "alpha", "beta", "gamma")
+
+
+def _with_value(param, value: float):
+    """A copy of ``param`` with a new value; refine flag and bounds kept."""
+    return param.model_copy(update={"value": value})
 
 
 # --- top-level recipe frame (A1, A18, A21, A40) ------------------------------
@@ -712,7 +779,7 @@ def _check_metadata(v: Optional[dict]) -> Optional[dict]:
     return v
 
 
-class CoreRecipe(BaseModel):
+class CoreRecipe(CoreModel):
     """The core-owned top level of every recipe; engine schemas subclass it.
 
     An engine schema narrows ``schema_name`` to its own names, types ``payload``,
@@ -720,8 +787,6 @@ class CoreRecipe(BaseModel):
     (:mod:`powderline.compat`). ``metadata`` is never interpreted: it is checked
     for JSON-serializability and size, and echoed into results (A21, A64).
     """
-
-    model_config = _STRICT
 
     schema_name: str = Field(pattern=SCHEMA_NAME_PATTERN,
                              description='Engine and workflow, e.g. "gsasii.rietveld"')
