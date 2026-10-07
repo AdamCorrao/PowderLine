@@ -1092,9 +1092,10 @@ def test_phase_space_group_r3m_hexagonal_accepted():
     assert phase.space_group == "R -3 m:H"
 
 
-def test_phase_special_position_not_exact_rejected():
-    """A115: (0.333333, 0.666667, 0.25) is on 2c but not exactly: an error giving the values to write.
-    Writing them (repr of the float) validates, and the phase holds them unchanged."""
+def test_phase_special_position_thirds_read_from_6_decimals():
+    """A120: 1/3 and 2/3 have no exact decimal form, so 6 decimals state them: (0.333333,
+    0.666667, 0.25) on 2c is read as (1/3, 2/3, 1/4), with no warning; the caller's dict is
+    untouched, and a dump writes the exact floats, which validate as themselves."""
     d = {
         "space_group": "P 63/m m c",
         "unit_cell": {"a": [3.2, False], "b": [3.2, False], "c": [5.2, False], "alpha": [90, False], "beta": [90, False], "gamma": [120, False]},
@@ -1102,15 +1103,62 @@ def test_phase_special_position_not_exact_rejected():
             "A1": {"element": "O", "x": [0.333333, False], "y": [0.666667, False], "z": [0.25, False], "occupancy": [1.0, False], "ADP": "Uiso", "Uiso": [0.01, False]}
         },
     }
+    phase = Phase[RefinableParameter].model_validate(d)
+    assert (phase.atoms["A1"].x.value, phase.atoms["A1"].y.value, phase.atoms["A1"].z.value) == (1 / 3, 2 / 3, 0.25)
+    assert phase.warnings() == []
+    assert d["atoms"]["A1"]["x"] == [0.333333, False]
+    assert Phase[RefinableParameter].model_validate(phase.model_dump()).model_dump() == phase.model_dump()
+
+
+def test_phase_special_position_with_a_decimal_form_must_be_exact():
+    """A120: 1/2 and 1/4 have an exact decimal form, so 0.4999999 and 0.2499999 are errors; in one
+    atom the thirds are still read and only the decimal ones are asked for."""
+    d = {
+        "space_group": "P 63/m m c",
+        "unit_cell": {"a": [3.2, False], "b": [3.2, False], "c": [5.2, False], "alpha": [90, False], "beta": [90, False], "gamma": [120, False]},
+        "atoms": {
+            "A1": {"element": "O", "x": [0.333333, False], "y": [0.666667, False], "z": [0.2499999, False], "occupancy": [1.0, False], "ADP": "Uiso", "Uiso": [0.01, False]}
+        },
+    }
     with pytest.raises(ValidationError) as exc_info:
         Phase[RefinableParameter].model_validate(d)
     assert _errs(exc_info) == [(("atoms", "A1"),
-                                "atom 'A1' (multiplicity 2 in 'P 63/m m c'): (0.333333, 0.666667, 0.25) is 3.3e-07 "
-                                "from a special position, not on it (x = 1/3, y = 2/3, z = 1/4); "
-                                "write x = 0.3333333333333333, y = 0.6666666666666666")]
-    d["atoms"]["A1"]["x"][0], d["atoms"]["A1"]["y"][0] = json.loads("[0.3333333333333333, 0.6666666666666666]")
-    phase = Phase[RefinableParameter].model_validate(d)
-    assert phase.model_dump() == d
+                                "atom 'A1' (multiplicity 2 in 'P 63/m m c'): (0.333333, 0.666667, 0.2499999) is "
+                                "3.3e-07 from a special position, not on it (x = 1/3, y = 2/3, z = 1/4); write z = 0.25")]
+
+
+_R3M_CELL = {"a": [4.0, False], "b": [4.0, False], "c": [20.0, False],
+             "alpha": [90, False], "beta": [90, False], "gamma": [120, False]}
+
+
+def test_coupled_coordinate_with_a_third_offset_read_from_6_decimals():
+    """A120: R-3m:H at (x, x + 1/3, 1/6): y has no exact decimal form, so 6 decimals state it."""
+    atom = {"element": "O", "x": [0.1, True], "y": [0.433333, True], "z": [0.166667, False],
+            "occupancy": [1.0, False], "ADP": "Uiso", "Uiso": [0.01, False]}
+    phase = Phase[RP].model_validate({"space_group": "R -3 m:H", "unit_cell": _R3M_CELL, "atoms": {"O1": atom}})
+    assert (phase.atoms["O1"].x.value, phase.atoms["O1"].y.value, phase.atoms["O1"].z.value) == (0.1, 0.1 + 1 / 3, 1 / 6)
+    assert phase.atoms["O1"].y.refine_flag is True
+
+
+def test_tied_bounds_with_a_third_offset_read_from_6_decimals():
+    """A120 for F4: y = x + 1/3 maps x in [0.05, 0.15] to [0.383333.., 0.483333..]; 6 decimals are
+    read as those, 4 decimals are an error giving them to 6 decimals."""
+    cell = {k: [*v, None, None] for k, v in _R3M_CELL.items()}
+
+    def phase(y_bounds):
+        atom = {"element": "O", "x": [0.1, True, 0.05, 0.15], "y": [0.433333, True, *y_bounds],
+                "z": [0.166667, False, None, None], "occupancy": [1.0, False, None, None],
+                "ADP": "Uiso", "Uiso": [0.01, False, None, None]}
+        return {"space_group": "R -3 m:H", "unit_cell": cell, "atoms": {"O1": atom}}
+
+    y = Phase[BRP].model_validate(phase((0.383333, 0.483333))).atoms["O1"].y
+    assert y.model_dump() == [0.1 + 1 / 3, True, 0.05 + 1 / 3, 0.15 + 1 / 3]
+    with pytest.raises(ValidationError) as exc_info:
+        Phase[BRP].model_validate(phase((0.3833, 0.4833)))
+    assert _errs(exc_info) == [(("atoms", "O1", "y"),
+                                "atom 'O1' (multiplicity 18 in 'R -3 m:H'): the bounds of y must follow y = x + 1/3 "
+                                "from the bounds of x [0.05, 0.15]: write [0.383333, 0.483333] (to at least 6 "
+                                "decimals), not [0.3833, 0.4833]")]
 
 
 def test_phase_special_position_ambiguous_rejected():

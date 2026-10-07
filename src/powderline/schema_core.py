@@ -26,6 +26,7 @@ import json
 import keyword
 import math
 import re
+from fractions import Fraction
 from typing import Annotated, Any, Generic, Literal, Optional, TypeVar
 
 import gemmi
@@ -53,6 +54,7 @@ from pydantic_core import InitErrorDetails, PydanticCustomError
 from powderline.exceptions import StructuredWarning, SymmetryError
 from powderline.symmetry import (
     ADJUSTMENT_REPORT_TOL,
+    SPECIAL_POSITION_TOL,
     Ties,
     analyze_site,
     canonical_space_group,
@@ -674,9 +676,10 @@ class Atom(CoreModel, Generic[P]):
     """One atom of a phase: coordinates, occupancy and ADPs are refinable parameters.
 
     Coordinates are fractional JSON numbers. A special position is stated
-    exactly, to floating-point precision (``0.3333333333333333`` for 1/3); a
-    position near one but not on it is an error giving the exact values (A73,
-    A115). ``occupancy`` is required
+    exactly where its value has a decimal form (``0.5``, ``0.25``), and to at
+    least 6 decimals where it has none (``0.333333`` for 1/3, read as 1/3); a
+    position near one but not on it is an error giving the values to write (A73,
+    A115, A120). ``occupancy`` is required
     and 0 to 1 inclusive (A76, A96). ``Multiplicity`` is optional and, when
     stated, must match the derived value (A69 T3). ``ADP`` selects which
     thermal parameter is **required**: ``Uiso``, or ``Uaniso`` with all six of
@@ -769,14 +772,17 @@ class Phase(CoreModel, Generic[P]):
     and rejects ambiguous positions and stated multiplicities that don't match.
     The unit cell must fit the space group exactly (A77).
 
-    **Validation never changes a recipe** (A115): the recipe is the record of the
-    refinement intent, so every value must already be exactly what the engines
-    use. A special position must be stated exactly (A73), an anisotropic ADP
-    exactly site-symmetric (A78), and tied bounds must follow their tie exactly
-    (A108). Otherwise it is an error that gives the exact value to write.
-    "Exactly" means to floating-point precision
-    (:data:`~powderline.symmetry.ADJUSTMENT_REPORT_TOL`), because a JSON number
-    cannot hold 1/3: ``0.3333333333333333`` is the value to write.
+    **Validation never changes the meaning of a recipe** (A115, A120): the recipe
+    is the record of the refinement intent. A value that has an exact decimal
+    form must be written exactly (to floating-point precision,
+    :data:`~powderline.symmetry.ADJUSTMENT_REPORT_TOL`): a special position
+    (``0.5``, not ``0.4999999``; A73), an anisotropic ADP (A78) and tied bounds
+    (A108); otherwise it is an error that gives the value to write. A value with
+    no exact decimal form (a third: 1/3, 1/6, ``x + 1/3``) cannot be written
+    exactly, so 6 decimals state it (within 5e-6, A73's threshold) and it is read
+    as the exact value, with no warning: that is what the recipe says. Only
+    coordinates and coordinate bounds can be thirds; Uij ties and cell ties
+    never are.
 
     Refine flags and bounds must agree with the symmetry ties
     (:func:`~powderline.symmetry.cell_tie_groups`,
@@ -876,9 +882,11 @@ class Phase(CoreModel, Generic[P]):
             problems.append(InitErrorDetails(type="value_error", loc=loc, input=value,
                                              ctx={"error": ValueError(message)}))
 
-        def tie_rules(loc: tuple, params: dict, ties: Ties, context: str, fixed_value) -> None:
-            for name, message in _tie_rules(params, ties, context, fixed_value):
+        def tie_rules(loc: tuple, params: dict, ties: Ties, context: str, fixed_value) -> dict:
+            errors, updates = _tie_rules(params, ties, context, fixed_value)
+            for name, message in errors:
                 problem((*loc, name), message, params[name].model_dump())
+            return updates
 
         sg = self.space_group
         cell = self.unit_cell
@@ -900,13 +908,16 @@ class Phase(CoreModel, Generic[P]):
             context = f"atom {label!r} (multiplicity {site.multiplicity} in {sg!r})"
             ties = coupling_groups(sg, site.canonical)
             exact_xyz = lambda name: site.exact["xyz".index(name)]  # noqa: E731
-            if site.adjusted:  # A73, A115: on a special position, but not exactly
+            stated = dict(zip("xyz", site.stated))
+            read, write = _special_position_values(ties.xyz, stated, exact_xyz)
+            if write:  # A73, A115, A120: on a special position, but not exactly
                 off = max(abs(c - v) for c, v in zip(site.canonical, site.stated))
                 problem(("atoms", label),
                         f"{context}: {site.stated} is {off:.2g} from a special position, not on it "
-                        f"({_ties_text(ties.xyz, exact_xyz)}); write "
-                        f"{_values_to_write(ties.xyz, dict(zip('xyz', site.stated)), exact_xyz)}",
-                        atom.model_dump())
+                        f"({_ties_text(ties.xyz, exact_xyz)}); write {_write_text(write)}", atom.model_dump())
+            xyz = {k: getattr(atom, k) for k in "xyz"}
+            if read and not write:  # A120: a value with no exact decimal form, stated to >= 6 decimals
+                xyz.update({k: getattr(atom, k).model_copy(update={"value": v}) for k, v in read.items()})
             if atom.Multiplicity is not None and atom.Multiplicity != site.multiplicity:
                 problem(("atoms", label, "Multiplicity"),
                         f"stated Multiplicity {atom.Multiplicity}, derived {site.multiplicity} "
@@ -937,11 +948,12 @@ class Phase(CoreModel, Generic[P]):
                                 atom.model_dump()["Uaniso"])
 
             # Flag and bound rules F1, F2, F4, A106 (A95, A98, A106).
-            tie_rules(("atoms", label), {k: getattr(atom, k) for k in "xyz"}, ties.xyz, context,
-                      lambda name: str(exact_xyz(name)))
+            xyz.update(tie_rules(("atoms", label), xyz, ties.xyz, context, lambda name: str(exact_xyz(name))))
             if uaniso_ok:
                 tie_rules(("atoms", label, "Uaniso"), {k: getattr(atom.Uaniso, k) for k in _UANISO_KEYS},
                           ties.uij, context, lambda _name: "0")
+            if any(xyz[k] is not getattr(atom, k) for k in "xyz"):
+                self.atoms[label] = atom.model_copy(update=xyz)  # the caller's atom stays as given
         if problems:
             raise ValidationError.from_exception_data(type(self).__name__, problems)
         return self
@@ -997,30 +1009,73 @@ def _ties_text(ties: Ties, exact) -> str:
     return ", ".join(parts)
 
 
-def _values_to_write(ties: Ties, stated: dict, exact) -> str:
-    """``"y = 0.2468"``: the values that make ``stated`` exactly symmetric, where they differ.
+def _has_decimal_form(value: Fraction) -> bool:
+    """True when ``value`` has a finite decimal form (1/2, 1/4, 3/8), False for 1/3, 1/6, 1/12.
 
-    Each tie group keeps its first member's stated value (the one parameter,
-    A94) and derives the others from it; fixed parameters take their exact
-    value. ``repr`` of a float reads back as the same float, so a value can be
-    copied into a recipe as-is (``0.3333333333333333`` for 1/3).
+    Symmetry only produces denominators 1, 2, 3, 4, 6, 8, 12 for fixed
+    coordinates, tie factors ±1, ±2, ±1/2 and offsets with denominators 1-4 (all
+    settings, every distinct special site), so "no decimal form" means "a third".
     """
-    target = {name: float(exact(name)) for name in ties.fixed}
+    d = value.denominator
+    for p in (2, 5):
+        while d % p == 0:
+            d //= p
+    return d == 1
+
+
+def _special_position_values(ties: Ties, stated: dict, exact) -> tuple[dict, dict]:
+    """``(read, write)``: the coordinates read as their exact value, and those to write (A120).
+
+    Each tie group keeps its first member as stated (the one parameter, A94);
+    every other member's exact value is ``k * rep + c``, a fixed one's its exact
+    fraction. Where it differs from the stated value beyond floating-point noise:
+    a value with no exact decimal form (a third: 1/3, 1/6, ``x + 1/3``) stated
+    within ``SPECIAL_POSITION_TOL`` (6 decimals) is **read** as the exact value;
+    any other is to be **written** (``0.4999999`` must be ``0.5``). ``write`` maps
+    a name to ``(value, has_decimal_form)``.
+    """
+    target: dict[str, tuple[float, bool]] = {}
+    for name in ties.fixed:
+        target[name] = (float(exact(name)), _has_decimal_form(exact(name)))
     for group in ties.groups:
         rep = stated[group.members[0]]
-        target.update({name: float(k) * rep + float(c)
-                       for name, k, c in zip(group.members, group.coefficients, group.offsets)})
-    return ", ".join(f"{name} = {target[name]!r}" for name in stated if not _same(stated[name], target[name]))
+        for name, k, c in zip(group.members, group.coefficients, group.offsets):
+            target[name] = (float(k) * rep + float(c), _has_decimal_form(k) and _has_decimal_form(c))
+    read, write = {}, {}
+    for name, value in stated.items():
+        exact_value, decimal = target[name]
+        if _same(value, exact_value):
+            continue
+        if not decimal and abs(value - exact_value) <= SPECIAL_POSITION_TOL:
+            read[name] = exact_value
+        else:
+            write[name] = (exact_value, decimal)
+    return read, write
 
 
-def _fmt_bounds(lo: Optional[float], hi: Optional[float]) -> str:
-    return "[" + ", ".join("null" if v is None else repr(v) for v in (lo, hi)) + "]"
+def _fmt_exact(value: float, decimal: bool) -> str:
+    """A value to write: exactly (``repr``) when it has a decimal form, else to 6 decimals."""
+    return repr(value) if decimal else f"{value:.6f} (to at least 6 decimals)"
+
+
+def _write_text(write: dict) -> str:
+    return ", ".join(f"{name} = {_fmt_exact(v, decimal)}" for name, (v, decimal) in write.items())
+
+
+def _values_to_write(ties: Ties, stated: dict, exact) -> str:
+    """``"U12 = 0.0061735"``: the values that make ``stated`` exactly symmetric (Uij: always a decimal form)."""
+    _read, write = _special_position_values(ties, stated, exact)
+    return _write_text(write)
+
+
+def _fmt_bounds(lo: Optional[float], hi: Optional[float], decimal: bool = True) -> str:
+    return "[" + ", ".join("null" if v is None else repr(v) if decimal else f"{v:.6f}" for v in (lo, hi)) + "]"
 
 
 _HOW_MANY = {2: "both", 3: "all three"}
 
 
-def _tie_rules(params: dict, ties: Ties, context: str, fixed_value) -> list[tuple[str, str]]:
+def _tie_rules(params: dict, ties: Ties, context: str, fixed_value) -> tuple[list[tuple[str, str]], dict]:
     """The flag and bound rules of one parameter set (cell, a site's x/y/z, or its Uij).
 
     - **F2** (A95): a symmetry-fixed parameter has refine flag false.
@@ -1032,12 +1087,15 @@ def _tie_rules(params: dict, ties: Ties, context: str, fixed_value) -> list[tupl
       the first member's: ``member = k*rep + c`` maps ``[min, max]`` to
       ``[k*min + c, k*max + c]``, swapped for k < 0; a null side stays null on
       the matching side. Anything but the exact mapped bounds (to floating-point
-      precision) is an error giving them.
+      precision) is an error giving them, except that a bound with no exact
+      decimal form (an offset of a third) stated to 6 decimals is read as the
+      exact one (A120).
     - **F3**: different groups are independent (nothing to check).
 
-    Returns ``[(name, message)]``.
+    Returns ``([(name, message)], {name: param with the read bounds})``.
     """
     errors: list[tuple[str, str]] = []
+    updates: dict[str, Any] = {}
     for name in ties.fixed:
         param = params[name]
         if param.refine_flag:
@@ -1065,13 +1123,24 @@ def _tie_rules(params: dict, ties: Ties, context: str, fixed_value) -> list[tupl
             lo, hi = (None if v is None else k * v + c for v in (rep.min, rep.max))
             if k < 0:
                 lo, hi = hi, lo
-            if not all((got is None and want is None) or (got is not None and want is not None and _same(got, want))
-                       for got, want in ((param.min, lo), (param.max, hi))):
-                errors.append((name, f"{context}: the bounds of {name} must follow "
-                                     f"{group.relation_text(name)} from the bounds of {group.members[0]} "
-                                     f"{_fmt_bounds(rep.min, rep.max)}: write {_fmt_bounds(lo, hi)}, "
-                                     f"not {_fmt_bounds(param.min, param.max)}"))
-    return errors
+            pairs = ((param.min, lo), (param.max, hi))
+            if not all((got is None) == (want is None) for got, want in pairs):
+                exact = readable = False
+            else:
+                exact = all(got is None or _same(got, want) for got, want in pairs)
+                readable = all(got is None or abs(got - want) <= SPECIAL_POSITION_TOL for got, want in pairs)
+            decimal = all(_has_decimal_form(v) for v in group.relation(name))
+            if exact:
+                continue
+            if readable and not decimal:  # A120: e.g. y = x + 1/3, stated to 6 decimals
+                updates[name] = param.model_copy(update={"min": lo, "max": hi})
+                continue
+            errors.append((name, f"{context}: the bounds of {name} must follow "
+                                 f"{group.relation_text(name)} from the bounds of {group.members[0]} "
+                                 f"{_fmt_bounds(rep.min, rep.max)}: write {_fmt_bounds(lo, hi, decimal)}"
+                                 f"{'' if decimal else ' (to at least 6 decimals)'}, "
+                                 f"not {_fmt_bounds(param.min, param.max)}"))
+    return errors, updates
 
 
 # --- top-level recipe frame (A1, A18, A21, A40) ------------------------------

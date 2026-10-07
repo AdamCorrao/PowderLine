@@ -71,12 +71,13 @@ engine schemas adopt it in re/04–06.
   on Windows and macOS), and problems are reported at `.`-joined paths
   (`atoms.O1.Uiso`). So `"2H-MoS2"` is written e.g. `MoS2_2H`.
   Structural interpretation is checked once, in core, so every engine gets the
-  same structure. **Validation never changes a recipe:** the recipe is the
-  record of the refinement intent, so every value must already be the exact
-  value the engines use. Where it is not, validation fails and the message
-  gives the value to write. "Exact" means to floating-point precision, because
-  a JSON number cannot hold 1/3: write `0.3333333333333333` (the shortest
-  decimal that reads back as the nearest float to 1/3). All problems are reported together, each at its own field
+  same structure. **Validation never changes what a recipe says:** the recipe
+  is the record of the refinement intent. A value that has an exact decimal
+  form must be written exactly (`0.5`, not `0.4999999`); otherwise validation
+  fails and the message gives the value to write. A value with no exact
+  decimal form (a third: 1/3, 1/6, 2/3, or a tie offset such as `x + 1/3`)
+  cannot be written exactly, so **6 decimals** state it (`0.333333` means 1/3)
+  and every engine receives the exact value. All problems are reported together, each at its own field
   (`unit_cell`, `atoms.<label>` for the position, `atoms.<label>.Multiplicity`,
   `atoms.<label>.Uaniso`, or the parameter a flag/bound rule concerns, e.g.
   `unit_cell.b`, `atoms.<label>.y`, `atoms.<label>.Uaniso.U12`); they are checked
@@ -106,14 +107,17 @@ engine schemas adopt it in re/04–06.
     Charged scattering types (`"Fe3+"`) are not supported yet and are rejected,
     never reduced to the neutral atom.
   - **Occupancy**: 0 to 1 inclusive, even where an engine would accept more.
-  - **Special positions** are stated **exactly** (to floating-point precision):
-    `0.5`, `0.25`, `0.3333333333333333`, and coupled coordinates satisfying
-    their relation (`(x, 2x, 1/4)` with `y` exactly `2·x`). An atom within 2e-3
-    (fractional) of a special position but not on it is an **error**: within
-    5e-6 the message gives the values to write (it keeps each tie group's first
-    coordinate as stated and derives the others, e.g. `write y = 0.2468`;
-    fixed coordinates take their exact value); from 5e-6 to 2e-3 it asks to
-    state the position exactly or move it off (`0.33`, `0.3333`).
+  - **Special positions:** a coordinate whose exact value has a decimal form
+    is written **exactly**: `0.5`, `0.25`, `0.125`, and coupled coordinates
+    satisfying their relation (`(x, 2x, 1/4)` with `y` exactly `2·x`). A
+    coordinate whose exact value has none, i.e. involves a third (`1/3`, `2/3`,
+    `1/6`, `1/12`, or `y = x + 1/3` on some rhombohedral sites), is written to
+    **at least 6 decimals** (`0.333333`, `0.166667`) and read as the exact value.
+    Within 5e-6 of a special position, anything else is an **error** whose
+    message gives the values to write (each tie group's first coordinate is kept
+    as stated and the others derived, e.g. `write y = 0.2468`, `write z = 0.25`).
+    From 5e-6 to 2e-3 off a special position is an error too: state the
+    position (as above) or move the atom off it (`0.33`, `0.3333`).
   - **Multiplicity**: optional; when stated it must equal the multiplicity
     derived from the space group.
   - **ADPs**: `ADP` selects the thermal parameter that is **required**:
@@ -144,8 +148,8 @@ engine schemas adopt it in re/04–06.
       `y = k·x + c` maps x's `[min, max]` to `[k·min + c, k·max + c]`
       (swapped for negative k; an open side stays open), e.g. `(x, x + 1/2, z)`
       with x in `[0, 0.2]` needs y in `[0.5, 0.7]`. They must be the mapped
-      values exactly (to floating-point precision); otherwise the error gives
-      them.
+      values exactly, or to at least 6 decimals where the tie's offset is a
+      third (`y = x + 1/3`); otherwise the error gives them.
     - Atoms at the same position are independent: their flags are never tied.
 
 ## gsasii engine schema
