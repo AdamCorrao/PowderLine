@@ -71,7 +71,12 @@ engine schemas adopt it in re/04–06.
   on Windows and macOS), and problems are reported at `.`-joined paths
   (`atoms.O1.Uiso`). So `"2H-MoS2"` is written e.g. `MoS2_2H`.
   Structural interpretation is checked once, in core, so every engine gets the
-  same structure. All problems are reported together, each at its own field
+  same structure. **Validation never changes a recipe:** the recipe is the
+  record of the refinement intent, so every value must already be the exact
+  value the engines use. Where it is not, validation fails and the message
+  gives the value to write. "Exact" means to floating-point precision, because
+  a JSON number cannot hold 1/3: write `0.3333333333333333` (the shortest
+  decimal that reads back as the nearest float to 1/3). All problems are reported together, each at its own field
   (`unit_cell`, `atoms.<label>` for the position, `atoms.<label>.Multiplicity`,
   `atoms.<label>.Uaniso`, or the parameter a flag/bound rule concerns, e.g.
   `unit_cell.b`, `atoms.<label>.y`, `atoms.<label>.Uaniso.U12`); they are checked
@@ -101,15 +106,14 @@ engine schemas adopt it in re/04–06.
     Charged scattering types (`"Fe3+"`) are not supported yet and are rejected,
     never reduced to the neutral atom.
   - **Occupancy**: 0 to 1 inclusive, even where an engine would accept more.
-  - **Special positions**: an atom whose symmetry images lie within 5e-6
-    (fractional) of itself is on a special position, so write special
-    coordinates with **at least 6 decimals** (e.g. `0.333333`). An atom 5e-6 to
-    2e-3 from a special position is an **error** (`0.33`, `0.3333`, `0.33333`):
-    state it to ≥ 6 decimals or move it off. Accepted special positions are
-    replaced by their **exact** coordinates (fixed coordinates become the exact
-    fraction; coupled ones satisfy their relation, by the smallest change); the
-    refine flag and bounds are kept. Each adjustment is reported as a structured
-    warning, and these exact values are what every engine receives.
+  - **Special positions** are stated **exactly** (to floating-point precision):
+    `0.5`, `0.25`, `0.3333333333333333`, and coupled coordinates satisfying
+    their relation (`(x, 2x, 1/4)` with `y` exactly `2·x`). An atom within 2e-3
+    (fractional) of a special position but not on it is an **error**: within
+    5e-6 the message gives the values to write (it keeps each tie group's first
+    coordinate as stated and derives the others, e.g. `write y = 0.2468`;
+    fixed coordinates take their exact value); from 5e-6 to 2e-3 it asks to
+    state the position exactly or move it off (`0.33`, `0.3333`).
   - **Multiplicity**: optional; when stated it must equal the multiplicity
     derived from the space group.
   - **ADPs**: `ADP` selects the thermal parameter that is **required**:
@@ -117,9 +121,9 @@ engine schemas adopt it in re/04–06.
     `U11 U22 U33 U12 U13 U23` (Å²). The other one must be left out. A missing
     or extra one is an error at that field (`atoms.<label>.Uiso`,
     `atoms.<label>.Uaniso.U23`), and the JSON Schema states the same rule.
-    Anisotropic ADPs must respect the site
-    symmetry: within 1e-6 Å² they are set to the symmetric values and reported;
-    beyond that it is an error.
+    Anisotropic ADPs must respect the site symmetry exactly; otherwise it is an
+    error, which within 1e-6 Å² gives the values to write (derived from each tie
+    group's first component, e.g. `write U12 = 0.0061735` for `U12 = U22/2`).
   - **Refinement intent follows the symmetry.** Parameters tied by symmetry
     are **one** parameter, and every member is stated: cubic `a, b, c`;
     tetragonal/hexagonal `a, b`; rhombohedral axes (`:R`) `a, b, c` and
@@ -134,10 +138,9 @@ engine schemas adopt it in re/04–06.
     - **Bounds** (engines with bounds) follow the tie like the values:
       `y = k·x + c` maps x's `[min, max]` to `[k·min + c, k·max + c]`
       (swapped for negative k; an open side stays open), e.g. `(x, x + 1/2, z)`
-      with x in `[0, 0.2]` needs y in `[0.5, 0.7]`. Bounds within the value
-      tolerance (coordinates 5e-6, Uij 1e-6 Å², cell 1e-9 relative/degrees)
-      are set to the exact values and reported; beyond it is an error. A value
-      moved to its exact special position is re-checked against its bounds.
+      with x in `[0, 0.2]` needs y in `[0.5, 0.7]`. They must be the mapped
+      values exactly (to floating-point precision); otherwise the error gives
+      them.
     - Atoms at the same position are independent: their flags are never tied.
 
 ## gsasii engine schema

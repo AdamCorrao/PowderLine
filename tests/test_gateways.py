@@ -485,10 +485,10 @@ phase = Phase[RefinableParameter].model_validate({{
     "space_group": "P 63/m m c",
     "unit_cell": {{"a": p(3.0, True), "b": p(3.0, True), "c": p(5.0), "alpha": p(90.0), "beta": p(90.0),
                   "gamma": p(120.0)}},
-    "atoms": {{"C": {{"element": "C", "x": p(0.166667, True), "y": p(0.333333, True), "z": p(0.25),
+    "atoms": {{"C": {{"element": "C", "x": p(1 / 6, True), "y": p(1 / 3, True), "z": p(0.25),
                      "occupancy": p(1.0), "ADP": "Uiso", "Uiso": p(0.01)}}}},
 }})
-assert phase.site("C").multiplicity == 6 and phase.warnings()
+assert phase.site("C").multiplicity == 6 and phase.atoms["C"].x.value == 1 / 6
 
 recipes = {{
     "gsasii": json.loads(Path(r'{recipe_path}').read_text(encoding="utf-8")),

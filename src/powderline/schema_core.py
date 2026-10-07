@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import keyword
 import math
 import re
 from typing import Annotated, Any, Generic, Literal, Optional, TypeVar
@@ -49,11 +50,9 @@ from pydantic import (
 from pydantic.json_schema import DEFAULT_REF_TEMPLATE, GenerateJsonSchema, JsonSchemaMode
 from pydantic_core import InitErrorDetails, PydanticCustomError
 
-from powderline.exceptions import StructuredWarning, SymmetryError
+from powderline.exceptions import SymmetryError
 from powderline.symmetry import (
-    CELL_TOL,
-    SPECIAL_POSITION_TOL,
-    UIJ_TOL,
+    ADJUSTMENT_REPORT_TOL,
     Ties,
     analyze_site,
     canonical_space_group,
@@ -185,17 +184,26 @@ CoreInt = Annotated[int, BeforeValidator(_integer_not_text_or_bool)]
 
 #: A phase name or atom label: an ASCII letter, then ASCII letters, digits or ``_``.
 NAME_PATTERN = r"^[A-Za-z][A-Za-z0-9_]*$"
+#: Longest phase name or atom label. Phase names become file names with a suffix of
+#: up to 21 characters (``_unit_cell_report.csv``); file systems allow 255 per name
+#: and Windows 260 per path by default, so a name stays well inside both.
+NAME_MAX_LENGTH = 64
+#: Python's (hard) keywords: valid by the pattern but not identifiers (``None``, ``class``).
+NAME_KEYWORDS = tuple(keyword.kwlist)
+#: JSON Schema of a name (also the ``propertyNames`` of a name-keyed object).
+NAME_JSON_SCHEMA = {"type": "string", "pattern": NAME_PATTERN, "maxLength": NAME_MAX_LENGTH,
+                    "not": {"enum": list(NAME_KEYWORDS)}}
 
 
 def _check_name(name: str) -> str:
-    """The name rule every engine can honor (re/03b review C6).
+    """The name rule every engine can honor, which is also a Python identifier (re/03b review C6).
 
     - GSAS-II renames a phase whose name has surrounding spaces or non-ASCII
       characters, and the parameterization then skips that phase silently.
     - easydiffraction accepts atom labels only of the form ``[A-Za-z_][A-Za-z0-9_]*``.
     - TOPAS emits phase names inside quotes and builds parameter names from them.
-    - Phase names become report file names (``<phase>_unit_cell_report.csv``),
-      so ``/``, ``:`` and the like must not appear.
+    - Phase names become report file names (``<phase>_unit_cell_report.csv``), so
+      no character a file system rejects (``/``, ``:``, ...) and a bounded length.
     - Field paths are joined with ``.`` (``atoms.O1.Uiso``).
     """
     if not name.strip():
@@ -203,13 +211,17 @@ def _check_name(name: str) -> str:
     if re.fullmatch(NAME_PATTERN, name) is None:
         raise ValueError(f"name {name!r} must start with a letter and contain only ASCII letters, digits "
                          "and '_' (e.g. 'O1', 'LaB6_a')")
+    if len(name) > NAME_MAX_LENGTH:
+        raise ValueError(f"name {name[:20]!r}... has {len(name)} characters; the limit is {NAME_MAX_LENGTH}")
+    if keyword.iskeyword(name):
+        raise ValueError(f"name {name!r} is a Python keyword; choose another name")
     return name
 
 
-#: A phase name or an atom label (a dict key), see :data:`NAME_PATTERN`. Core uses
+#: A phase name or an atom label (a dict key), see :func:`_check_name`. Core uses
 #: it for the atom labels; engine schemas use it for their ``phases`` keys (with
 #: :func:`name_keyed`, and :func:`check_names_unique_ignoring_case` for phases).
-CoreName = Annotated[str, AfterValidator(_check_name), WithJsonSchema({"type": "string", "pattern": NAME_PATTERN})]
+CoreName = Annotated[str, AfterValidator(_check_name), WithJsonSchema(NAME_JSON_SCHEMA)]
 
 
 def check_names_unique_ignoring_case(names, what: str) -> None:
@@ -229,13 +241,14 @@ def check_names_unique_ignoring_case(names, what: str) -> None:
 def name_keyed(schema: dict) -> None:
     """``json_schema_extra`` for a ``dict[CoreName, ...]`` field: state the key rule as ``propertyNames``.
 
-    pydantic writes a key pattern as ``patternProperties``, which leaves other keys
-    unchecked in JSON Schema; this makes every key follow :data:`NAME_PATTERN`.
+    pydantic writes a key rule as ``patternProperties`` (pattern only), which
+    leaves other keys unchecked in JSON Schema; this checks every key against
+    :data:`NAME_JSON_SCHEMA`.
     """
     pattern_properties = schema.pop("patternProperties", None)
     if pattern_properties:
-        ((pattern, value),) = pattern_properties.items()
-        schema["propertyNames"] = {"pattern": pattern}
+        ((_pattern, value),) = pattern_properties.items()
+        schema["propertyNames"] = {k: v for k, v in NAME_JSON_SCHEMA.items() if k != "type"}
         schema["additionalProperties"] = value
 
 
@@ -348,11 +361,7 @@ class BoundedRefinableParameter(BaseModel):
 
 
 def check_within_bounds(value: float, param: BoundedRefinableParameter, field: str) -> None:
-    """Raise ``ValueError`` unless ``param.min <= value <= param.max`` (open ends pass).
-
-    Also used at the phase level, on a value canonicalized after the
-    parameter's own check (review N4).
-    """
+    """Raise ``ValueError`` unless ``param.min <= value <= param.max`` (open ends pass)."""
     if param.min is not None and value < param.min:
         raise ValueError(f"{field} ({value}) is below min ({param.min})")
     if param.max is not None and value > param.max:
@@ -664,16 +673,17 @@ _ADP_PAIRING_SCHEMA = {"allOf": [
 class Atom(CoreModel, Generic[P]):
     """One atom of a phase: coordinates, occupancy and ADPs are refinable parameters.
 
-    Coordinates are fractional JSON numbers. A special position is declared by
-    stating it to at least 6 decimals; the validated phase holds the canonical
-    (exact) values and reports every adjustment (A73). ``occupancy`` is required
+    Coordinates are fractional JSON numbers. A special position is stated
+    exactly, to floating-point precision (``0.3333333333333333`` for 1/3); a
+    position near one but not on it is an error giving the exact values (A73,
+    A115). ``occupancy`` is required
     and 0 to 1 inclusive (A76, A96). ``Multiplicity`` is optional and, when
     stated, must match the derived value (A69 T3). ``ADP`` selects which
     thermal parameter is **required**: ``Uiso``, or ``Uaniso`` with all six of
     U11..U23; the other must be left out (an error at that field otherwise, and
-    the JSON Schema states the rule). ``Uaniso`` must respect the site symmetry:
-    within 1e-6 A^2 it is set to the symmetric values and reported, beyond that
-    it is an error (A78). Nothing is ``null`` (A96).
+    the JSON Schema states the rule). ``Uaniso`` must respect the site symmetry
+    exactly; otherwise it is an error, giving the symmetric values when they are
+    within 1e-6 A^2 (A78, A115). Nothing is ``null`` (A96).
     """
 
     model_config = ConfigDict(extra="forbid", json_schema_extra=_ADP_PAIRING_SCHEMA)
@@ -735,6 +745,12 @@ class Atom(CoreModel, Generic[P]):
         return self
 
 
+_OPEN_PARAMETER_TYPE = (
+    "{name} has no parameter type: subclass Phase[RefinableParameter] (no bounds) or "
+    "Phase[BoundedRefinableParameter] (bounds); a deliberately generic subclass declares "
+    "Generic[P] and is parametrized before use"
+)
+
 #: Phase fields owned by core; an engine subclass may not redeclare them (A93).
 RESERVED_PHASE_FIELDS = ("space_group", "unit_cell", "atoms")
 
@@ -749,23 +765,27 @@ class Phase(CoreModel, Generic[P]):
     ``TypeError`` when the subclass is defined.
 
     ``space_group`` is gemmi's canonical name (A105). Validation derives each
-    atom's site (multiplicity, DOF) from it (:func:`powderline.symmetry.analyze_site`),
-    rejects ambiguous positions and stated multiplicities that don't match, and
-    replaces stated coordinates with the canonical ones (keeping each refine
-    flag and bounds), so every engine receives the same exact structure. Each
-    adjustment is reported by :meth:`warnings` (A73). The unit cell must fit the
-    space group exactly (A77), and anisotropic ADPs the site symmetry (A78).
+    atom's site (multiplicity, DOF) from it (:func:`powderline.symmetry.analyze_site`)
+    and rejects ambiguous positions and stated multiplicities that don't match.
+    The unit cell must fit the space group exactly (A77).
+
+    **Validation never changes a recipe** (A115): the recipe is the record of the
+    refinement intent, so every value must already be exactly what the engines
+    use. A special position must be stated exactly (A73), an anisotropic ADP
+    exactly site-symmetric (A78), and tied bounds must follow their tie exactly
+    (A108). Otherwise it is an error that gives the exact value to write.
+    "Exactly" means to floating-point precision
+    (:data:`~powderline.symmetry.ADJUSTMENT_REPORT_TOL`), because a JSON number
+    cannot hold 1/3: ``0.3333333333333333`` is the value to write.
 
     Refine flags and bounds must agree with the symmetry ties
     (:func:`~powderline.symmetry.cell_tie_groups`,
-    :func:`~powderline.symmetry.coupling_groups`; A94, A95, A98, A106, A108):
+    :func:`~powderline.symmetry.coupling_groups`; A94, A95, A98, A106):
     the members of one tie group carry the same flag (F1); a symmetry-fixed
     parameter has flag false (F2) and no bounds (A106); different groups are
     independent (F3); with bounds, each member's bounds follow the tie's
     relation from the first member's (F4: ``member = k*rep + c`` maps
-    ``[min, max]`` to ``[k*min + c, k*max + c]``, swapped for k < 0; within the
-    family's value tolerance they are set exactly and reported). A value moved
-    by canonicalization is re-checked against its bounds (review N4). Atoms on
+    ``[min, max]`` to ``[k*min + c, k*max + c]``, swapped for k < 0). Atoms on
     the same site are independent (A104).
 
     Every problem is reported at its own location (A70): ``unit_cell``,
@@ -777,7 +797,6 @@ class Phase(CoreModel, Generic[P]):
     These checks run only once every field is valid: pydantic does not run
     model-level validators after a field error, so e.g. an unknown element is
     reported first, and the symmetry checks follow once it is fixed.
-    Validation never modifies the caller's objects; adjusted atoms are copies.
     """
 
     space_group: str = Field(description="gemmi's canonical extended Hermann-Mauguin name, e.g. "
@@ -788,7 +807,6 @@ class Phase(CoreModel, Generic[P]):
         description="Atoms keyed by unique label: a letter, then ASCII letters, digits or '_'")
 
     _sites: dict = PrivateAttr(default_factory=dict)
-    _warnings: list = PrivateAttr(default_factory=list)
 
     @classmethod
     def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
@@ -821,6 +839,24 @@ class Phase(CoreModel, Generic[P]):
                 )
         if cls.model_config.get("extra") != "forbid":
             raise TypeError(f"{cls.__name__} must keep extra='forbid' (A19)")
+        if cls.__pydantic_generic_metadata__["parameters"] and "__orig_bases__" not in cls.__dict__:
+            # ``class EnginePhase(Phase)`` forgot the parameter type. A deliberately generic
+            # subclass declares ``Generic[P]`` and is checked again when it is validated.
+            raise TypeError(_OPEN_PARAMETER_TYPE.format(name=cls.__name__))
+
+    @model_validator(mode="before")
+    @classmethod
+    def _parameter_type_chosen(cls, data: Any) -> Any:
+        """Refuse to validate without a parameter type (re/03b review A2).
+
+        Unparametrized, ``P`` would accept both parameter shapes, so one phase could
+        mix ``[value, flag]`` and ``[value, flag, min, max]``. An engine schema fixes
+        one type; this is a programming error, so it is a ``TypeError``, not a
+        validation error.
+        """
+        if cls.__pydantic_generic_metadata__["parameters"]:
+            raise TypeError(_OPEN_PARAMETER_TYPE.format(name=cls.__name__))
+        return data
 
     @field_validator("space_group")
     @classmethod
@@ -836,16 +872,9 @@ class Phase(CoreModel, Generic[P]):
             problems.append(InitErrorDetails(type="value_error", loc=loc, input=value,
                                              ctx={"error": ValueError(message)}))
 
-        def apply_tie_rules(loc: tuple, params: dict, ties: Ties, context: str, tolerance, fixed_value) -> dict:
-            errors, updates, adjusted = _tie_rules(params, ties, context, tolerance, fixed_value)
-            for name, message in errors:
+        def tie_rules(loc: tuple, params: dict, ties: Ties, context: str, fixed_value) -> None:
+            for name, message in _tie_rules(params, ties, context, fixed_value):
                 problem((*loc, name), message, params[name].model_dump())
-            for name, message in adjusted:
-                self._warnings.append(StructuredWarning(
-                    code="tied_bounds_adjusted", message=message,
-                    field_path=".".join((*loc, name)),
-                ))
-            return updates
 
         sg = self.space_group
         cell = self.unit_cell
@@ -855,23 +884,30 @@ class Phase(CoreModel, Generic[P]):
             problem(("unit_cell",), str(exc), cell.model_dump())
         else:  # flag and bound rules need a valid cell (A95, A98)
             ties = cell_tie_groups(sg)
-            updates = apply_tie_rules(("unit_cell",), {k: getattr(cell, k) for k in _CELL_FIELDS}, ties,
-                                      f"{ties.crystal_system} cell ({sg!r})", _cell_bound_tolerance,
-                                      lambda name: f"{getattr(cell, name).value:g}")
-            if updates:
-                self.unit_cell = cell.model_copy(update=updates)
-        for label, atom in list(self.atoms.items()):
+            tie_rules(("unit_cell",), {k: getattr(cell, k) for k in _CELL_FIELDS}, ties,
+                      f"{ties.crystal_system} cell ({sg!r})", lambda name: f"{getattr(cell, name).value:g}")
+        for label, atom in self.atoms.items():
             try:
                 site = analyze_site(sg, (atom.x.value, atom.y.value, atom.z.value))
             except SymmetryError as exc:
                 problem(("atoms", label), str(exc), atom.model_dump())
                 continue  # the checks below need the site
-            update: dict[str, Any] = {}
+            self._sites[label] = site
+            context = f"atom {label!r} (multiplicity {site.multiplicity} in {sg!r})"
+            ties = coupling_groups(sg, site.canonical)
+            exact_xyz = lambda name: site.exact["xyz".index(name)]  # noqa: E731
+            if site.adjusted:  # A73, A115: on a special position, but not exactly
+                off = max(abs(c - v) for c, v in zip(site.canonical, site.stated))
+                problem(("atoms", label),
+                        f"{context}: {site.stated} is {off:.2g} from a special position, not on it "
+                        f"({_ties_text(ties.xyz, exact_xyz)}); write "
+                        f"{_values_to_write(ties.xyz, dict(zip('xyz', site.stated)), exact_xyz)}",
+                        atom.model_dump())
             if atom.Multiplicity is not None and atom.Multiplicity != site.multiplicity:
                 problem(("atoms", label, "Multiplicity"),
                         f"stated Multiplicity {atom.Multiplicity}, derived {site.multiplicity} "
                         f"({sg!r}, site {site.stated})", atom.Multiplicity)
-            uaniso_ok = u_adjusted = False
+            uaniso_ok = False
             if atom.Uaniso is not None:
                 stated_u = tuple(getattr(atom.Uaniso, k).value for k in _UANISO_KEYS)
                 try:
@@ -880,54 +916,19 @@ class Phase(CoreModel, Generic[P]):
                     problem(("atoms", label, "Uaniso"), str(exc), atom.model_dump()["Uaniso"])
                 else:
                     uaniso_ok = True
-                    if u_adjusted:
-                        update["Uaniso"] = atom.Uaniso.model_copy(update={
-                            k: _with_value(getattr(atom.Uaniso, k), u) for k, u in zip(_UANISO_KEYS, symmetric_u)})
-                        self._warnings.append(StructuredWarning(
-                            code="adp_symmetry_adjusted",
-                            message=(f"atom {label!r}: Uaniso {dict(zip(_UANISO_KEYS, stated_u))} "
-                                     f"adjusted to the site-symmetric values "
-                                     f"{dict(zip(_UANISO_KEYS, symmetric_u))}"),
-                            field_path=f"atoms.{label}.Uaniso",
-                        ))
-            self._sites[label] = site
-            if site.adjusted:
-                update.update({k: _with_value(getattr(atom, k), v) for k, v in zip("xyz", site.canonical)})
-                self._warnings.append(StructuredWarning(
-                    code="special_position_adjusted",
-                    message=(f"atom {label!r}: coordinates {site.stated} are on a special position "
-                             f"(multiplicity {site.multiplicity}); using the exact values "
-                             f"{site.canonical}"),
-                    field_path=f"atoms.{label}",
-                ))
+                    if u_adjusted:  # A78, A115: within 1e-6 A^2 of symmetric, but not exactly
+                        problem(("atoms", label, "Uaniso"),
+                                f"{context}: Uaniso is not exactly site-symmetric "
+                                f"({_ties_text(ties.uij, lambda _name: 0)}); write "
+                                f"{_values_to_write(ties.uij, dict(zip(_UANISO_KEYS, stated_u)), lambda _n: 0)}",
+                                atom.model_dump()["Uaniso"])
 
-            # Flag and bound rules F1, F2, F4, A106 (A95, A98, A106, A108) on the canonical values.
-            ties = coupling_groups(sg, site.canonical)
-            context = f"atom {label!r} (multiplicity {site.multiplicity} in {sg!r})"
-            xyz = {k: update.get(k, getattr(atom, k)) for k in "xyz"}
-            update.update(apply_tie_rules(("atoms", label), xyz, ties.xyz, context,
-                                          lambda _name, _expected: SPECIAL_POSITION_TOL,
-                                          lambda name: str(site.exact["xyz".index(name)])))
+            # Flag and bound rules F1, F2, F4, A106 (A95, A98, A106).
+            tie_rules(("atoms", label), {k: getattr(atom, k) for k in "xyz"}, ties.xyz, context,
+                      lambda name: str(exact_xyz(name)))
             if uaniso_ok:
-                uaniso = update.get("Uaniso", atom.Uaniso)
-                bounds = apply_tie_rules(("atoms", label, "Uaniso"), {k: getattr(uaniso, k) for k in _UANISO_KEYS},
-                                         ties.uij, context, lambda _name, _expected: UIJ_TOL, lambda _name: "0")
-                if bounds:
-                    update["Uaniso"] = uaniso.model_copy(update=bounds)
-
-            # Review N4: a value moved by canonicalization is re-checked against its (final) bounds.
-            moved = [(("atoms", label, k), k, update.get(k, getattr(atom, k)), getattr(atom, k).value,
-                      "the exact special-position value") for k in "xyz" if site.adjusted]
-            if u_adjusted and uaniso_ok:
-                moved += [(("atoms", label, "Uaniso", k), k, getattr(update["Uaniso"], k), getattr(atom.Uaniso, k).value,
-                           "the site-symmetric value") for k in _UANISO_KEYS]
-            for loc, name, param, stated, what in moved:
-                message = _canonical_out_of_bounds(param)
-                if message:
-                    problem(loc, f"{context}: {name} = {param.value!r} ({what} of the stated {stated!r}) "
-                                 f"{message}", param.model_dump())
-            if update:
-                self.atoms[label] = atom.model_copy(update=update)
+                tie_rules(("atoms", label, "Uaniso"), {k: getattr(atom.Uaniso, k) for k in _UANISO_KEYS},
+                          ties.uij, context, lambda _name: "0")
         if problems:
             raise ValidationError.from_exception_data(type(self).__name__, problems)
         return self
@@ -935,10 +936,6 @@ class Phase(CoreModel, Generic[P]):
     def site(self, label: str):
         """The :class:`~powderline.symmetry.SiteAnalysis` of atom ``label``."""
         return self._sites[label]
-
-    def warnings(self) -> list:
-        """Structured warnings raised while validating this phase (paths relative to it)."""
-        return list(self._warnings)
 
 
 def _reserved_phase_members() -> frozenset[str]:
@@ -956,24 +953,42 @@ def _reserved_phase_members() -> frozenset[str]:
 _CELL_FIELDS = ("a", "b", "c", "alpha", "beta", "gamma")
 
 
-def _with_value(param, value: float):
-    """A copy of ``param`` with a new value; refine flag and bounds kept."""
-    return param.model_copy(update={"value": value})
+def _same(got: float, want: float) -> bool:
+    """Equal to floating-point precision (``ADJUSTMENT_REPORT_TOL``, relative above 1)."""
+    return abs(got - want) <= ADJUSTMENT_REPORT_TOL * max(1.0, abs(want))
 
 
-def _cell_bound_tolerance(name: str, expected: float) -> float:
-    """A108 for the cell: CELL_TOL relative on lengths, in degrees on angles (A77)."""
-    return CELL_TOL * abs(expected) if name in ("a", "b", "c") else CELL_TOL
+def _ties_text(ties: Ties, exact) -> str:
+    """The symmetry relations of a parameter set, e.g. ``"x = 1/3, y = 2/3"`` or ``"y = 2x"``."""
+    parts = [f"{name} = {exact(name)}" for name in ties.fixed]
+    parts += [g.relations_text() for g in ties.groups if g.relations_text()]
+    return ", ".join(parts)
+
+
+def _values_to_write(ties: Ties, stated: dict, exact) -> str:
+    """``"y = 0.2468"``: the values that make ``stated`` exactly symmetric, where they differ.
+
+    Each tie group keeps its first member's stated value (the one parameter,
+    A94) and derives the others from it; fixed parameters take their exact
+    value. ``repr`` of a float reads back as the same float, so a value can be
+    copied into a recipe as-is (``0.3333333333333333`` for 1/3).
+    """
+    target = {name: float(exact(name)) for name in ties.fixed}
+    for group in ties.groups:
+        rep = stated[group.members[0]]
+        target.update({name: float(k) * rep + float(c)
+                       for name, k, c in zip(group.members, group.coefficients, group.offsets)})
+    return ", ".join(f"{name} = {target[name]!r}" for name in stated if not _same(stated[name], target[name]))
 
 
 def _fmt_bounds(lo: Optional[float], hi: Optional[float]) -> str:
-    return "[" + ", ".join("null" if v is None else f"{v:.10g}" for v in (lo, hi)) + "]"
+    return "[" + ", ".join("null" if v is None else repr(v) for v in (lo, hi)) + "]"
 
 
 _HOW_MANY = {2: "both", 3: "all three"}
 
 
-def _tie_rules(params: dict, ties: Ties, context: str, tolerance, fixed_value):
+def _tie_rules(params: dict, ties: Ties, context: str, fixed_value) -> list[tuple[str, str]]:
     """The flag and bound rules of one parameter set (cell, a site's x/y/z, or its Uij).
 
     - **F2** (A95): a symmetry-fixed parameter has refine flag false.
@@ -981,19 +996,16 @@ def _tie_rules(params: dict, ties: Ties, context: str, tolerance, fixed_value):
     - **F1** (A95): the members of a tie group carry the same flag. The error is
       reported at every member whose flag differs from the group's first
       member, naming the whole group (review N1).
-    - **F4** (A98, A108): with bounds, each member's bounds follow the tie from
+    - **F4** (A98, A115): with bounds, each member's bounds follow the tie from
       the first member's: ``member = k*rep + c`` maps ``[min, max]`` to
       ``[k*min + c, k*max + c]``, swapped for k < 0; a null side stays null on
-      the matching side. Within ``tolerance(name, expected)`` the member's
-      bounds are replaced by the exact values (reported); beyond, an error.
+      the matching side. Anything but the exact mapped bounds (to floating-point
+      precision) is an error giving them.
     - **F3**: different groups are independent (nothing to check).
 
-    Returns ``(errors, updates, adjusted)``: ``[(name, message)]``, the bound
-    updates ``{name: param}``, and ``[(name, message)]`` for the adjustments.
+    Returns ``[(name, message)]``.
     """
     errors: list[tuple[str, str]] = []
-    adjusted: list[tuple[str, str]] = []
-    updates: dict[str, Any] = {}
     for name in ties.fixed:
         param = params[name]
         if param.refine_flag:
@@ -1021,39 +1033,13 @@ def _tie_rules(params: dict, ties: Ties, context: str, tolerance, fixed_value):
             lo, hi = (None if v is None else k * v + c for v in (rep.min, rep.max))
             if k < 0:
                 lo, hi = hi, lo
-            ok, exact = True, True
-            for got, want in ((param.min, lo), (param.max, hi)):
-                if (got is None) != (want is None):
-                    ok = False
-                elif got is not None:
-                    ok = ok and abs(got - want) <= tolerance(name, want)
-                    exact = exact and abs(got - want) <= 1e-12
-            if not ok:
+            if not all((got is None and want is None) or (got is not None and want is not None and _same(got, want))
+                       for got, want in ((param.min, lo), (param.max, hi))):
                 errors.append((name, f"{context}: the bounds of {name} must follow "
                                      f"{group.relation_text(name)} from the bounds of {group.members[0]} "
-                                     f"{_fmt_bounds(rep.min, rep.max)}: expected {_fmt_bounds(lo, hi)}, "
-                                     f"got {_fmt_bounds(param.min, param.max)}"))
-            elif not exact:
-                updates[name] = param.model_copy(update={"min": lo, "max": hi})
-                adjusted.append((name, f"{context}: the bounds of {name} {_fmt_bounds(param.min, param.max)} "
-                                       f"were set to {_fmt_bounds(lo, hi)}, exactly "
-                                       f"{group.relation_text(name)} from the bounds of {group.members[0]}"))
-    return errors, updates, adjusted
-
-
-def _canonical_out_of_bounds(param) -> Optional[str]:
-    """Review N4: ``"is below min (...)"`` etc. when a moved value left its bounds, else ``None``.
-
-    Floating-point noise (1e-12) is not a move: canonicalization keeps a value
-    within that of the stated one as stated.
-    """
-    if not isinstance(param, BoundedRefinableParameter):
-        return None
-    if param.min is not None and param.value < param.min - 1e-12:
-        return f"is below min ({param.min!r})"
-    if param.max is not None and param.value > param.max + 1e-12:
-        return f"is above max ({param.max!r})"
-    return None
+                                     f"{_fmt_bounds(rep.min, rep.max)}: write {_fmt_bounds(lo, hi)}, "
+                                     f"not {_fmt_bounds(param.min, param.max)}"))
+    return errors
 
 
 # --- top-level recipe frame (A1, A18, A21, A40) ------------------------------
