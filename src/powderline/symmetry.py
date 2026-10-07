@@ -158,20 +158,23 @@ def _expanded_ops(sg: gemmi.SpaceGroup) -> list[tuple[np.ndarray, np.ndarray]]:
 
 
 def _monoclinic_unique_axis(ops: list[tuple[np.ndarray, np.ndarray]]) -> str:
-    """Unique axis of a monoclinic group from its proper 2-fold direction.
+    """Unique axis of a monoclinic group: its 2-fold axis or its mirror/glide normal.
 
-    The single proper 2-fold (det +1, trace -1) fixes the unique axis; its
-    invariant direction maps to the dominant cell axis a/b/c.
+    Every operation of a monoclinic point group other than 1 and -1 is a proper
+    2-fold (trace -1) or a mirror (trace +1). For either, ``det(R) R`` is a proper
+    2-fold about the unique axis, whose invariant direction maps to the dominant
+    cell axis a/b/c. Mirror-only groups (Pm, Pc, Cm, Cc) have no proper 2-fold,
+    so the mirror normal is needed (A102).
     """
     for R, _t in ops:
-        if abs(np.linalg.det(R) - 1.0) < _MAT_TOL and abs(np.trace(R) + 1.0) < _MAT_TOL:
-            evals, evecs = np.linalg.eig(R)
+        if abs(abs(np.trace(R)) - 1.0) < _MAT_TOL:
+            evals, evecs = np.linalg.eig(np.sign(np.linalg.det(R)) * R)
             for i in range(3):
                 if abs(evals[i].real - 1.0) < _MAT_TOL and abs(evals[i].imag) < _MAT_TOL:
                     direction = np.abs(evecs[:, i].real)
                     return _LENGTHS[int(np.argmax(direction))]
     raise SymmetryError(
-        "could not determine the monoclinic unique axis (no proper 2-fold found)"
+        "could not determine the monoclinic unique axis (no 2-fold axis or mirror found)"
     )
 
 
