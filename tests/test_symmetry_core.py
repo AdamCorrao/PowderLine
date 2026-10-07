@@ -250,3 +250,176 @@ def test_is_group_detects_closure():
 def test_ambiguous_band_message_names_the_special_position():
     with pytest.raises(SymmetryError, match=r"from the special position \(1/3, 2/3, 1/4\) \(multiplicity 2\)"):
         analyze_site("P 63/m m c", (0.3333, 0.6667, 0.25))
+
+
+# --- tie groups: coupling_groups, cell_tie_groups (re/03b; A94, A95, A98, A102) ---
+
+import gemmi  # noqa: E402
+import numpy as np  # noqa: E402
+
+from powderline import symmetry as sym  # noqa: E402
+from powderline.symmetry import cell_constraints, cell_tie_groups, coupling_groups  # noqa: E402
+from symmetry_sites import distinct_special_sites  # noqa: E402
+
+_UIJ = ("U11", "U22", "U33", "U12", "U13", "U23")
+
+
+def _ties(ties):
+    """Ties -> ({members: (coefficients, offsets)}, fixed), with exact Fractions."""
+    return {g.members: (g.coefficients, g.offsets) for g in ties.groups}, ties.fixed
+
+
+def test_coupling_groups_are_one_dof_affine_relations_in_every_setting():
+    """All 564 gemmi settings (incl. origin 1 and ':R'), every distinct special site on the
+    1/24 grid: the fixed sets match analyze_site; moving the site along any coordinate group's
+    relation keeps it fixed by the whole stabilizer; a Uij tensor built along any Uij group's
+    relation is invariant under it. Proves each group is one DOF with the right relation."""
+    settings = sites = groups = 0
+    for sg in gemmi.spacegroup_table():
+        name = sg.xhm()
+        ops = sym._expanded_ops(sg)
+        settings += 1
+        for point in distinct_special_sites(sg):
+            x = np.array(point) / 24
+            stab = [(R, t) for R, t in ops if np.all(np.abs(sym._wrap_symmetric(R @ x + t - x)) < 1e-9)]
+            site, ties = analyze_site(name, x), coupling_groups(name, x)
+            sites += 1
+            assert set(ties.xyz.fixed) == {a for a, c in zip("xyz", site.axes) if c == "FIXED"}
+            assert set(ties.uij.fixed) == {u for u, c in zip(_UIJ, site.adp) if c == "FIXED"}
+            for g in ties.xyz.groups:
+                groups += 1
+                moved = np.array(site.canonical)
+                rep = moved["xyz".index(g.members[0])] + 0.0123
+                for member, k, c in zip(g.members, g.coefficients, g.offsets):
+                    moved["xyz".index(member)] = float(k) * rep + float(c)
+                worst = max(np.max(np.abs(sym._wrap_symmetric(R @ moved + t - moved))) for R, t in stab)
+                assert worst < 1e-12, (name, point, g)
+            for g in ties.uij.groups:
+                assert set(g.offsets) == {0}
+                u = np.zeros(6)
+                for member, k in zip(g.members, g.coefficients):
+                    u[_UIJ.index(member)] = float(k) * 0.01
+                tensor = sym._sym_from_vec(u)
+                assert max(np.max(np.abs(R @ tensor @ R.T - tensor)) for R, _t in stab) < 1e-12, (name, point, g)
+    assert (settings, sites, groups) == (564, 3451, 2792)
+
+
+@pytest.mark.parametrize("space_group, xyz, expected", [
+    # review B1: affine ties; the offset follows the stated lattice translate
+    ("P -4 21 m", (0.1, 0.6, 0.3), {("x", "y"): ((1, 1), (0, Fraction(1, 2))), ("z",): ((1,), (0,))}),
+    ("P -4 21 m", (0.1, 0.4, 0.3), {("x", "y"): ((1, -1), (0, Fraction(1, 2))), ("z",): ((1,), (0,))}),
+    ("P -4 21 m", (0.1, -0.4, 0.3), {("x", "y"): ((1, 1), (0, Fraction(-1, 2))), ("z",): ((1,), (0,))}),
+    ("P 42/m n m", (0.3, 0.7, 0.0), {("x", "y"): ((1, -1), (0, 1))}),
+    ("P 63/m m c", (1 / 6, 1 / 3, 0.25), {("x", "y"): ((1, 2), (0, 0))}),
+    ("R -3 m:H", (0.1, -0.1, 0.3), {("x", "y"): ((1, -1), (0, 0)), ("z",): ((1,), (0,))}),
+    ("P m -3 m", (0.5, 0.5, 0.2021), {("z",): ((1,), (0,))}),
+    ("R -3 m:R", (0.1, 0.1, 0.1), {("x", "y", "z"): ((1, 1, 1), (0, 0, 0))}),
+])
+def test_coupling_groups_coordinate_relations(space_group, xyz, expected):
+    groups, _fixed = _ties(coupling_groups(space_group, xyz).xyz)
+    assert groups == expected
+
+
+@pytest.mark.parametrize("space_group, xyz, expected_groups, expected_fixed", [
+    # several coupled Uij groups at one site; factor-2 and negative relations
+    ("P 63/m m c", (1 / 6, 1 / 3, 0.25),
+     {("U11",): ((1,), (0,)), ("U22", "U12"): ((1, Fraction(1, 2)), (0, 0)), ("U33",): ((1,), (0,))},
+     ("U13", "U23")),
+    ("P 6/m m m", (1 / 3, 2 / 3, 0.0),
+     {("U11", "U22", "U12"): ((1, 1, Fraction(1, 2)), (0, 0, 0)), ("U33",): ((1,), (0,))}, ("U13", "U23")),
+    ("P -4 21 m", (0.1, 0.4, 0.3),
+     {("U11", "U22"): ((1, 1), (0, 0)), ("U33",): ((1,), (0,)), ("U12",): ((1,), (0,)),
+      ("U13", "U23"): ((1, -1), (0, 0))}, ()),
+    ("P m -3 m", (0.0, 0.0, 0.0), {("U11", "U22", "U33"): ((1, 1, 1), (0, 0, 0))}, ("U12", "U13", "U23")),
+])
+def test_coupling_groups_uij_relations(space_group, xyz, expected_groups, expected_fixed):
+    assert _ties(coupling_groups(space_group, xyz).uij) == (expected_groups, expected_fixed)
+
+
+@pytest.mark.parametrize("space_group, xyz, text", [
+    ("P -4 21 m", (0.1, 0.6, 0.3), "y = x + 1/2"),
+    ("P -4 21 m", (0.1, 0.4, 0.3), "y = -x + 1/2"),
+    ("P 42/m n m", (0.3, 0.7, 0.0), "y = -x + 1"),
+    ("P 63/m m c", (1 / 6, 1 / 3, 0.25), "y = 2x"),
+    ("R -3 m:R", (0.1, 0.1, 0.1), ""),
+])
+def test_tie_group_relations_text(space_group, xyz, text):
+    assert coupling_groups(space_group, xyz).xyz.groups[0].relations_text() == text
+
+
+def test_tie_group_relations_text_uij():
+    ties = coupling_groups("P 63/m m c", (1 / 6, 1 / 3, 0.25)).uij
+    assert ties.group_of("U12").relations_text() == "U12 = U22/2"
+    assert coupling_groups("P -4 21 m", (0.1, 0.4, 0.3)).uij.group_of("U23").relations_text() == "U23 = -U13"
+    assert ties.group_of("U13") is None
+
+
+def test_coupling_groups_ambiguous_position_raises():
+    with pytest.raises(SymmetryError, match="without being on it"):
+        coupling_groups("P 63/m m c", (0.3333, 0.6667, 0.25))
+
+
+_ALL = ("a", "b", "c", "alpha", "beta", "gamma")
+
+
+@pytest.mark.parametrize("space_group, groups, fixed, system, axis", [
+    ("F m -3 m", [("a", "b", "c")], ("alpha", "beta", "gamma"), "cubic", None),
+    ("I 41/a m d:2", [("a", "b"), ("c",)], ("alpha", "beta", "gamma"), "tetragonal", None),
+    ("P 63/m m c", [("a", "b"), ("c",)], ("alpha", "beta", "gamma"), "hexagonal", None),
+    ("R -3 m:H", [("a", "b"), ("c",)], ("alpha", "beta", "gamma"), "trigonal", None),
+    ("R -3 m:R", [("a", "b", "c"), ("alpha", "beta", "gamma")], (), "trigonal", None),
+    ("R 3:R", [("a", "b", "c"), ("alpha", "beta", "gamma")], (), "trigonal", None),
+    ("P m m m", [("a",), ("b",), ("c",)], ("alpha", "beta", "gamma"), "orthorhombic", None),
+    ("C 1 2/m 1", [("a",), ("b",), ("c",), ("beta",)], ("alpha", "gamma"), "monoclinic", "b"),
+    ("P 1 c 1", [("a",), ("b",), ("c",), ("beta",)], ("alpha", "gamma"), "monoclinic", "b"),
+    ("C c 1 1", [("a",), ("b",), ("c",), ("alpha",)], ("beta", "gamma"), "monoclinic", "a"),
+    ("P 1 1 m", [("a",), ("b",), ("c",), ("gamma",)], ("alpha", "beta"), "monoclinic", "c"),
+    ("P -1", [("a",), ("b",), ("c",), ("alpha",), ("beta",), ("gamma",)], (), "triclinic", None),
+])
+def test_cell_tie_groups(space_group, groups, fixed, system, axis):
+    ties = cell_tie_groups(space_group)
+    assert [g.members for g in ties.groups] == groups
+    assert ties.fixed == fixed
+    assert (ties.crystal_system, ties.unique_axis) == (system, axis)
+    assert all(set(g.coefficients) == {1} and set(g.offsets) == {0} for g in ties.groups)
+
+
+def test_cell_tie_groups_every_setting_agree_with_the_metric():
+    """Every gemmi setting: each name is in one group or fixed; changing a whole group together
+    keeps a symmetric cell symmetric, changing one member alone (or a fixed angle) breaks it;
+    off ':R', the groups agree with cell_constraints."""
+    for sg in gemmi.spacegroup_table():
+        name = sg.xhm()
+        ties = cell_tie_groups(name)
+        names = [m for g in ties.groups for m in g.members] + list(ties.fixed)
+        assert sorted(names) == sorted(_ALL), name
+        rots = [R for R, _t in sym._expanded_ops(sg)]
+        g0 = sym._metric((5.1, 6.2, 7.3, 81.0, 86.0, 97.0))
+        cell = dict(zip(_ALL, sym._cell_from_metric(sum(R.T @ g0 @ R for R in rots) / len(rots))))
+        check_cell(name, tuple(cell.values()))
+        for group in ties.groups:
+            together = {k: v + (0.01 if k in group.members else 0.0) for k, v in cell.items()}
+            check_cell(name, tuple(together.values()))
+            if len(group.members) > 1:
+                alone = {k: v + (0.01 if k == group.members[-1] else 0.0) for k, v in cell.items()}
+                with pytest.raises(SymmetryError, match="inconsistent"):
+                    check_cell(name, tuple(alone.values()))
+        for angle in ties.fixed:
+            with pytest.raises(SymmetryError, match="inconsistent"):
+                check_cell(name, tuple(v + (0.01 if k == angle else 0.0) for k, v in cell.items()))
+        if sg.ext != "R":
+            rules = cell_constraints(name)
+            assert [g.members for g in ties.groups if g.members[0] in "abc"] == list(rules.length_groups)
+            assert (ties.fixed, ties.unique_axis) == (rules.fixed_angles, rules.unique_axis)
+
+
+def test_cell_constraints_keeps_its_rhombohedral_refusal():
+    """Deliberate change #2 stands: legacy callers rely on cell_constraints refusing ':R'."""
+    with pytest.raises(SymmetryError, match="rhombohedral ':R' setting are not implemented"):
+        cell_constraints("R -3 m:R")
+    assert [g.members for g in cell_tie_groups("R -3 m:R").groups] == [("a", "b", "c"), ("alpha", "beta", "gamma")]
+
+
+def test_cell_tie_groups_require_an_explicit_setting():
+    with pytest.raises(SymmetryError, match="rhombohedral; specify the setting"):
+        cell_tie_groups("R -3 m")

@@ -13,6 +13,12 @@ Pure, engine-free capabilities:
   A73): multiplicity + DOF from the space group, the ambiguous-band error, and
   the canonical (exact) special-position coordinates every gateway sends to its
   engine. Policy and evidence: devkit ``tasks/re03-symmetry-tolerance.md``.
+* :func:`canonical_space_group` -- the core schema's space-group rule: gemmi's
+  canonical name only (A105).
+* :func:`cell_tie_groups` / :func:`coupling_groups` -- which cell, coordinate
+  and Uij parameters are one parameter by symmetry, with their exact relation
+  (affine for coordinates), and which are fixed: the basis of the phase
+  block's flag and bound rules (A94, A95, A98).
 
 Space-group operations come from gemmi; the stabiliser / projector math is our
 own (~small, spec in plan §5). ``gemmi`` is an approved runtime dependency (D3).
@@ -641,3 +647,188 @@ def check_uij(space_group: str, xyz, uij) -> tuple[tuple[float, ...], bool]:
         return tuple(float(v) for v in stated), False
     return tuple(float(v) for v in symmetric), True
 
+
+# --- (f) tie groups: cell (A95) and site coupling groups (A94, A98, A102) ---
+
+
+@dataclass(frozen=True)
+class TieGroup:
+    """Parameters that are one parameter by symmetry: ``member = k * rep + c``.
+
+    The first member is the representative (``k = 1``, ``c = 0``). ``k`` and
+    ``c`` are exact. Offsets are nonzero only for coordinates (affine ties such
+    as ``(x, x+1/2, z)``); they come from the canonical position, so they
+    reflect the lattice translate that was stated (A98). Cell ties are equalities.
+
+    Attributes:
+        members: parameter names, in canonical order (a..gamma, x/y/z, U11..U23).
+        coefficients: ``k`` per member.
+        offsets: ``c`` per member.
+    """
+
+    members: tuple[str, ...]
+    coefficients: tuple[Fraction, ...]
+    offsets: tuple[Fraction, ...]
+
+    def relation(self, member: str) -> tuple[Fraction, Fraction]:
+        """``(k, c)`` of ``member = k * rep + c``."""
+        i = self.members.index(member)
+        return self.coefficients[i], self.offsets[i]
+
+    def relations_text(self) -> str:
+        """The non-trivial relations, e.g. ``"y = x + 1/2"`` or ``"U12 = U22/2"``; ``""`` for equal ties."""
+        rep = self.members[0]
+        parts = [f"{m} = {_affine_text(k, rep, c)}" for m, k, c in
+                 zip(self.members[1:], self.coefficients[1:], self.offsets[1:]) if (k, c) != (1, 0)]
+        return ", ".join(parts)
+
+
+@dataclass(frozen=True)
+class Ties:
+    """Symmetry ties of one parameter set: tie groups of the free parameters, and the fixed ones.
+
+    Every parameter is in exactly one group or in ``fixed``. A singleton group is
+    an independent parameter.
+    """
+
+    groups: tuple[TieGroup, ...]
+    fixed: tuple[str, ...]
+
+    def group_of(self, name: str) -> TieGroup | None:
+        return next((g for g in self.groups if name in g.members), None)
+
+
+@dataclass(frozen=True)
+class CellTies(Ties):
+    """:class:`Ties` of the unit cell, with the crystal system and monoclinic unique axis."""
+
+    crystal_system: str = ""
+    unique_axis: str | None = None
+
+
+@dataclass(frozen=True)
+class SiteTies:
+    """Coordinate and Uij :class:`Ties` of one atomic site (U11, U22, U33, U12, U13, U23)."""
+
+    xyz: Ties
+    uij: Ties
+
+
+def _affine_text(k: Fraction, rep: str, c: Fraction) -> str:
+    sign = "-" if k < 0 else ""
+    k = abs(k)
+    term = f"{sign}{k.numerator if k.numerator != 1 else ''}{rep}" + (f"/{k.denominator}" if k.denominator != 1 else "")
+    if c == 0:
+        return term
+    return f"{term} {'+' if c > 0 else '-'} {abs(c)}"
+
+
+def _equal_group(names) -> TieGroup:
+    n = len(names)
+    return TieGroup(tuple(names), (Fraction(1),) * n, (Fraction(0),) * n)
+
+
+def cell_tie_groups(space_group: str) -> CellTies:
+    """Cell tie groups for ``space_group``: equal lengths, tied free angles, fixed angles.
+
+    Every free group is one parameter (A94): cubic ``{a, b, c}``; tetragonal and
+    hexagonal axes ``{a, b}``, ``{c}``; rhombohedral axes (``:R``) ``{a, b, c}`` and
+    ``{alpha, beta, gamma}``; monoclinic: each length plus the unique-axis angle
+    (A102); triclinic: all six independent. Unlike :func:`cell_constraints`
+    (kept for the legacy callers, which rely on its ``:R`` refusal), this covers
+    ``:R``. The setting must be explicit (A62).
+    """
+    sg = resolve_space_group(space_group, explicit_setting=True)
+    system = sg.crystal_system_str()
+    lengths = [_equal_group((n,)) for n in _LENGTHS]
+    if system == "cubic":
+        return CellTies((_equal_group(_LENGTHS),), _ANGLES, system)
+    if system in ("tetragonal", "hexagonal", "trigonal"):
+        if sg.ext == "R":
+            return CellTies((_equal_group(_LENGTHS), _equal_group(_ANGLES)), (), system)
+        return CellTies((_equal_group(("a", "b")), _equal_group(("c",))), _ANGLES, system)
+    if system == "orthorhombic":
+        return CellTies(tuple(lengths), _ANGLES, system)
+    if system == "monoclinic":
+        unique = _monoclinic_unique_axis(_expanded_ops(sg))
+        free = {"a": "alpha", "b": "beta", "c": "gamma"}[unique]
+        return CellTies((*lengths, _equal_group((free,))), tuple(a for a in _ANGLES if a != free),
+                        system, unique)
+    if system == "triclinic":
+        return CellTies((*lengths, *(_equal_group((a,)) for a in _ANGLES)), (), system)
+    raise SymmetryError(  # pragma: no cover - gemmi has no other crystal system
+        f"unsupported crystal system {system!r} for space group {space_group!r}"
+    )
+
+
+def _snap(value: float, max_denominator: int, what: str) -> Fraction:
+    frac = Fraction(value).limit_denominator(max_denominator)
+    if abs(float(frac) - value) > 1e-9:  # pragma: no cover - internal invariant
+        raise SymmetryError(f"{what} {value!r} is not a simple fraction (internal error)")
+    return frac
+
+
+def _tie_groups(projector: np.ndarray, names, values=None) -> Ties:
+    """Tie groups = connected components of the orthogonal projector's nonzero entries.
+
+    Each component must have one degree of freedom (rank 1). Its relation comes
+    from the component's basis vector; with ``values`` (the canonical
+    coordinates) the affine offsets ``c = member - k * rep`` are added.
+    """
+    n = len(names)
+    fixed = [np.linalg.norm(projector[j, :]) < _MAT_TOL for j in range(n)]
+    parent = list(range(n))
+
+    def find(i):
+        while parent[i] != i:
+            i = parent[i]
+        return i
+
+    for j in range(n):
+        for k in range(j + 1, n):
+            if not fixed[j] and not fixed[k] and abs(projector[j, k]) > _MAT_TOL:
+                parent[find(k)] = find(j)
+    components: dict[int, list[int]] = {}
+    for j in range(n):
+        if not fixed[j]:
+            components.setdefault(find(j), []).append(j)
+    groups = []
+    for members in sorted(components.values()):
+        block = projector[np.ix_(members, members)]
+        if abs(np.trace(block) - 1.0) > 1e-6:  # pragma: no cover - checked exhaustively in the tests
+            raise SymmetryError(f"tie group {[names[j] for j in members]} has "
+                                f"{np.trace(block):.3g} degrees of freedom (internal error)")
+        basis = block[:, int(np.argmax(np.diag(block)))]
+        ks = tuple(_snap(float(b / basis[0]), 12, "tie coefficient") for b in basis)
+        if values is None:
+            cs = (Fraction(0),) * len(members)
+        else:
+            rep = values[members[0]]
+            cs = tuple(_snap(float(values[j] - float(k) * rep), _MAX_DENOMINATOR, "tie offset")
+                       for j, k in zip(members, ks))
+        groups.append(TieGroup(tuple(names[j] for j in members), ks, cs))
+    return Ties(tuple(groups), tuple(names[j] for j in range(n) if fixed[j]))
+
+
+def coupling_groups(space_group: str, xyz) -> SiteTies:
+    """Coordinate and Uij tie groups of the site at ``xyz`` (A94, A95, A98).
+
+    The site is analyzed first (:func:`analyze_site`; ambiguous positions raise),
+    and the groups are taken at its canonical position. Non-fixed components are
+    grouped by connectivity of the **orthogonal** projector onto the allowed
+    subspace (the oblique Reynolds average gives wrong Uij groups on hexagonal
+    axes). Every group has one degree of freedom: one engine parameter.
+    Coordinate relations are affine (``y = x + 1/2`` at P-42_1m 4e), with the
+    offset taken from the canonical values; Uij relations are linear
+    (``U12 = U22/2``, ``U13 = -U23``). Checked against GSAS-II's
+    ``GetCSxinel``/``GetCSuinel`` over every distinct special site on the 1/24
+    grid of every setting GSAS-II reads (``tests/test_symmetry_characterization.py``).
+    """
+    site = analyze_site(space_group, xyz)
+    x = np.asarray(site.canonical)
+    ops = _expanded_ops(resolve_space_group(space_group, explicit_setting=True))
+    stab = [R for R, t in ops if np.max(np.abs(_wrap_symmetric(R @ x + t - x))) < SPECIAL_POSITION_TOL]
+    return SiteTies(
+        xyz=_tie_groups(_orthogonal_projector(sum(stab) / len(stab)), _AXIS_LETTERS, x),
+        uij=_tie_groups(_orthogonal_projector(_adp_projector(stab)), _UIJ_NAMES),
+    )
