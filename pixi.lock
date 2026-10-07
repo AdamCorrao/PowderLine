@@ -17362,7 +17362,7 @@ packages:
   name: powderline
   requires_dist:
   - fastapi>=0.115
-  - gemmi>=0.7,<0.8
+  - gemmi==0.7.5
   - h5py>=3.12
   - httpx>=0.28
   - numpy>=2.0
