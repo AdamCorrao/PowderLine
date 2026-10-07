@@ -22,6 +22,14 @@ version numbers (`powderline.support_matrix()` lists the declarations).
 Defined in `src/powderline/schema_core.py`. Not used by any gateway yet: the
 engine schemas adopt it in re/04–06.
 
+> **Pre-release revision (re/03b, not a new version).** Before its first
+> release, core 1.0.0 replaced its structure-only phase model (`PhaseStructure`
+> with plain values, plus `null`-valued "structure" parameters) with the
+> **phase block** described below: one block per phase, every structural
+> quantity a refinable parameter, flags and bounds checked against the symmetry,
+> and `space_group` in gemmi's canonical spelling. No recipe was ever written
+> against the earlier draft.
+
 - **Recipe frame** (`CoreRecipe`): `schema_name` (`"<engine>.<workflow>"`),
   `core_schema_version`, `engine_schema_version`, `metadata`, `payload` (typed
   by the engine schema). Unknown keys are errors at every level.
@@ -29,10 +37,10 @@ engine schemas adopt it in re/04–06.
   at most **1 MiB** as UTF-8 JSON. The cap is the constant
   `schema_core.METADATA_MAX_BYTES`; change it there and record the change here.
 - **Parameters**: `[value, refine_flag]` (no bounds) or
-  `[value, refine_flag, min, max]` (bounds the engine honors). A bounded list
-  where bounds aren't supported is an error. `refine_flag` is a JSON boolean.
-  `value` may be `null` (= start from the phase structure's value) only for
-  quantities that mirror a structure value.
+  `[value, refine_flag, min, max]` (bounds the engine honors; `min`/`max` may
+  be `null` = open). A bounded list where bounds aren't supported is an error.
+  `value` is always a number and `refine_flag` a JSON boolean; neither is ever
+  `null`.
 - **Data and ranges**: `xrd_data` (2θ in degrees, weights 1/σ², validated as in
   0.26.0); `fit_range` `[min, max]`, with `max > min`, inside the data's 2θ range.
 - **Background**: Chebyshev (`num_coefficients`, `coefficients`, `refine_flag`).
@@ -43,15 +51,30 @@ engine schemas adopt it in re/04–06.
   take a whole number (`4` or `4.0`), not `4.5`.
 - **Accepted core versions** (this release): `==1.0.0`.
 
-- **Phase structure** (`PhaseStructure`): `phase_name`, `space_group`,
-  `unit_cell`, `atoms` (keyed by label). Structural interpretation is checked
-  once, in core, so every engine gets the same structure. All structural
-  problems are reported together, each at its own field (`unit_cell`,
-  `atoms.<label>`, `atoms.<label>.Multiplicity`, `atoms.<label>.Uaniso`); they
-  are checked once the individual fields are valid:
-  - **Space group**: a Hermann–Mauguin symbol. Two-origin groups need an explicit
-    `:1`/`:2` and rhombohedral groups `:H`/`:R` (e.g. `"F d -3 m:2"`,
-    `"R -3 m:H"`). Individual engines may accept fewer settings.
+- **Phase block** (`Phase`): one block per phase, keyed by the phase name in
+  the engine payload's `phases` (no `phase_name` field). Core owns
+  `space_group`, `unit_cell` and `atoms`; each engine schema adds its own phase
+  fields next to them (e.g. gsasii `scale`, `peak_broadening`) and may not
+  redefine core's. Every structural quantity is a parameter (`[value, flag]`,
+  or `[value, flag, min, max]` in engines with bounds): cell `a`–`gamma`; atom
+  `x`, `y`, `z`, `occupancy`, `Uiso` or `U11`…`U23`. `element`, `ADP`,
+  `Multiplicity` and `space_group` are plain values. Nothing is `null` and
+  nothing has a default: `occupancy` must be stated; an optional field
+  (`Multiplicity`, the unused one of `Uiso`/`Uaniso`) is left out, not `null`.
+  Structural interpretation is checked once, in core, so every engine gets the
+  same structure. All problems are reported together, each at its own field
+  (`unit_cell`, `atoms.<label>` for the position, `atoms.<label>.Multiplicity`,
+  `atoms.<label>.Uaniso`, or the parameter a flag/bound rule concerns, e.g.
+  `unit_cell.b`, `atoms.<label>.y`, `atoms.<label>.Uaniso.U12`); they are checked
+  once the individual fields are valid:
+  - **Space group**: gemmi's canonical extended Hermann–Mauguin name, exactly:
+    `"P m -3 m"`, `"C 1 2/m 1"`, `"P 1 21/c 1"`, `"R -3 m:H"`, `"F d -3 m:2"`.
+    Every setting has exactly one such name, and it states the setting
+    (two-origin groups `:1`/`:2`, rhombohedral groups `:H`/`:R`, the monoclinic
+    unique axis). Any other spelling (`"Pm-3m"`, `"C2/m"`, `"p m -3 m"`) is an
+    error whose message gives the canonical name; a symbol without a setting
+    (`"R -3 m"`, `"F d -3 m"`) lists both choices. Each engine translates the
+    name to its own convention, and may accept fewer settings.
   - **Unit cell**: `a`, `b`, `c` (Å, > 0), `alpha`, `beta`, `gamma` (degrees,
     0–180). No `volume` (every engine derives it). The cell must fit the
     space group **exactly** (to floating-point precision): e.g. cubic
@@ -68,15 +91,34 @@ engine schemas adopt it in re/04–06.
     2e-3 from a special position is an **error** (`0.33`, `0.3333`, `0.33333`):
     state it to ≥ 6 decimals or move it off. Accepted special positions are
     replaced by their **exact** coordinates (fixed coordinates become the exact
-    fraction; coupled ones satisfy their relation, by the smallest change). Each
-    adjustment is reported as a structured warning, and these exact values are
-    what every engine receives.
+    fraction; coupled ones satisfy their relation, by the smallest change); the
+    refine flag and bounds are kept. Each adjustment is reported as a structured
+    warning, and these exact values are what every engine receives.
   - **Multiplicity**: optional; when stated it must equal the multiplicity
     derived from the space group.
   - **ADPs**: `ADP` is `"Uiso"` (with `Uiso`, Å²) or `"Uaniso"` (with all of
     `U11 U22 U33 U12 U13 U23`, Å²). Anisotropic ADPs must respect the site
     symmetry: within 1e-6 Å² they are set to the symmetric values and reported;
     beyond that it is an error.
+  - **Refinement intent follows the symmetry.** Parameters tied by symmetry
+    are **one** parameter, and every member is stated: cubic `a, b, c`;
+    tetragonal/hexagonal `a, b`; rhombohedral axes (`:R`) `a, b, c` and
+    `alpha, beta, gamma`; coordinates such as `(x, 2x, 1/4)` or
+    `(x, x + 1/2, z)`; Uij such as `U11 = U22`, `U12 = U22/2`, `U13 = -U23`.
+    - Tied members carry the **same refine flag**; the error is reported at
+      every member whose flag differs from the first member's.
+    - A parameter **fixed** by symmetry (a cubic angle, `x` of an atom at the
+      origin, `U12` on a mirror site) has refine flag `false` and, where the
+      engine has bounds, no bounds (`null`, `null`).
+    - Different groups are independent (orthorhombic `a` refined, `b` fixed).
+    - **Bounds** (engines with bounds) follow the tie like the values:
+      `y = k·x + c` maps x's `[min, max]` to `[k·min + c, k·max + c]`
+      (swapped for negative k; an open side stays open), e.g. `(x, x + 1/2, z)`
+      with x in `[0, 0.2]` needs y in `[0.5, 0.7]`. Bounds within the value
+      tolerance (coordinates 5e-6, Uij 1e-6 Å², cell 1e-9 relative/degrees)
+      are set to the exact values and reported; beyond it is an error. A value
+      moved to its exact special position is re-checked against its bounds.
+    - Atoms at the same position are independent: their flags are never tied.
 
 ## gsasii engine schema
 
