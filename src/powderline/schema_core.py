@@ -48,7 +48,18 @@ from pydantic.json_schema import DEFAULT_REF_TEMPLATE, GenerateJsonSchema, JsonS
 from pydantic_core import InitErrorDetails, PydanticCustomError
 
 from powderline.exceptions import StructuredWarning, SymmetryError
-from powderline.symmetry import analyze_site, canonical_space_group, check_cell, check_uij
+from powderline.symmetry import (
+    CELL_TOL,
+    SPECIAL_POSITION_TOL,
+    UIJ_TOL,
+    Ties,
+    analyze_site,
+    canonical_space_group,
+    cell_tie_groups,
+    check_cell,
+    check_uij,
+    coupling_groups,
+)
 
 # --- versions (A40, A65) ---------------------------------------------------
 
@@ -648,9 +659,24 @@ class Phase(CoreModel, Generic[P]):
     adjustment is reported by :meth:`warnings` (A73). The unit cell must fit the
     space group exactly (A77), and anisotropic ADPs the site symmetry (A78).
 
+    Refine flags and bounds must agree with the symmetry ties
+    (:func:`~powderline.symmetry.cell_tie_groups`,
+    :func:`~powderline.symmetry.coupling_groups`; A94, A95, A98, A106, A108):
+    the members of one tie group carry the same flag (F1); a symmetry-fixed
+    parameter has flag false (F2) and no bounds (A106); different groups are
+    independent (F3); with bounds, each member's bounds follow the tie's
+    relation from the first member's (F4: ``member = k*rep + c`` maps
+    ``[min, max]`` to ``[k*min + c, k*max + c]``, swapped for k < 0; within the
+    family's value tolerance they are set exactly and reported). A value moved
+    by canonicalization is re-checked against its bounds (review N4). Atoms on
+    the same site are independent (A104).
+
     Every problem is reported at its own location (A70): ``unit_cell``,
     ``atoms.<label>`` (the position), ``atoms.<label>.Multiplicity``,
-    ``atoms.<label>.Uaniso``; all of them together, in one ``ValidationError``.
+    ``atoms.<label>.Uaniso``; a flag or bound rule at the parameter
+    (``unit_cell.b``, ``atoms.<label>.y``, ``atoms.<label>.Uaniso.U12``), for F1
+    at every member whose flag differs from the group's first member (review
+    N1); all of them together, in one ``ValidationError``.
     These checks run only once every field is valid: pydantic does not run
     model-level validators after a field error, so e.g. an unknown element is
     reported first, and the symmetry checks follow once it is fixed.
@@ -694,14 +720,33 @@ class Phase(CoreModel, Generic[P]):
             problems.append(InitErrorDetails(type="value_error", loc=loc, input=value,
                                              ctx={"error": ValueError(message)}))
 
+        def apply_tie_rules(loc: tuple, params: dict, ties: Ties, context: str, tolerance, fixed_value) -> dict:
+            errors, updates, adjusted = _tie_rules(params, ties, context, tolerance, fixed_value)
+            for name, message in errors:
+                problem((*loc, name), message, params[name].model_dump())
+            for name, message in adjusted:
+                self._warnings.append(StructuredWarning(
+                    code="tied_bounds_adjusted", message=message,
+                    field_path=".".join((*loc, name)),
+                ))
+            return updates
+
+        sg = self.space_group
         cell = self.unit_cell
         try:
-            check_cell(self.space_group, tuple(getattr(cell, k).value for k in _CELL_FIELDS))
+            check_cell(sg, tuple(getattr(cell, k).value for k in _CELL_FIELDS))
         except SymmetryError as exc:
             problem(("unit_cell",), str(exc), cell.model_dump())
+        else:  # flag and bound rules need a valid cell (A95, A98)
+            ties = cell_tie_groups(sg)
+            updates = apply_tie_rules(("unit_cell",), {k: getattr(cell, k) for k in _CELL_FIELDS}, ties,
+                                      f"{ties.crystal_system} cell ({sg!r})", _cell_bound_tolerance,
+                                      lambda name: f"{getattr(cell, name).value:g}")
+            if updates:
+                self.unit_cell = cell.model_copy(update=updates)
         for label, atom in list(self.atoms.items()):
             try:
-                site = analyze_site(self.space_group, (atom.x.value, atom.y.value, atom.z.value))
+                site = analyze_site(sg, (atom.x.value, atom.y.value, atom.z.value))
             except SymmetryError as exc:
                 problem(("atoms", label), str(exc), atom.model_dump())
                 continue  # the checks below need the site
@@ -709,14 +754,16 @@ class Phase(CoreModel, Generic[P]):
             if atom.Multiplicity is not None and atom.Multiplicity != site.multiplicity:
                 problem(("atoms", label, "Multiplicity"),
                         f"stated Multiplicity {atom.Multiplicity}, derived {site.multiplicity} "
-                        f"({self.space_group!r}, site {site.stated})", atom.Multiplicity)
+                        f"({sg!r}, site {site.stated})", atom.Multiplicity)
+            uaniso_ok = u_adjusted = False
             if atom.Uaniso is not None:
                 stated_u = tuple(atom.Uaniso[k].value for k in _UANISO_KEYS)
                 try:
-                    symmetric_u, u_adjusted = check_uij(self.space_group, site.canonical, stated_u)
+                    symmetric_u, u_adjusted = check_uij(sg, site.canonical, stated_u)
                 except SymmetryError as exc:
                     problem(("atoms", label, "Uaniso"), str(exc), atom.model_dump()["Uaniso"])
                 else:
+                    uaniso_ok = True
                     if u_adjusted:
                         update["Uaniso"] = {k: _with_value(atom.Uaniso[k], u)
                                             for k, u in zip(_UANISO_KEYS, symmetric_u)}
@@ -737,6 +784,31 @@ class Phase(CoreModel, Generic[P]):
                              f"{site.canonical}"),
                     field_path=f"atoms.{label}",
                 ))
+
+            # Flag and bound rules F1, F2, F4, A106 (A95, A98, A106, A108) on the canonical values.
+            ties = coupling_groups(sg, site.canonical)
+            context = f"atom {label!r} (multiplicity {site.multiplicity} in {sg!r})"
+            xyz = {k: update.get(k, getattr(atom, k)) for k in "xyz"}
+            update.update(apply_tie_rules(("atoms", label), xyz, ties.xyz, context,
+                                          lambda _name, _expected: SPECIAL_POSITION_TOL,
+                                          lambda name: str(site.exact["xyz".index(name)])))
+            if uaniso_ok:
+                uij = dict(update.get("Uaniso", atom.Uaniso))
+                uij.update(apply_tie_rules(("atoms", label, "Uaniso"), uij, ties.uij, context,
+                                           lambda _name, _expected: UIJ_TOL, lambda _name: "0"))
+                update["Uaniso"] = uij
+
+            # Review N4: a value moved by canonicalization is re-checked against its (final) bounds.
+            moved = [(("atoms", label, k), k, update.get(k, getattr(atom, k)), getattr(atom, k).value,
+                      "the exact special-position value") for k in "xyz" if site.adjusted]
+            if u_adjusted and uaniso_ok:
+                moved += [(("atoms", label, "Uaniso", k), k, update["Uaniso"][k], atom.Uaniso[k].value,
+                           "the site-symmetric value") for k in _UANISO_KEYS]
+            for loc, name, param, stated, what in moved:
+                message = _canonical_out_of_bounds(param)
+                if message:
+                    problem(loc, f"{context}: {name} = {param.value!r} ({what} of the stated {stated!r}) "
+                                 f"{message}", param.model_dump())
             if update:
                 self.atoms[label] = atom.model_copy(update=update)
         if problems:
@@ -758,6 +830,101 @@ _CELL_FIELDS = ("a", "b", "c", "alpha", "beta", "gamma")
 def _with_value(param, value: float):
     """A copy of ``param`` with a new value; refine flag and bounds kept."""
     return param.model_copy(update={"value": value})
+
+
+def _cell_bound_tolerance(name: str, expected: float) -> float:
+    """A108 for the cell: CELL_TOL relative on lengths, in degrees on angles (A77)."""
+    return CELL_TOL * abs(expected) if name in ("a", "b", "c") else CELL_TOL
+
+
+def _fmt_bounds(lo: Optional[float], hi: Optional[float]) -> str:
+    return "[" + ", ".join("null" if v is None else f"{v:.10g}" for v in (lo, hi)) + "]"
+
+
+_HOW_MANY = {2: "both", 3: "all three"}
+
+
+def _tie_rules(params: dict, ties: Ties, context: str, tolerance, fixed_value):
+    """The flag and bound rules of one parameter set (cell, a site's x/y/z, or its Uij).
+
+    - **F2** (A95): a symmetry-fixed parameter has refine flag false.
+    - **A106**: a symmetry-fixed parameter has no bounds (min and max null).
+    - **F1** (A95): the members of a tie group carry the same flag. The error is
+      reported at every member whose flag differs from the group's first
+      member, naming the whole group (review N1).
+    - **F4** (A98, A108): with bounds, each member's bounds follow the tie from
+      the first member's: ``member = k*rep + c`` maps ``[min, max]`` to
+      ``[k*min + c, k*max + c]``, swapped for k < 0; a null side stays null on
+      the matching side. Within ``tolerance(name, expected)`` the member's
+      bounds are replaced by the exact values (reported); beyond, an error.
+    - **F3**: different groups are independent (nothing to check).
+
+    Returns ``(errors, updates, adjusted)``: ``[(name, message)]``, the bound
+    updates ``{name: param}``, and ``[(name, message)]`` for the adjustments.
+    """
+    errors: list[tuple[str, str]] = []
+    adjusted: list[tuple[str, str]] = []
+    updates: dict[str, Any] = {}
+    for name in ties.fixed:
+        param = params[name]
+        if param.refine_flag:
+            errors.append((name, f"{context}: {name} is fixed by symmetry (= {fixed_value(name)}); "
+                                 "set its refine flag to false"))
+        if isinstance(param, BoundedRefinableParameter) and (param.min is not None or param.max is not None):
+            errors.append((name, f"{context}: {name} is fixed by symmetry (= {fixed_value(name)}); "
+                                 "give it no bounds (min and max null)"))
+    for group in ties.groups:
+        if len(group.members) < 2:
+            continue
+        rep = params[group.members[0]]
+        flag_words = _HOW_MANY.get(len(group.members), f"all {len(group.members)}")
+        relations = group.relations_text()
+        for name in group.members[1:]:
+            if params[name].refine_flag != rep.refine_flag:
+                errors.append((name, f"{context}: {', '.join(group.members)} are one parameter"
+                                     f"{f' ({relations})' if relations else ''}; "
+                                     f"set the same refine flag on {flag_words}"))
+        if not isinstance(rep, BoundedRefinableParameter):
+            continue
+        for name in group.members[1:]:
+            param = params[name]
+            k, c = (float(v) for v in group.relation(name))
+            lo, hi = (None if v is None else k * v + c for v in (rep.min, rep.max))
+            if k < 0:
+                lo, hi = hi, lo
+            ok, exact = True, True
+            for got, want in ((param.min, lo), (param.max, hi)):
+                if (got is None) != (want is None):
+                    ok = False
+                elif got is not None:
+                    ok = ok and abs(got - want) <= tolerance(name, want)
+                    exact = exact and abs(got - want) <= 1e-12
+            if not ok:
+                errors.append((name, f"{context}: the bounds of {name} must follow "
+                                     f"{group.relation_text(name)} from the bounds of {group.members[0]} "
+                                     f"{_fmt_bounds(rep.min, rep.max)}: expected {_fmt_bounds(lo, hi)}, "
+                                     f"got {_fmt_bounds(param.min, param.max)}"))
+            elif not exact:
+                updates[name] = param.model_copy(update={"min": lo, "max": hi})
+                adjusted.append((name, f"{context}: the bounds of {name} {_fmt_bounds(param.min, param.max)} "
+                                       f"were set to {_fmt_bounds(lo, hi)}, exactly "
+                                       f"{group.relation_text(name)} from the bounds of {group.members[0]}"))
+    return errors, updates, adjusted
+
+
+def _canonical_out_of_bounds(param) -> Optional[str]:
+    """Review N4: ``"is below min (...)"`` etc. when a moved value left its bounds, else ``None``.
+
+    Floating-point noise (1e-12) is not a move: canonicalization keeps a value
+    within that of the stated one as stated.
+    """
+    if not isinstance(param, BoundedRefinableParameter):
+        return None
+    if param.min is not None and param.value < param.min - 1e-12:
+        return f"is below min ({param.min!r})"
+    if param.max is not None and param.value > param.max + 1e-12:
+        return f"is above max ({param.max!r})"
+    return None
 
 
 # --- top-level recipe frame (A1, A18, A21, A40) ------------------------------

@@ -1618,3 +1618,360 @@ def test_integer_fields_reject_fractions_strings_and_booleans(bad, error_type):
 
 def test_integer_json_whole_float_accepted():
     assert Atom[RefinableParameter].model_validate_json(json.dumps(_atom(Multiplicity=4.0))).Multiplicity == 4
+
+
+# --- flag and bound rules F1-F4 (re/03b; A95, A98, A104, A106, A108) ---------
+
+_CELL_NAMES = ("a", "b", "c", "alpha", "beta", "gamma")
+_U_NAMES = ("U11", "U22", "U33", "U12", "U13", "U23")
+_N = [None, None]
+
+
+def _cellp(values, flags=(False,) * 6, bounds=None):
+    """unit_cell dict; with ``bounds`` (a dict of name -> (min, max), default open) 4-element lists."""
+    if bounds is None:
+        return {n: [v, f] for n, v, f in zip(_CELL_NAMES, values, flags)}
+    return {n: [v, f, *bounds.get(n, _N)] for n, v, f in zip(_CELL_NAMES, values, flags)}
+
+
+def _atomp(xyz, flags=(False,) * 3, bounds=None, uaniso=None, element="O"):
+    """atom dict; ``uaniso`` = {U: [value, flag(, min, max)]} switches ADP to Uaniso."""
+    tail = (lambda n: list(bounds.get(n, _N))) if bounds is not None else (lambda n: [])
+    d = {"element": element, **{k: [v, f, *tail(k)] for k, v, f in zip("xyz", xyz, flags)},
+         "occupancy": [1.0, False, *tail("occupancy")]}
+    if uaniso is None:
+        d.update(ADP="Uiso", Uiso=[0.01, False, *tail("Uiso")])
+    else:
+        d.update(ADP="Uaniso", Uaniso=uaniso)
+    return d
+
+
+def _phasep(space_group, cell, atoms):
+    return {"space_group": space_group, "unit_cell": cell, "atoms": atoms}
+
+
+def _errs(exc_info) -> list:
+    """(location, message without pydantic's prefix) of every error."""
+    return [(e["loc"], e["msg"].removeprefix("Value error, ")) for e in exc_info.value.errors()]
+
+
+_GENERAL = (0.1234, 0.2345, 0.3456)
+
+# (space group, cell values, members after the first of each tie group, fixed angles)
+_CELL_SYSTEMS = [
+    ("P m -3 m", (4, 4, 4, 90, 90, 90), ["b", "c"], ["alpha", "beta", "gamma"]),
+    ("P 4/m m m", (4, 4, 6, 90, 90, 90), ["b"], ["alpha", "beta", "gamma"]),
+    ("P 63/m m c", (3, 3, 5, 90, 90, 120), ["b"], ["alpha", "beta", "gamma"]),
+    ("R -3 m:H", (4, 4, 20, 90, 90, 120), ["b"], ["alpha", "beta", "gamma"]),
+    ("R -3 m:R", (5, 5, 5, 70, 70, 70), ["b", "c", "beta", "gamma"], []),
+    ("P m m m", (4, 5, 6, 90, 90, 90), [], ["alpha", "beta", "gamma"]),
+    ("C 1 2/m 1", (9, 5, 7, 90, 105, 90), [], ["alpha", "gamma"]),
+    ("P 1 c 1", (5, 6, 7, 90, 98, 90), [], ["alpha", "gamma"]),     # Pc, b-unique (A102)
+    ("P 1 1 m", (5, 6, 7, 90, 90, 98), [], ["alpha", "beta"]),      # Pm, c-unique
+    ("C m 1 1", (5, 6, 7, 98, 90, 90), [], ["beta", "gamma"]),      # Cm, a-unique
+    ("C 1 c 1", (5, 6, 7, 90, 98, 90), [], ["alpha", "gamma"]),     # Cc
+    ("P -1", (5, 6, 7, 80, 85, 95), [], []),
+]
+
+
+@pytest.mark.parametrize("sg, cell, _tied, fixed", _CELL_SYSTEMS, ids=[c[0] for c in _CELL_SYSTEMS])
+def test_cell_flags_consistent_accepted(sg, cell, _tied, fixed):
+    """Every free cell parameter refined, every fixed one not: valid in every crystal system."""
+    flags = tuple(n not in fixed for n in _CELL_NAMES)
+    Phase[RP].model_validate(_phasep(sg, _cellp(cell, flags), {"A": _atomp(_GENERAL)}))
+
+
+_CELL_SYSTEMS_WITH_RULES = [c for c in _CELL_SYSTEMS if c[2] or c[3]]  # P -1 has nothing to violate
+
+
+@pytest.mark.parametrize("sg, cell, tied, fixed", _CELL_SYSTEMS_WITH_RULES,
+                         ids=[c[0] for c in _CELL_SYSTEMS_WITH_RULES])
+def test_cell_flag_rules_f1_f2(sg, cell, tied, fixed):
+    """Only the first member of each tie group refined (F1) and every fixed angle refined (F2):
+    one error at each fixed angle, then one at every member whose flag differs (review N1)."""
+    flags = tuple(n not in tied for n in _CELL_NAMES)
+    with pytest.raises(ValidationError) as exc_info:
+        Phase[RP].model_validate(_phasep(sg, _cellp(cell, flags), {"A": _atomp(_GENERAL)}))
+    assert [loc for loc, _m in _errs(exc_info)] == [("unit_cell", n) for n in fixed + tied]
+
+
+def test_cell_flag_messages_name_the_group_and_the_fix():
+    d = _phasep("P m -3 m", _cellp((4, 4, 4, 90, 90, 90), (True, False, True, False, False, True)),
+                {"A": _atomp(_GENERAL)})
+    with pytest.raises(ValidationError) as exc_info:
+        Phase[RP].model_validate(d)
+    assert _errs(exc_info) == [
+        (("unit_cell", "gamma"), "cubic cell ('P m -3 m'): gamma is fixed by symmetry (= 90); "
+                                 "set its refine flag to false"),
+        (("unit_cell", "b"), "cubic cell ('P m -3 m'): a, b, c are one parameter; "
+                             "set the same refine flag on all three"),
+    ]
+
+
+def test_rhombohedral_cell_ties_lengths_and_angles():
+    d = _phasep("R -3 m:R", _cellp((5, 5, 5, 70, 70, 70), (False, False, False, True, True, False)),
+                {"A": _atomp(_GENERAL)})
+    with pytest.raises(ValidationError) as exc_info:
+        Phase[RP].model_validate(d)
+    assert _errs(exc_info) == [
+        (("unit_cell", "gamma"), "trigonal cell ('R -3 m:R'): alpha, beta, gamma are one parameter; "
+                                 "set the same refine flag on all three"),
+    ]
+
+
+def test_independent_groups_may_differ_f3():
+    """F3: orthorhombic a refined, b and c fixed; general-position x refined, y and z fixed."""
+    d = _phasep("P m m m", _cellp((4, 5, 6, 90, 90, 90), (True, False, False, False, False, False)),
+                {"A": _atomp(_GENERAL, (True, False, False))})
+    Phase[RP].model_validate(d)
+
+
+@pytest.mark.parametrize("sg, cell, xyz, flags, expected", [
+    ("P m -3 m", (4, 4, 4, 90, 90, 90), (0, 0, 0), (True, False, False),
+     [("x", "atom 'A' (multiplicity 1 in 'P m -3 m'): x is fixed by symmetry (= 0); "
+            "set its refine flag to false")]),
+    ("P 63/m m c", (3, 3, 5, 90, 90, 120), (1 / 3, 2 / 3, 0.25), (False, True, False),
+     [("y", "atom 'A' (multiplicity 2 in 'P 63/m m c'): y is fixed by symmetry (= 2/3); "
+            "set its refine flag to false")]),
+    ("P 63/m m c", (3, 3, 5, 90, 90, 120), (1 / 6, 1 / 3, 0.25), (True, False, False),
+     [("y", "atom 'A' (multiplicity 6 in 'P 63/m m c'): x, y are one parameter (y = 2x); "
+            "set the same refine flag on both")]),
+    ("P 63/m m c", (3, 3, 5, 90, 90, 120), (1 / 6, 1 / 3, 0.25), (True, True, True),
+     [("z", "atom 'A' (multiplicity 6 in 'P 63/m m c'): z is fixed by symmetry (= 1/4); "
+            "set its refine flag to false")]),
+    ("P -4 21 m", (5, 5, 4, 90, 90, 90), (0.1, 0.6, 0.3), (False, True, True),
+     [("y", "atom 'A' (multiplicity 4 in 'P -4 21 m'): x, y are one parameter (y = x + 1/2); "
+            "set the same refine flag on both")]),
+    ("R -3 m:R", (5, 5, 5, 70, 70, 70), (0.1, 0.1, 0.1), (True, False, True),
+     [("y", "atom 'A' (multiplicity 2 in 'R -3 m:R'): x, y, z are one parameter; "
+            "set the same refine flag on all three")]),
+    ("P 63/m m c", (3, 3, 5, 90, 90, 120), (1 / 6, 1 / 3, 0.25), (True, True, False), []),
+    ("P 1 c 1", (5, 6, 7, 90, 98, 90), _GENERAL, (True, True, True), []),
+])
+def test_site_coordinate_flag_rules(sg, cell, xyz, flags, expected):
+    d = _phasep(sg, _cellp(cell), {"A": _atomp(xyz, flags)})
+    if not expected:
+        Phase[RP].model_validate(d)
+        return
+    with pytest.raises(ValidationError) as exc_info:
+        Phase[RP].model_validate(d)
+    assert _errs(exc_info) == [(("atoms", "A", name), message) for name, message in expected]
+
+
+def _u(values, flags=(False,) * 6, bounds=None):
+    """Uaniso dict; with ``bounds`` (name -> (min, max), default open) 4-element lists."""
+    tail = (lambda n: list(bounds.get(n, _N))) if bounds is not None else (lambda n: [])
+    return {n: [v, f, *tail(n)] for n, v, f in zip(_U_NAMES, values, flags)}
+
+
+def test_uij_flag_rules_several_groups_at_one_site():
+    """6h in P6_3/mmc: U11 | U22=2*U12 | U33 free groups, U13 and U23 fixed (0)."""
+    values = (0.01, 0.012, 0.009, 0.006, 0.0, 0.0)
+    ok = _atomp((1 / 6, 1 / 3, 0.25), uaniso=_u(values, (True, True, False, True, False, False)), element="C")
+    Phase[RP].model_validate(_phasep("P 63/m m c", _cellp((3, 3, 5, 90, 90, 120)), {"C": ok}))
+    bad = _atomp((1 / 6, 1 / 3, 0.25), uaniso=_u(values, (False, True, False, False, True, False)), element="C")
+    with pytest.raises(ValidationError) as exc_info:
+        Phase[RP].model_validate(_phasep("P 63/m m c", _cellp((3, 3, 5, 90, 90, 120)), {"C": bad}))
+    context = "atom 'C' (multiplicity 6 in 'P 63/m m c')"
+    assert _errs(exc_info) == [
+        (("atoms", "C", "Uaniso", "U13"), f"{context}: U13 is fixed by symmetry (= 0); set its refine flag to false"),
+        (("atoms", "C", "Uaniso", "U12"), f"{context}: U22, U12 are one parameter (U12 = U22/2); "
+                                          "set the same refine flag on both"),
+    ]
+
+
+def test_uij_negative_relation_group():
+    """P-42_1m (0.1, 0.4, 0.3): U13 and U23 are one parameter with U23 = -U13."""
+    values = (0.01, 0.01, 0.012, 0.001, 0.002, -0.002)
+    a = _atomp((0.1, 0.4, 0.3), uaniso=_u(values, (False, False, False, False, True, False)))
+    with pytest.raises(ValidationError) as exc_info:
+        Phase[RP].model_validate(_phasep("P -4 21 m", _cellp((5, 5, 4, 90, 90, 90)), {"A": a}))
+    assert _errs(exc_info) == [
+        (("atoms", "A", "Uaniso", "U23"), "atom 'A' (multiplicity 4 in 'P -4 21 m'): U13, U23 are one "
+                                          "parameter (U23 = -U13); set the same refine flag on both"),
+    ]
+
+
+def test_co_located_atoms_are_independent():
+    """A104: atoms on the same site keep their own flags; nothing ties them."""
+    cell = _cellp((4, 5, 6, 90, 90, 90))
+    atoms = {"Li": _atomp(_GENERAL, (True, True, True), element="Li"),
+             "Mg": _atomp(_GENERAL, (False, False, False), element="Mg")}
+    phase = Phase[RP].model_validate(_phasep("P m m m", cell, atoms))
+    assert phase.atoms["Li"].x.refine_flag is True and phase.atoms["Mg"].x.refine_flag is False
+
+
+def test_flag_and_value_problems_reported_together():
+    """One ValidationError lists the cell, coordinate and Uij rule violations (A70)."""
+    cell = _cellp((3, 3, 5, 90, 90, 120), (True, False, False, False, False, False))
+    atoms = {"A": _atomp((1 / 3, 2 / 3, 0.25), (True, False, False)),
+             "B": _atomp((1 / 6, 1 / 3, 0.25), uaniso=_u((0.01, 0.012, 0.009, 0.006, 0, 0),
+                                                         (False, False, False, False, False, True))),
+             "C": _atomp(_GENERAL, element="Fe") | {"Multiplicity": 4}}
+    with pytest.raises(ValidationError) as exc_info:
+        Phase[RP].model_validate(_phasep("P 63/m m c", cell, atoms))
+    assert [loc for loc, _m in _errs(exc_info)] == [
+        ("unit_cell", "b"), ("atoms", "A", "x"), ("atoms", "B", "Uaniso", "U23"), ("atoms", "C", "Multiplicity")]
+
+
+# --- F4: bounds follow the tie (affine; A98, A108) and A106 -------------------
+
+_HEX = (3, 3, 5, 90, 90, 120)
+
+
+def _bounded_phase(sg, cell, xyz, flags, bounds, **kw):
+    return _phasep(sg, _cellp(cell, bounds={}), {"A": _atomp(xyz, flags, bounds=bounds, **kw)})
+
+
+@pytest.mark.parametrize("xyz, x_bounds, y_bounds", [
+    ((0.1, 0.6, 0.3), (0.0, 0.2), (0.5, 0.7)),        # y = x + 1/2
+    ((0.1, 0.4, 0.3), (0.0, 0.2), (0.3, 0.5)),        # y = -x + 1/2: swapped
+    ((0.1, -0.4, 0.3), (0.0, 0.2), (-0.5, -0.3)),     # y = x - 1/2: the stated translate counts
+    ((0.1, 0.4, 0.3), (0.0, None), (None, 0.5)),      # open ends map to the matching side
+    ((0.1, 0.4, 0.3), (None, 0.2), (0.3, None)),
+    ((0.1, 0.4, 0.3), (None, None), (None, None)),
+])
+def test_affine_bounds_follow_the_tie_p_421m_4e(xyz, x_bounds, y_bounds):
+    """Review B1: at P-42_1m 4e equal bounds would be wrong; the affine map is right."""
+    d = _bounded_phase("P -4 21 m", (5, 5, 4, 90, 90, 90), xyz, (True, True, False),
+                       {"x": x_bounds, "y": y_bounds})
+    phase = Phase[BRP].model_validate(d)
+    assert phase.atoms["A"].y.model_dump()[2:] == list(y_bounds)
+    assert phase.warnings() == []
+
+
+def test_affine_bounds_p42mnm_4f():
+    """P4_2/mnm (0.3, 0.7, 0): y = -x + 1; z fixed (A106: no bounds)."""
+    d = _bounded_phase("P 42/m n m", (5, 5, 3, 90, 90, 90), (0.3, 0.7, 0.0), (True, True, False),
+                       {"x": (0.25, 0.35), "y": (0.65, 0.75)})
+    Phase[BRP].model_validate(d)
+    d["atoms"]["A"]["y"][2:] = [0.25, 0.35]  # equal bounds: wrong for an affine tie
+    with pytest.raises(ValidationError) as exc_info:
+        Phase[BRP].model_validate(d)
+    assert _errs(exc_info) == [(("atoms", "A", "y"), "value (0.7) is above max (0.35)")]
+
+
+def test_bounds_not_following_the_tie_rejected_at_the_member():
+    d = _bounded_phase("P -4 21 m", (5, 5, 4, 90, 90, 90), (0.1, 0.4, 0.3), (True, True, False),
+                       {"x": (0.0, 0.2), "y": (0.3, 0.51)})
+    with pytest.raises(ValidationError) as exc_info:
+        Phase[BRP].model_validate(d)
+    assert _errs(exc_info) == [(("atoms", "A", "y"),
+                                "atom 'A' (multiplicity 4 in 'P -4 21 m'): the bounds of y must follow "
+                                "y = -x + 1/2 from the bounds of x [0, 0.2]: expected [0.3, 0.5], got [0.3, 0.51]")]
+
+
+def test_bounds_open_side_must_match():
+    d = _bounded_phase("P -4 21 m", (5, 5, 4, 90, 90, 90), (0.1, 0.4, 0.3), (True, True, False),
+                       {"x": (0.0, 0.2), "y": (None, 0.5)})
+    with pytest.raises(ValidationError) as exc_info:
+        Phase[BRP].model_validate(d)
+    assert _errs(exc_info)[0][1].endswith("expected [0.3, 0.5], got [null, 0.5]")
+
+
+def test_tied_coordinate_bounds_within_tolerance_snapped_and_reported():
+    """A108: within 5e-6 the member's bounds become the exact mapped values, with a warning."""
+    d = _bounded_phase("P -4 21 m", (5, 5, 4, 90, 90, 90), (0.1, 0.4, 0.3), (True, True, False),
+                       {"x": (0.0, 0.2), "y": (0.300004, 0.5)})
+    phase = Phase[BRP].model_validate(d)
+    assert phase.atoms["A"].y.model_dump() == [0.4, True, 0.3, 0.5]
+    assert phase.warnings() == [{
+        "code": "tied_bounds_adjusted",
+        "message": "atom 'A' (multiplicity 4 in 'P -4 21 m'): the bounds of y [0.300004, 0.5] were set to "
+                   "[0.3, 0.5], exactly y = -x + 1/2 from the bounds of x",
+        "field_path": "atoms.A.y"}]
+    d["atoms"]["A"]["y"][2] = 0.300006
+    with pytest.raises(ValidationError) as exc_info:
+        Phase[BRP].model_validate(d)
+    assert [loc for loc, _m in _errs(exc_info)] == [("atoms", "A", "y")]
+
+
+def test_tied_uij_bounds_factor_two():
+    """6h: U12 = U22/2, so U22 in [0, 0.02] gives U12 in [0, 0.01]; tolerance 1e-6 (A108)."""
+    values = (0.01, 0.012, 0.009, 0.006, 0.0, 0.0)
+    flags = (True, True, True, True, False, False)
+
+    def phase(u12_bounds):
+        bounds = {"U22": (0.0, 0.02), "U12": u12_bounds}
+        a = _atomp((1 / 6, 1 / 3, 0.25), bounds={}, uaniso=_u(values, flags, bounds), element="C")
+        return _phasep("P 63/m m c", _cellp(_HEX, bounds={}), {"C": a})
+
+    assert Phase[BRP].model_validate(phase((0.0, 0.01))).warnings() == []
+    snapped = Phase[BRP].model_validate(phase((0.0, 0.0100009)))
+    assert snapped.atoms["C"].Uaniso["U12"].model_dump() == [0.006, True, 0.0, 0.01]
+    assert [w["field_path"] for w in snapped.warnings()] == ["atoms.C.Uaniso.U12"]
+    with pytest.raises(ValidationError) as exc_info:
+        Phase[BRP].model_validate(phase((0.0, 0.0100011)))
+    assert _errs(exc_info) == [(("atoms", "C", "Uaniso", "U12"),
+                                "atom 'C' (multiplicity 6 in 'P 63/m m c'): the bounds of U12 must follow "
+                                "U12 = U22/2 from the bounds of U22 [0, 0.02]: expected [0, 0.01], "
+                                "got [0, 0.0100011]")]
+
+
+def test_tied_cell_bounds_equal_within_cell_tol():
+    """Cell ties are equalities; CELL_TOL is relative on lengths (A108, A77)."""
+    def phase(b_max):
+        cell = _cellp((4, 4, 4, 90, 90, 90), (True, True, True, False, False, False),
+                      {"a": (3.9, 4.2), "b": (3.9, b_max), "c": (3.9, 4.2)})
+        return _phasep("P m -3 m", cell, {"A": _atomp(_GENERAL, bounds={})})
+
+    snapped = Phase[BRP].model_validate(phase(4.2 + 1e-9))
+    assert snapped.unit_cell.b.model_dump() == [4.0, True, 3.9, 4.2]
+    assert [w["field_path"] for w in snapped.warnings()] == ["unit_cell.b"]
+    with pytest.raises(ValidationError) as exc_info:
+        Phase[BRP].model_validate(phase(4.2001))
+    assert _errs(exc_info) == [(("unit_cell", "b"),
+                                "cubic cell ('P m -3 m'): the bounds of b must follow b = a from the bounds "
+                                "of a [3.9, 4.2]: expected [3.9, 4.2], got [3.9, 4.2001]")]
+
+
+def test_symmetry_fixed_parameters_have_no_bounds_a106():
+    """A fixed parameter must have null bounds; a refine flag on it is F2 (two errors, one field)."""
+    cell = _cellp((4, 4, 4, 90, 90, 90), bounds={"alpha": (89.0, 91.0)})
+    atom = _atomp((0.0, 0.0, 0.0), (True, False, False), bounds={"x": (-0.1, 0.1)},
+                  uaniso=_u((0.01, 0.01, 0.01, 0.0, 0.0, 0.0), bounds={"U12": (None, 0.001)}), element="La")
+    with pytest.raises(ValidationError) as exc_info:
+        Phase[BRP].model_validate(_phasep("P m -3 m", cell, {"La": atom}))
+    context = "atom 'La' (multiplicity 1 in 'P m -3 m')"
+    assert _errs(exc_info) == [
+        (("unit_cell", "alpha"), "cubic cell ('P m -3 m'): alpha is fixed by symmetry (= 90); "
+                                 "give it no bounds (min and max null)"),
+        (("atoms", "La", "x"), f"{context}: x is fixed by symmetry (= 0); set its refine flag to false"),
+        (("atoms", "La", "x"), f"{context}: x is fixed by symmetry (= 0); give it no bounds (min and max null)"),
+        (("atoms", "La", "Uaniso", "U12"), f"{context}: U12 is fixed by symmetry (= 0); "
+                                           "give it no bounds (min and max null)"),
+    ]
+
+
+def test_canonical_value_rechecked_against_bounds_n4():
+    """Review N4: a stated value inside its bounds that canonicalizes outside them is an error.
+    6h (x, 2x, 1/4): y's bounds [0.199996, 0.4] are snapped to [0.2, 0.4] (A108); the least-change
+    canonical (x, y) of (0.1, 0.199996) is (0.0999984, 0.1999968), below both minima."""
+    d = _bounded_phase("P 63/m m c", _HEX, (0.1, 0.199996, 0.25), (True, True, False),
+                       {"x": (0.1, 0.2), "y": (0.199996, 0.4)})
+    with pytest.raises(ValidationError) as exc_info:
+        Phase[BRP].model_validate(d)
+    context = "atom 'A' (multiplicity 6 in 'P 63/m m c')"
+    assert _errs(exc_info) == [
+        (("atoms", "A", "x"), f"{context}: x = 0.0999984 (the exact special-position value of the stated 0.1) "
+                              "is below min (0.1)"),
+        (("atoms", "A", "y"), f"{context}: y = 0.1999968 (the exact special-position value of the stated "
+                              "0.199996) is below min (0.2)"),
+    ]
+
+
+def test_canonical_uij_rechecked_against_bounds_n4():
+    """N4 for A78: U12 stated just above U22/2 with U22 at its max: the least-change symmetric
+    values move both above their (snapped) maxima."""
+    bounds = {"U22": (0.0, 0.02), "U12": (0.0, 0.0100005)}
+    u = _u((0.01, 0.02, 0.009, 0.0100005, 0.0, 0.0), (False, True, False, True, False, False), bounds)
+    a = _atomp((1 / 6, 1 / 3, 0.25), bounds={}, uaniso=u, element="C")
+    with pytest.raises(ValidationError) as exc_info:
+        Phase[BRP].model_validate(_phasep("P 63/m m c", _cellp(_HEX, bounds={}), {"C": a}))
+    context = "atom 'C' (multiplicity 6 in 'P 63/m m c')"
+    assert _errs(exc_info) == [
+        (("atoms", "C", "Uaniso", "U22"), f"{context}: U22 = 0.020000200000000003 (the site-symmetric value "
+                                          "of the stated 0.02) is above max (0.02)"),
+        (("atoms", "C", "Uaniso", "U12"), f"{context}: U12 = 0.010000100000000001 (the site-symmetric value "
+                                          "of the stated 0.0100005) is above max (0.01)"),
+    ]

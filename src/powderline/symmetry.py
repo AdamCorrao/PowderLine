@@ -675,6 +675,11 @@ class TieGroup:
         i = self.members.index(member)
         return self.coefficients[i], self.offsets[i]
 
+    def relation_text(self, member: str) -> str:
+        """``member``'s relation to the representative, e.g. ``"y = x + 1/2"`` or ``"b = a"``."""
+        k, c = self.relation(member)
+        return f"{member} = {_affine_text(k, self.members[0], c)}"
+
     def relations_text(self) -> str:
         """The non-trivial relations, e.g. ``"y = x + 1/2"`` or ``"U12 = U22/2"``; ``""`` for equal ties."""
         rep = self.members[0]
