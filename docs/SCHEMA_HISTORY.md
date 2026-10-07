@@ -61,6 +61,15 @@ engine schemas adopt it in re/04–06.
   `Multiplicity` and `space_group` are plain values. Nothing is `null` and
   nothing has a default: `occupancy` must be stated; `Multiplicity` (derived,
   so optional) is left out when not stated, never `null`.
+  **Names:** atom labels (the `atoms` keys) and phase names (the engine
+  payload's `phases` keys) start with a letter and contain only ASCII letters,
+  digits and `_` (`O1`, `LaB6_a`); phase names must also differ by more than
+  case. This is the form every engine can use as-is: GSAS-II renames a phase
+  with surrounding spaces or non-ASCII characters (and its settings were then
+  skipped), easydiffraction accepts no other atom label, TOPAS writes the names
+  into its input file, phase names become report file names (which ignore case
+  on Windows and macOS), and problems are reported at `.`-joined paths
+  (`atoms.O1.Uiso`). So `"2H-MoS2"` is written e.g. `MoS2_2H`.
   Structural interpretation is checked once, in core, so every engine gets the
   same structure. All problems are reported together, each at its own field
   (`unit_cell`, `atoms.<label>` for the position, `atoms.<label>.Multiplicity`,
@@ -73,10 +82,17 @@ engine schemas adopt it in re/04–06.
     (two-origin groups `:1`/`:2`, rhombohedral groups `:H`/`:R`, the monoclinic
     unique axis). Any other spelling (`"Pm-3m"`, `"C2/m"`, `"p m -3 m"`) is an
     error whose message gives the canonical name; a symbol without a setting
-    (`"R -3 m"`, `"F d -3 m"`) lists both choices. Each engine translates the
-    name to its own convention, and may accept fewer settings.
+    (`"R -3 m"`, `"F d -3 m"`) lists both choices, and a short monoclinic
+    symbol (`"P21/c"`, `"C2/m"`) lists every setting of that space group by
+    unique axis, because it states neither the unique axis nor the cell choice.
+    Each engine translates the name to its own convention, and may accept fewer
+    settings. The accepted names are those of gemmi 0.7.5, which PowderLine pins
+    exactly; the list is `tests/data/canonical_space_groups.txt`, and any change
+    to it is recorded here.
   - **Unit cell**: `a`, `b`, `c` (Å, > 0), `alpha`, `beta`, `gamma` (degrees,
-    0–180). No `volume` (every engine derives it). The cell must fit the
+    0–180). In engines with bounds, a stated bound must lie in the same range
+    (a length's `min` > 0; an angle's `min`/`max` strictly between 0 and 180);
+    `null` means no bound. No `volume` (every engine derives it). The cell must fit the
     space group **exactly** (to floating-point precision): e.g. cubic
     `a = b = c` and all angles 90°. A mismatch is an error naming each
     parameter and its symmetric value. (GSAS-II alone would silently apply the

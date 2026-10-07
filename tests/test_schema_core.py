@@ -4,9 +4,10 @@ Pure pydantic, engine-free. Tests the core schema 1.0.0 models that every
 engine schema shares (re/03).
 """
 import json
+from pathlib import Path
 
 import pytest
-from pydantic import ValidationError
+from pydantic import ConfigDict, PrivateAttr, ValidationError, field_validator, model_validator
 
 from powderline.schema_core import (
     CORE_SCHEMA_VERSION,
@@ -1385,9 +1386,22 @@ def test_phase_canonical_space_group_accepted(space_group, cell, xyz):
 @pytest.mark.parametrize("symbol, message", [
     ("Pm-3m", "space group 'Pm-3m' is not in the canonical form; write 'P m -3 m'"),
     ("p m -3 m", "space group 'p m -3 m' is not in the canonical form; write 'P m -3 m'"),
-    ("C2/m", "space group 'C2/m' is not in the canonical form; write 'C 1 2/m 1'"),
-    ("C 2/m", "space group 'C 2/m' is not in the canonical form; write 'C 1 2/m 1'"),
-    ("P 21/c", "space group 'P 21/c' is not in the canonical form; write 'P 1 21/c 1'"),
+    ("C2/m", "space group 'C2/m' does not state its unique axis or cell choice (gemmi would read it as "
+             "'C 1 2/m 1'); write the setting you mean: unique axis b: 'C 1 2/m 1', 'A 1 2/m 1', "
+             "'I 1 2/m 1', 'F 1 2/m 1'; unique axis c: 'A 1 1 2/m', 'B 1 1 2/m', 'I 1 1 2/m'; "
+             "unique axis a: 'B 2/m 1 1', 'C 2/m 1 1', 'I 2/m 1 1'"),
+    ("C 2/m", "space group 'C 2/m' does not state its unique axis or cell choice (gemmi would read it as "
+              "'C 1 2/m 1'); write the setting you mean: unique axis b: 'C 1 2/m 1', 'A 1 2/m 1', "
+              "'I 1 2/m 1', 'F 1 2/m 1'; unique axis c: 'A 1 1 2/m', 'B 1 1 2/m', 'I 1 1 2/m'; "
+              "unique axis a: 'B 2/m 1 1', 'C 2/m 1 1', 'I 2/m 1 1'"),
+    ("P 21/c", "space group 'P 21/c' does not state its unique axis or cell choice (gemmi would read it as "
+               "'P 1 21/c 1'); write the setting you mean: unique axis b: 'P 1 21/c 1', 'P 1 21/n 1', "
+               "'P 1 21/a 1'; unique axis c: 'P 1 1 21/a', 'P 1 1 21/n', 'P 1 1 21/b'; "
+               "unique axis a: 'P 21/b 1 1', 'P 21/n 1 1', 'P 21/c 1 1'"),
+    ("Pc", "space group 'Pc' does not state its unique axis or cell choice (gemmi would read it as "
+           "'P 1 c 1'); write the setting you mean: unique axis b: 'P 1 c 1', 'P 1 n 1', 'P 1 a 1'; "
+           "unique axis c: 'P 1 1 a', 'P 1 1 n', 'P 1 1 b'; unique axis a: 'P b 1 1', 'P n 1 1', 'P c 1 1'"),
+    ("P121/c1", "space group 'P121/c1' is not in the canonical form; write 'P 1 21/c 1'"),
     ("R-3m:H", "space group 'R-3m:H' is not in the canonical form; write 'R -3 m:H'"),
     ("R -3 m", "space group 'R -3 m' does not name its setting; write 'R -3 m:H' (hexagonal axes) "
                "or 'R -3 m:R' (rhombohedral axes)"),
@@ -1416,6 +1430,16 @@ def test_canonical_space_group_every_gemmi_name_round_trips():
     assert all(canonical_space_group(n).xhm() == n for n in names)
 
 
+def test_canonical_space_group_names_match_the_committed_list():
+    """The accepted spellings are gemmi's names, pinned: a gemmi change that renames, adds or
+    drops one fails here before it can invalidate recipes (gemmi is pinned exactly; review B4).
+    On a deliberate gemmi upgrade, regenerate the file and record the change in SCHEMA_HISTORY."""
+    import gemmi
+
+    committed = (Path(__file__).parent / "data" / "canonical_space_groups.txt").read_text(encoding="utf-8")
+    assert [sg.xhm() for sg in gemmi.spacegroup_table()] == committed.splitlines()
+
+
 @pytest.mark.parametrize("field", RESERVED_PHASE_FIELDS)
 def test_phase_reserved_field_cannot_be_redeclared(field):
     """An engine subclass may not redefine space_group, unit_cell or atoms (A93)."""
@@ -1432,6 +1456,59 @@ def test_phase_reserved_fields_guarded_below_an_engine_subclass():
     with pytest.raises(TypeError, match=r"^Child redeclares the core phase field\(s\) atoms;"):
         class Child(EnginePhase):
             atoms: dict
+
+
+def test_phase_reserved_members_are_core_validators_private_attributes_and_methods():
+    """Pinned, so a new core validator or method is seen to be reserved too (review A1)."""
+    from powderline.schema_core import _reserved_phase_members
+
+    assert _reserved_phase_members() == {"_space_group", "_sites_check", "_sites", "_warnings", "site", "warnings"}
+
+
+@pytest.mark.parametrize("name, body", [
+    ("_space_group", "@field_validator('space_group')\n@classmethod\ndef _space_group(cls, v):\n    return v"),
+    ("_sites_check", "@model_validator(mode='after')\ndef _sites_check(self):\n    return self"),
+    ("site", "def site(self, label):\n    return None"),
+    ("_warnings", "_warnings: list = PrivateAttr(default_factory=list)"),
+])
+def test_phase_core_validator_or_method_cannot_be_reused(name, body):
+    """A same-named engine validator would silently replace core's (pydantic collects them by name)."""
+    namespace = {"field_validator": field_validator, "model_validator": model_validator,
+                 "PrivateAttr": PrivateAttr, "Phase": Phase, "RP": RP}
+    source = "class EnginePhase(Phase[RP]):\n    scale: RP\n" + "\n".join(
+        "    " + line for line in body.splitlines())
+    with pytest.raises(TypeError) as exc_info:
+        exec(source, namespace)
+    assert str(exc_info.value) == (
+        f"EnginePhase reuses the core phase name(s) {name}; a same-named validator, method or "
+        "private attribute would replace core's silently; rename it")
+
+
+def test_phase_engine_subclass_must_keep_extra_forbid():
+    with pytest.raises(TypeError) as exc_info:
+        class EnginePhase(Phase[RP]):
+            model_config = ConfigDict(extra="allow")
+    assert str(exc_info.value) == "EnginePhase must keep extra='forbid' (A19)"
+
+
+def test_phase_engine_validators_with_their_own_names_run_with_core_rules():
+    """An engine adds its own rule (gsasii rejects origin 1, EB-03) without replacing core's."""
+    class EnginePhase(Phase[RP]):
+        scale: RP
+
+        @field_validator("space_group")
+        @classmethod
+        def _gsasii_origin(cls, v):
+            if v.endswith(":1"):
+                raise ValueError("gsasii: origin choice 1 is not supported")
+            return v
+
+    d = {**_valid_pmm_lab6_phase_dict(), "scale": [1.0, True]}
+    d["space_group"] = "Pm-3m"
+    with pytest.raises(ValidationError) as exc_info:
+        EnginePhase.model_validate(d)
+    assert exc_info.value.errors()[0]["msg"] == (
+        "Value error, space group 'Pm-3m' is not in the canonical form; write 'P m -3 m'")
 
 
 def test_phase_engine_subclass_adds_flat_fields_and_keeps_core_validation():
@@ -2020,3 +2097,80 @@ def test_canonical_uij_rechecked_against_bounds_n4():
         (("atoms", "C", "Uaniso", "U12"), f"{context}: U12 = 0.010000100000000001 (the site-symmetric value "
                                           "of the stated 0.0100005) is above max (0.01)"),
     ]
+
+
+# --- names and cell bound domain (re/03b review C5, C6) ----------------------
+
+
+_NAME_RULE = "must start with a letter and contain only ASCII letters, digits and '_' (e.g. 'O1', 'LaB6_a')"
+
+
+@pytest.mark.parametrize("label, message", [
+    ("", "a name must not be empty or blank"),
+    ("  ", "a name must not be empty or blank"),
+    ("O.1", f"name 'O.1' {_NAME_RULE}"),
+    (" O1", f"name ' O1' {_NAME_RULE}"),
+    ("O 1", f"name 'O 1' {_NAME_RULE}"),
+    ("O-1", f"name 'O-1' {_NAME_RULE}"),
+    ("1O", f"name '1O' {_NAME_RULE}"),
+    ("_O1", f"name '_O1' {_NAME_RULE}"),
+    ("Oé", f"name 'Oé' {_NAME_RULE}"),
+    ("O/1", f"name 'O/1' {_NAME_RULE}"),
+])
+def test_atom_label_follows_the_name_rule(label, message):
+    """Atom labels: a letter, then ASCII letters, digits or '_' (every engine can use it; review C6)."""
+    d = _valid_pmm_lab6_phase_dict()
+    d["atoms"][label] = d["atoms"].pop("B1")
+    with pytest.raises(ValidationError) as exc_info:
+        Phase[RP].model_validate(d)
+    assert _errs(exc_info) == [(("atoms", label, "[key]"), message)]
+
+
+def test_atom_labels_following_the_rule_accepted():
+    d = _valid_pmm_lab6_phase_dict()
+    d["atoms"]["B_site2"] = d["atoms"].pop("B1")
+    assert "B_site2" in Phase[RP].model_validate(d).atoms
+
+
+def test_names_unique_ignoring_case():
+    from powderline.schema_core import check_names_unique_ignoring_case
+
+    check_names_unique_ignoring_case(["LaB6", "Si", "Al2O3"], "phase")
+    with pytest.raises(ValueError) as exc_info:
+        check_names_unique_ignoring_case(["LaB6", "Si", "lab6"], "phase")
+    assert str(exc_info.value) == "phase 'LaB6' and 'lab6' differ only in case; rename one"
+
+
+def test_core_name_json_schema_constrains_every_key():
+    from powderline.schema_core import NAME_PATTERN
+
+    atoms = Phase[RP].model_json_schema()["properties"]["atoms"]
+    assert atoms["propertyNames"] == {"pattern": NAME_PATTERN}
+    assert atoms["additionalProperties"] == {"$ref": "#/$defs/Atom"}
+    assert "patternProperties" not in atoms
+
+
+@pytest.mark.parametrize("name, bounds, message", [
+    ("a", (0.0, 10.0), "cell length a: min must be positive (a cell length is), got 0.0; use null for no lower bound"),
+    ("c", (-1.0, None), "cell length c: min must be positive (a cell length is), got -1.0; use null for no lower bound"),
+    ("beta", (0.0, 120.0), "cell angle beta: min must be between 0 and 180 degrees (a cell angle is), got 0.0; "
+                           "use null for no min bound"),
+    ("beta", (90.0, 180.0), "cell angle beta: max must be between 0 and 180 degrees (a cell angle is), got 180.0; "
+                            "use null for no max bound"),
+])
+def test_cell_bounds_lie_in_the_cell_domain(name, bounds, message):
+    """A stated bound outside where a cell parameter exists is an error (lengths > 0, angles in (0, 180))."""
+    values = (9.0, 5.0, 7.0, 90, 105.0, 90)
+    cell = _cellp(values, flags=(True, True, True, False, True, False), bounds={name: bounds})
+    d = _phasep("C 1 2/m 1", cell, {"O": _atomp(_GENERAL, bounds={})})
+    with pytest.raises(ValidationError) as exc_info:
+        Phase[BRP].model_validate(d)
+    assert _errs(exc_info) == [(("unit_cell", name), message)]
+
+
+def test_cell_open_bounds_and_positive_bounds_accepted():
+    values = (9.0, 5.0, 7.0, 90, 105.0, 90)
+    cell = _cellp(values, flags=(True, True, True, False, True, False),
+                  bounds={"a": (8.0, 10.0), "b": (None, 6.0), "beta": (95.0, 115.0)})
+    phase = Phase[BRP].model_validate(_phasep("C 1 2/m 1", cell, {"O": _atomp(_GENERAL, bounds={})}))
+    assert phase.unit_cell.a.model_dump() == [9.0, True, 8.0, 10.0]

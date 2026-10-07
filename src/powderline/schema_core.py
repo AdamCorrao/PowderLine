@@ -32,6 +32,7 @@ import numpy as np
 from packaging.specifiers import SpecifierSet
 from packaging.version import InvalidVersion, Version
 from pydantic import (
+    AfterValidator,
     BaseModel,
     BeforeValidator,
     ConfigDict,
@@ -40,6 +41,7 @@ from pydantic import (
     Strict,
     StrictBool,
     ValidationError,
+    WithJsonSchema,
     field_validator,
     model_serializer,
     model_validator,
@@ -177,6 +179,64 @@ CoreFloat = Annotated[float, Strict()]
 #: An integer field: a whole number (``4`` or ``4.0``, as JSON Schema's
 #: ``integer``), never a string or a boolean; ``4.5`` is rejected.
 CoreInt = Annotated[int, BeforeValidator(_integer_not_text_or_bool)]
+
+
+# --- names ------------------------------------------------------------------
+
+#: A phase name or atom label: an ASCII letter, then ASCII letters, digits or ``_``.
+NAME_PATTERN = r"^[A-Za-z][A-Za-z0-9_]*$"
+
+
+def _check_name(name: str) -> str:
+    """The name rule every engine can honor (re/03b review C6).
+
+    - GSAS-II renames a phase whose name has surrounding spaces or non-ASCII
+      characters, and the parameterization then skips that phase silently.
+    - easydiffraction accepts atom labels only of the form ``[A-Za-z_][A-Za-z0-9_]*``.
+    - TOPAS emits phase names inside quotes and builds parameter names from them.
+    - Phase names become report file names (``<phase>_unit_cell_report.csv``),
+      so ``/``, ``:`` and the like must not appear.
+    - Field paths are joined with ``.`` (``atoms.O1.Uiso``).
+    """
+    if not name.strip():
+        raise ValueError("a name must not be empty or blank")
+    if re.fullmatch(NAME_PATTERN, name) is None:
+        raise ValueError(f"name {name!r} must start with a letter and contain only ASCII letters, digits "
+                         "and '_' (e.g. 'O1', 'LaB6_a')")
+    return name
+
+
+#: A phase name or an atom label (a dict key), see :data:`NAME_PATTERN`. Core uses
+#: it for the atom labels; engine schemas use it for their ``phases`` keys (with
+#: :func:`name_keyed`, and :func:`check_names_unique_ignoring_case` for phases).
+CoreName = Annotated[str, AfterValidator(_check_name), WithJsonSchema({"type": "string", "pattern": NAME_PATTERN})]
+
+
+def check_names_unique_ignoring_case(names, what: str) -> None:
+    """Raise ``ValueError`` if two of ``names`` differ only in case.
+
+    Phase names become file names, and Windows and macOS file systems ignore
+    case, so ``LaB6`` and ``lab6`` would overwrite each other's reports (and
+    easydiffraction lowercases them). Engine payloads call it on their phases.
+    """
+    seen: dict[str, str] = {}
+    for name in names:
+        other = seen.setdefault(name.lower(), name)
+        if other != name:
+            raise ValueError(f"{what} {other!r} and {name!r} differ only in case; rename one")
+
+
+def name_keyed(schema: dict) -> None:
+    """``json_schema_extra`` for a ``dict[CoreName, ...]`` field: state the key rule as ``propertyNames``.
+
+    pydantic writes a key pattern as ``patternProperties``, which leaves other keys
+    unchecked in JSON Schema; this makes every key follow :data:`NAME_PATTERN`.
+    """
+    pattern_properties = schema.pop("patternProperties", None)
+    if pattern_properties:
+        ((pattern, value),) = pattern_properties.items()
+        schema["propertyNames"] = {"pattern": pattern}
+        schema["additionalProperties"] = value
 
 
 # --- parameter models (A20, A32, A93) ---------------------------------------
@@ -560,6 +620,9 @@ class UnitCell(CoreModel, Generic[P]):
     def _length(cls, v, info):
         if not v.value > 0:
             raise ValueError(f"cell length {info.field_name} must be positive, got {v.value}")
+        if isinstance(v, BoundedRefinableParameter) and v.min is not None and not v.min > 0:
+            raise ValueError(f"cell length {info.field_name}: min must be positive (a cell length is), "
+                             f"got {v.min}; use null for no lower bound")
         return v
 
     @field_validator("alpha", "beta", "gamma")
@@ -567,6 +630,11 @@ class UnitCell(CoreModel, Generic[P]):
     def _angle(cls, v, info):
         if not 0 < v.value < 180:
             raise ValueError(f"cell angle {info.field_name} must be between 0 and 180 degrees, got {v.value}")
+        if isinstance(v, BoundedRefinableParameter):
+            for side, bound in (("min", v.min), ("max", v.max)):
+                if bound is not None and not 0 < bound < 180:
+                    raise ValueError(f"cell angle {info.field_name}: {side} must be between 0 and 180 degrees "
+                                     f"(a cell angle is), got {bound}; use null for no {side} bound")
         return v
 
 
@@ -715,25 +783,44 @@ class Phase(CoreModel, Generic[P]):
     space_group: str = Field(description="gemmi's canonical extended Hermann-Mauguin name, e.g. "
                                          "'P m -3 m', 'C 1 2/m 1', 'R -3 m:H', 'F d -3 m:2' (A105)")
     unit_cell: UnitCell[P]
-    atoms: dict[str, Atom[P]] = Field(min_length=1, description="Atoms keyed by unique label")
+    atoms: dict[CoreName, Atom[P]] = Field(
+        min_length=1, json_schema_extra=name_keyed,
+        description="Atoms keyed by unique label: a letter, then ASCII letters, digits or '_'")
 
     _sites: dict = PrivateAttr(default_factory=dict)
     _warnings: list = PrivateAttr(default_factory=list)
 
     @classmethod
     def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
+        """Guard core's contract in every engine subclass (A93; re/03b review).
+
+        A subclass may add fields and validators, but may not redeclare core's
+        fields or reuse the name of a core validator, private attribute or
+        method: pydantic collects validators by name, so a same-named engine
+        validator would silently replace core's (e.g. the canonical space-group
+        check or every symmetry rule). Its ``extra`` must stay ``'forbid'`` (A19).
+        """
         super().__pydantic_init_subclass__(**kwargs)
         for klass in cls.__mro__:
             if klass is Phase or not (isinstance(klass, type) and issubclass(klass, Phase)):
                 continue
-            if klass.__pydantic_generic_metadata__["origin"] is Phase:
-                continue  # Phase[SomeParameterType] itself
-            redeclared = [n for n in RESERVED_PHASE_FIELDS if n in inspect.get_annotations(klass)]
+            if klass.__pydantic_generic_metadata__["origin"] is not None:
+                continue  # a parametrization (e.g. Phase[RefinableParameter]); its origin is checked itself
+            annotations = inspect.get_annotations(klass)
+            redeclared = [n for n in RESERVED_PHASE_FIELDS if n in annotations]
             if redeclared:
                 raise TypeError(
                     f"{klass.__name__} redeclares the core phase field(s) {', '.join(redeclared)}; "
                     "core owns space_group, unit_cell and atoms (A93)"
                 )
+            reused = sorted(n for n in _reserved_phase_members() if n in klass.__dict__ or n in annotations)
+            if reused:
+                raise TypeError(
+                    f"{klass.__name__} reuses the core phase name(s) {', '.join(reused)}; a same-named "
+                    "validator, method or private attribute would replace core's silently; rename it"
+                )
+        if cls.model_config.get("extra") != "forbid":
+            raise TypeError(f"{cls.__name__} must keep extra='forbid' (A19)")
 
     @field_validator("space_group")
     @classmethod
@@ -852,6 +939,18 @@ class Phase(CoreModel, Generic[P]):
     def warnings(self) -> list:
         """Structured warnings raised while validating this phase (paths relative to it)."""
         return list(self._warnings)
+
+
+def _reserved_phase_members() -> frozenset[str]:
+    """Names core's :class:`Phase` defines besides its fields: validators, private attributes, methods."""
+    decorators = Phase.__pydantic_decorators__
+    validators = {n for kind in ("validators", "field_validators", "root_validators", "field_serializers",
+                                 "model_serializers", "model_validators", "computed_fields")
+                  for n in getattr(decorators, kind)}
+    # Methods written in Phase itself (not the ones pydantic or abc generate, e.g. model_post_init).
+    methods = {n for n, v in Phase.__dict__.items()
+               if inspect.isfunction(v) and not n.startswith("__") and v.__qualname__.startswith("Phase.")}
+    return frozenset(validators | methods | set(Phase.__private_attributes__))
 
 
 _CELL_FIELDS = ("a", "b", "c", "alpha", "beta", "gamma")

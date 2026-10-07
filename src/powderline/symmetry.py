@@ -158,7 +158,9 @@ def canonical_space_group(space_group: str) -> gemmi.SpaceGroup:
     :class:`SymmetryError` whose message names the canonical form. gemmi's
     lenient lookup is used only to build that suggestion, never to accept: it
     would silently pick a default (``"Fd-3m"`` -> origin 1, ``"R-3m"`` -> ``:H``,
-    ``"C2/m"`` -> b-unique). A symbol without a setting lists both choices.
+    ``"C2/m"`` -> b-unique). A symbol without a setting lists the choices:
+    ``:H``/``:R``, ``:1``/``:2``, or every monoclinic setting of the group, by
+    unique axis.
     The legacy 0.26.0 paths keep the lenient :func:`resolve_space_group`.
     """
     raw = str(space_group)
@@ -182,6 +184,19 @@ def canonical_space_group(space_group: str) -> gemmi.SpaceGroup:
         origin1, origin2 = (gemmi.find_spacegroup_by_name(f"{sg.hm}:{s}").xhm() for s in "12")
         raise SymmetryError(
             f"space group {raw!r} has two origin choices; write {origin1!r} or {origin2!r}"
+        )
+    if sg.crystal_system_str() == "monoclinic" and raw.replace(" ", "") != sg.hm.replace(" ", ""):
+        # A short monoclinic symbol ("P21/c", "C2/m") leaves the unique axis and the cell
+        # choice unstated; gemmi silently picks one, so list them all (review B3).
+        by_axis: dict[str, list[str]] = {}
+        for s in gemmi.spacegroup_table():
+            if s.number == sg.number:
+                by_axis.setdefault(_monoclinic_unique_axis(_expanded_ops(s)), []).append(repr(s.xhm()))
+        choices = "; ".join(f"unique axis {axis}: {', '.join(names)}" for axis, names in sorted(
+            by_axis.items(), key=lambda item: "bca".index(item[0])))
+        raise SymmetryError(
+            f"space group {raw!r} does not state its unique axis or cell choice (gemmi would read it "
+            f"as {sg.xhm()!r}); write the setting you mean: {choices}"
         )
     raise SymmetryError(f"space group {raw!r} is not in the canonical form; write {sg.xhm()!r}")
 
