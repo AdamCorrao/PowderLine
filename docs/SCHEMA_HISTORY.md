@@ -77,7 +77,10 @@ engine schemas adopt it in re/04–06.
   fails and the message gives the value to write. A value with no exact
   decimal form (a third: 1/3, 1/6, 2/3, or a tie offset such as `x + 1/3`)
   cannot be written exactly, so **6 decimals** state it (`0.333333` means 1/3)
-  and every engine receives the exact value. All problems are reported together, each at its own field
+  and every engine receives the exact value. PowderLine never rewrites a
+  recipe file; only a Python dump of a validated model shows the exact value's
+  full spelling (`0.3333333333333333`), which is the same value. All problems
+  are reported together, each at its own field
   (`unit_cell`, `atoms.<label>` for the position, `atoms.<label>.Multiplicity`,
   `atoms.<label>.Uaniso`, or the parameter a flag/bound rule concerns, e.g.
   `unit_cell.b`, `atoms.<label>.y`, `atoms.<label>.Uaniso.U12`); they are checked
