@@ -43,18 +43,19 @@ from powderline.gateways.gsasii.helpers import (  # unedited, shared
     calculate_peak_widths,
     require_phase,
 )
-from powderline.gateways.gsasii.extractors import (  # unedited, shared
-    _extract_fit_profile,
-    _extract_refined_parameters,
-    calculate_cell_esds_from_A_matrix,
-    extract_refined_params_from_project,
-)
 from powderline.gateways.gsasii.project import (  # unedited, shared
     add_powder_histogram_from_arrays,
 )
+from powderline.gateways.gsasii.extractors import (  # unedited, shared
+    build_atom_name_mapping,
+    build_phase_name_mapping,
+    calculate_cell_esds_from_A_matrix,
+    extract_refined_params_from_project,
+    get_descriptive_param_name,
+    parse_parameter_associations,
+)
 from powderline.gateways.gsasii.executors import (  # unedited, shared
     execute_rietveld_refinement,
-    execute_spf_refinement,
 )
 from powderline.gateways.gsasii.setters import (  # unedited, shared
     set_chebyshev_background,
@@ -1380,6 +1381,60 @@ def set_instrument_parameterization(proj: Any, hist: Any, instrument_param_dict:
 
 # --- verbatim from gateways/gsasii/executors.py at 2810c82 ---
 
+def execute_spf_refinement(
+    proj: Any,
+    hist: Any,
+    recipe: RecipeModel,
+    verbose: bool
+) -> dict:
+    """
+    Execute single peak fitting refinement.
+
+    This replaces the previous "peaks_only" strategy.
+
+    Args:
+        proj: GSAS-II project object
+        hist: Histogram object
+        recipe: Validated recipe model
+        verbose: Print detailed progress
+
+    Returns:
+        Result dict with success, rwp, elapsed_time
+    """
+    controls = recipe.payload.refinement_controls
+    spf_mode = "useIP" if controls.single_peak_fitting_mode.use_instrument_profile else "hold"
+
+    if verbose:
+        print(f"\n{'='*60}")
+        print(f"Executing Single Peak Fitting")
+        print(f"  Mode: {spf_mode} ({'use instrument profile' if spf_mode == 'useIP' else 'refine peak widths'})")
+        print(f"  Cycles: {controls.refinement_cycles}")
+        print(f"{'='*60}\n")
+
+    # Execute single peak fitting (cycles already set in step 10)
+    peak_result = hist.refine_peaks(mode=spf_mode)
+
+    # Extract Rwp from peak_result
+    rwp_final = peak_result[3].get("Rwp") if len(peak_result) > 3 else None
+
+    if rwp_final is None:
+        return {
+            'success': False,
+            'rwp': None,
+            'error': "Single peak fitting produced no Rwp — hist.refine_peaks() may have failed silently",
+        }
+
+    if verbose:
+        print(f"Single peak fitting complete. Final Rwp: {rwp_final:.3f}%\n")
+
+    return {
+        'success': True,
+        'rwp': rwp_final
+    }
+
+
+# --- verbatim from gateways/gsasii/executors.py at 2810c82 ---
+
 SCHEMA_EXECUTORS = {
     'GSASII_Rietveld': execute_rietveld_refinement,
     'GSASII_SPF': execute_spf_refinement
@@ -1696,6 +1751,180 @@ def run_refinement(recipe: RecipeModel, output_dir: Path, verbose: bool = False,
 
 # --- verbatim from gateways/gsasii/extractors.py at 2810c82 ---
 
+def export_refined_parameters_csv(
+    param_dict: Dict[str, Dict[str, Any]],
+    output_file: Path,
+    proj: Any = None,
+    include_category: bool = True
+) -> Optional[pd.DataFrame]:
+    """
+    Export refined parameters to CSV file and return the DataFrame.
+
+    Args:
+        param_dict: Dictionary from extract_refined_params_* functions
+        output_file: Path to output CSV file
+        proj: GSAS-II project object (optional, needed for phase/atom names)
+        include_category: If True, add 'category' and 'descriptive_name' columns (default: True)
+
+    Returns:
+        DataFrame with the exported parameters, or None if param_dict is empty.
+
+    Output CSV / DataFrame columns:
+        - parameter_name: GSAS-II internal parameter name
+        - descriptive_name: Human-readable parameter description (if include_category=True)
+        - phase_name: Name of associated phase (None if not phase-specific)
+        - phase_idx: Index of associated phase (None if not phase-specific)
+        - atom_name: Label of associated atom (None if not atom-specific)
+        - atom_idx: Index of associated atom (None if not atom-specific)
+        - value: Refined value
+        - esd: Estimated standard deviation (None for fixed parameters)
+        - category: Parameter category (instrument, background, cell, etc.) if include_category=True
+    """
+    if len(param_dict) == 0:
+        return None
+
+    # Build phase and atom mappings if proj is available
+    phase_mapping = {}
+    atom_mapping = {}
+    if proj is not None:
+        phase_mapping = build_phase_name_mapping(proj)
+        atom_mapping = build_atom_name_mapping(proj)
+
+    rows = []
+    for param_name, param_data in param_dict.items():
+        # Parse parameter associations
+        associations = parse_parameter_associations(param_name)
+        phase_idx = associations["phase_idx"]
+        atom_idx = associations["atom_idx"]
+
+        # Lookup names from mappings
+        phase_name = phase_mapping.get(phase_idx) if phase_idx is not None else None
+        atom_name = atom_mapping.get(phase_idx, {}).get(atom_idx) if phase_idx is not None and atom_idx is not None else None
+
+        row = {
+            "parameter_name": param_name,
+            "value": param_data["value"],
+            "esd": param_data.get("esd"),
+            "phase_name": phase_name,
+            "phase_idx": phase_idx,
+            "atom_name": atom_name,
+            "atom_idx": atom_idx
+        }
+
+        if include_category:
+            # Add descriptive name
+            row["descriptive_name"] = get_descriptive_param_name(param_name)
+
+            # Determine category from parameter name
+            if '::A' in param_name and len(param_name.split('::')[1]) <= 2:
+                # Reciprocal metric tensor (A0-A5)
+                category = 'reciprocal_metric_tensor'
+            elif '::' in param_name:
+                # Other phase parameters (atoms, etc.)
+                param_type = param_name.split('::')[1]
+                if 'frac' in param_type:
+                    category = 'atom_occupancy'
+                elif 'Uiso' in param_type:
+                    category = 'atom_displacement_isotropic'
+                elif param_type.startswith('AU') and len(param_type) > 2:
+                    category = 'atom_displacement_anisotropic'
+                elif param_type.startswith('A') and param_type[1] in ['x', 'y', 'z']:
+                    category = 'atom_position'
+                else:
+                    category = 'phase_other'
+            elif param_name.startswith('cell:'):
+                category = 'unit_cell'
+            elif ':' in param_name:
+                parts = param_name.split(':')
+                if len(parts) >= 3:
+                    param_part = parts[2]
+                    if param_part.startswith('Back;'):
+                        category = 'background'
+                    elif param_part.startswith('BkPk'):
+                        category = 'background_peak'
+                    elif param_part == 'Scale':
+                        category = 'scale'
+                    elif param_part in ['U', 'V', 'W', 'X', 'Y', 'Z']:
+                        category = 'instrument_broadening'
+                    elif param_part in ['Lam', 'Zero', 'SH/L', 'Polariz']:
+                        category = 'instrument'
+                    else:
+                        category = 'other'
+                else:
+                    category = 'other'
+            else:
+                category = 'other'
+
+            row["category"] = category
+
+        rows.append(row)
+
+    # Sort by category, then parameter name
+    if include_category:
+        rows.sort(key=lambda x: (x["category"], x["parameter_name"]))
+    else:
+        rows.sort(key=lambda x: x["parameter_name"])
+
+    # Reorder columns: parameter_name, descriptive_name, phase_name, phase_idx, atom_name, atom_idx, value, esd, category
+    if include_category:
+        df = pd.DataFrame(rows, columns=["parameter_name", "descriptive_name", "phase_name", "phase_idx", "atom_name", "atom_idx", "value", "esd", "category"])
+    else:
+        df = pd.DataFrame(rows, columns=["parameter_name", "phase_name", "phase_idx", "atom_name", "atom_idx", "value", "esd"])
+
+    # Convert index columns to nullable integer type (Int64) to avoid scientific notation formatting
+    df['phase_idx'] = df['phase_idx'].astype('Int64')
+    df['atom_idx'] = df['atom_idx'].astype('Int64')
+
+    # Format float columns independently: values need 6 decimal places, ESDs need 8
+    df['value'] = df['value'].apply(lambda x: f"{x:.6e}" if pd.notna(x) else "")
+    df['esd'] = df['esd'].apply(lambda x: f"{x:.8e}" if pd.notna(x) else "")
+
+    df.to_csv(output_file, index=False, lineterminator="\n")
+    return df
+
+
+# --- verbatim from gateways/gsasii/extractors.py at 2810c82 ---
+
+def _extract_fit_profile(hist: Any, output_dir: Path) -> dict:
+    """Extract fit profile arrays from histogram and save fit_profile.txt.
+
+    Args:
+        hist: GSAS-II histogram object after refinement.
+        output_dir: Directory to write ``fit_profile.txt``.
+
+    Returns:
+        dict: Column-oriented data (JSON-serializable) with keys ``two_theta``,
+        ``y_obs``, ``y_weights``, ``y_calc``, ``y_diff``, ``y_bkg``, ``q_values``,
+        ``d_spacings``.
+    """
+    two_theta = hist.getdata(datatype="X")
+    q_values = hist.getdata(datatype="Q")
+    d_spacings = hist.getdata(datatype="d")
+    y_obs = hist.getdata(datatype="Yobs")
+    y_weights = hist.getdata(datatype="Yweight")
+    y_calc = hist.getdata(datatype="Ycalc")
+    y_bkg = hist.getdata(datatype="Background")
+    y_diff = hist.getdata(datatype="Residual")
+
+    fit_profile_df = pd.DataFrame({
+        "two_theta": two_theta,
+        "y_obs": y_obs,
+        "y_weights": y_weights,
+        "y_calc": y_calc,
+        "y_diff": y_diff,
+        "y_bkg": y_bkg,
+        "q_values": q_values,
+        "d_spacings": d_spacings,
+    })
+    fit_profile_df.to_csv(
+        output_dir / "fit_profile.txt", sep="\t", float_format="%.8f",
+        header=True, index=False, lineterminator="\n"
+    )
+    return {col: fit_profile_df[col].tolist() for col in fit_profile_df.columns}
+
+
+# --- verbatim from gateways/gsasii/extractors.py at 2810c82 ---
+
 def _extract_spf_peak_report(
     proj: Any, hist: Any, recipe: RecipeModel, output_dir: Path, verbose: bool
 ) -> tuple[dict, dict]:
@@ -1919,3 +2148,40 @@ def _extract_phase_reports(
         peak_list_data[phase_name] = json.loads(peak_list_df.to_json(orient='records'))
 
     return unit_cell_data, peak_list_data
+
+
+# --- verbatim from gateways/gsasii/extractors.py at 2810c82 ---
+
+def _extract_refined_parameters(
+    param_dict: dict, output_dir: Path, proj: Any, verbose: bool
+) -> list:
+    """Export refined parameters to CSV and return as list-of-records.
+
+    Args:
+        param_dict: From ``extract_refined_params_from_project()``.
+        output_dir: Directory to write ``refined_parameters.csv``.
+        proj: GSAS-II project object (for phase/atom name mappings).
+        verbose: If True, print export status to stdout.
+
+    Returns:
+        List of dicts (records) with the 9-column schema. Returns ``[]``
+        when ``param_dict`` is empty (simulation mode, SPF, etc.).
+    """
+    if not param_dict:
+        if verbose:
+            print("  No refined parameters found to export")
+        return []
+
+    try:
+        refined_params_csv = output_dir / "refined_parameters.csv"
+        refined_params_df = export_refined_parameters_csv(
+            param_dict, refined_params_csv, proj=proj
+        )
+        if refined_params_df is not None:
+            if verbose:
+                print(f"  Exported {len(param_dict)} refined parameters to {refined_params_csv.name}")
+            return refined_params_df.to_dict('records')
+    except Exception as e:
+        if verbose:
+            print(f"  Warning: Failed to export refined parameters CSV: {e}")
+    return []
