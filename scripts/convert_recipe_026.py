@@ -49,6 +49,49 @@ IPARM1_PLAIN = ("Type", "Bank", "Azimuth")
 PEAK_LISTS_026 = ("positions", "intensities", "pv_gaussian_sigma", "pv_lorentzian_gamma")
 
 
+class Each:
+    """Spec of a name-keyed dict (phases, atoms): every value has ``spec``."""
+
+    def __init__(self, spec):
+        self.spec = spec
+
+
+ANY = object()  # carried whole (xrd_data extras are moved to metadata; Iparm1/Iparm2 are read by key)
+UNUSED = object()  # a 0.26.0 field the conversion does not carry (reported when it holds a value)
+_FLAT = dict.fromkeys
+_UIJ_SPEC = _FLAT(UIJ)
+_SIZE_UNUSED = ("uniaxial_equatorial", "uniaxial_axial", "hkl_direction", "S11", "S22", "S33", "S12", "S13", "S23")
+_STRAIN_UNUSED = ("uniaxial_equatorial", "uniaxial_axial", "hkl_direction", "stephens_parameters")
+#: The 0.26.0 schema's fields (``powderline.schema``), for the unknown-key report (A132).
+SPEC_026 = {
+    "schema_name": None, "schema_version": None,
+    "payload": {
+        "xrd_data": ANY, "asset_path": None, "fit_range": None, "phases": None, "single_peaks": None,
+        "instrument": {"description": None, "initialization": ANY, "parameterization": {
+            "wavelength": None, "polarization": None, "broadening": _FLAT("UVWXYZ"),
+            "corrections": _FLAT(("zero_shift", "axial_divergence"))}},
+        "background": {"chebyshev": _FLAT(("num_coefficients", "coefficients", "refine_flag")),
+                       "single_peaks": _FLAT(PEAK_LISTS_026)},
+        "refinement_controls": {"refinement_cycles": None, "refinement_algorithm": None,
+                                "single_peak_fitting_mode": _FLAT(("use_instrument_profile",))},
+    },
+}
+SPEC_026["payload"]["single_peaks"] = _FLAT(("positions", "intensities", "pv_gaussian_sigma_sq", "pv_lorentzian_gamma"))
+SPEC_026["payload"]["phases"] = Each({
+    "structure": {"phase_name": None, "space_group": None, "unit_cell": _FLAT(CELL + ("volume",)),
+                  "atoms": Each({**_FLAT(("element", "x", "y", "z", "occupancy", "Multiplicity", "ADP", "Uiso")),
+                                 "Uaniso": _UIJ_SPEC, "Uij": _UIJ_SPEC})},
+    "parameterization": {
+        "scale": None, "unit_cell": _FLAT(CELL),
+        "atoms": Each({**_FLAT(("x", "y", "z", "occupancy", "ADP", "Uiso")), "Uaniso": _UIJ_SPEC}),
+        "peak_broadening": {
+            "size_broadening": {"model": None, "isotropic_size": None, "LG_eta": None,
+                                **dict.fromkeys(_SIZE_UNUSED, UNUSED)},
+            "strain_broadening": {"model": None, "isotropic_strain": None, "LG_eta": None,
+                                  **dict.fromkeys(_STRAIN_UNUSED, UNUSED)}}},
+})
+
+
 class ConversionError(ValueError):
     """The recipe cannot be converted as it stands; ``problems`` lists every reason."""
 
@@ -66,18 +109,24 @@ def _flag(param) -> bool:
 
 
 def canonical_space_group(symbol: str) -> str:
-    """The canonical (gemmi ``xhm``) name of a 0.26.0 symbol, as GSAS-II read it (A105).
+    """The canonical (gemmi ``xhm``) name of a 0.26.0 symbol, as GSAS-II read it (A105, A132).
 
-    GSAS-II reads a trailing ``" R"`` as rhombohedral axes and a bare
-    rhombohedral symbol as hexagonal axes, always uses origin choice 2 for a
-    two-origin group (a ``:1`` was ignored, EB-03), and reads a short monoclinic
-    symbol as b-unique (gemmi's choice too). Raises ``ValueError`` if gemmi cannot
-    read the symbol.
+    GSAS-II reads a trailing ``" R"`` or ``":R"`` as rhombohedral axes and a bare
+    (or ``":H"``) rhombohedral symbol as hexagonal axes, uses origin choice 2 for
+    a two-origin group, and reads a short monoclinic symbol as b-unique (gemmi's
+    choice too). Raises ``ValueError`` if gemmi cannot read the symbol, and for an
+    explicit origin choice 1: v0.1.1's GSAS-II read such coordinates as origin 2
+    (EB-03), so neither the stated structure nor the one v0.1.1 refined is known.
     """
     text = symbol.strip()
-    rhombohedral_axes = text.endswith(" R")
-    base = text[:-2] if rhombohedral_axes else text.split(":")[0]
-    sg = gemmi.find_spacegroup_by_name(base)
+    rhombohedral_axes = text.endswith((" R", ":R"))
+    base, _, setting = (text[:-2], "", "") if rhombohedral_axes else text.partition(":")
+    if setting.strip() == "1":
+        raise ValueError(
+            f"space group {symbol!r} states origin choice 1, but v0.1.1's GSAS-II read the coordinates in origin "
+            "choice 2 (EB-03), so the converter cannot tell which structure is meant; transform the coordinates to "
+            "origin choice 2 and state ':2'")
+    sg = gemmi.find_spacegroup_by_name(base.strip())
     if sg is None:
         raise ValueError(f"space group {symbol!r} is not a symbol gemmi reads")
     if sg.ext in ("H", "R"):
@@ -132,7 +181,30 @@ class _Conversion:
         if metadata:
             out["metadata"] = metadata
         self.dropped_bounds(payload)
+        self.unknown_keys(old, SPEC_026, "")
         return out
+
+    def unknown_keys(self, old, spec, path: str) -> None:
+        """Report every key the 0.26.0 schema did not define (``extra='allow'``: v0.1.1 ignored it) and every
+        defined field the conversion does not carry that holds a value (A132)."""
+        if not isinstance(old, dict) or spec is ANY or spec is None:
+            return
+        if isinstance(spec, Each):
+            for k, v in old.items():
+                self.unknown_keys(v, spec.spec, f"{path}.{k}")
+            return
+        for k, v in old.items():
+            where = f"{path}.{k}".lstrip(".")
+            if k not in spec:
+                if path.endswith("parameterization.corrections") and v is not None:
+                    self.problems.append(f"{where}: not a 0.26.0 correction; v0.1.1 raised for it")
+                else:
+                    self.note(where, "dropped: not a 0.26.0 field (v0.1.1 ignored it)")
+            elif spec[k] is UNUSED:
+                if v is not None:
+                    self.note(where, f"dropped ({v!r}): the isotropic model v0.1.1 ran did not use it")
+            else:
+                self.unknown_keys(v, spec[k], where)
 
     def xrd_data(self, old: dict, metadata: dict) -> dict:
         kept = ("tth", "Itth", "Itth_weights", "filename")
@@ -270,6 +342,9 @@ class _Conversion:
         new["unit_cell"] = self.cell(path, sg, structure.get("unit_cell") or {}, param.get("unit_cell") or {})
         new["atoms"] = {label: self.atom(f"{path}.atoms.{label}", sg, atom, (param.get("atoms") or {}).get(label))
                         for label, atom in (structure.get("atoms") or {}).items()}
+        for label in sorted(set(param.get("atoms") or {}) - set(structure.get("atoms") or {})):
+            self.note(f"{path}.parameterization.atoms.{label}", "dropped: the structure has no atom of that label "
+                                                                 "(v0.1.1 skipped it)")
         scale = param.get("scale")
         if scale is None or scale[0] is None:
             self.note(f"{path}.scale", "no value: [1.0, flag] (GSAS-II's default, D9)")
@@ -346,6 +421,10 @@ class _Conversion:
         """ADP type, values and flags as v0.1.1 used them (re/04 subplan §3)."""
         p_adp, p_uiso, p_uaniso = param.get("ADP"), param.get("Uiso"), param.get("Uaniso") or {}
         supplied_aniso = all(_value(p_uaniso.get(k)) is not None for k in UIJ)
+        given = [k for k in UIJ if _value(p_uaniso.get(k)) is not None]
+        if p_adp == "Uaniso" and 0 < len(given) < len(UIJ):
+            self.problems.append(f"{path}.Uaniso: the parameterization gives {', '.join(given)} only; v0.1.1 raised "
+                                 "unless all six are given (so there is no v0.1.1 refinement to reproduce)")
         if p_adp == "Uiso" and _value(p_uiso) is not None:
             adp = "Uiso"
         elif p_adp == "Uaniso" and supplied_aniso:
@@ -364,7 +443,9 @@ class _Conversion:
             flag = _flag(p_uiso) if p_adp != "Uaniso" else any(_flag(p_uaniso.get(k)) for k in UIJ)
             new["Uiso"] = [value, flag]
             return
-        old_u = structure.get("Uaniso") or {}
+        old_u = structure.get("Uaniso") or structure.get("Uij") or {}
+        if not structure.get("Uaniso") and structure.get("Uij"):
+            self.note(f"{path}.Uij", "read as Uaniso (v0.1.1's reader accepted the old name)")
         uaniso = {}
         for k in UIJ:
             value = self.merged(f"{path}.Uaniso.{k}", old_u.get(k), p_uaniso.get(k))

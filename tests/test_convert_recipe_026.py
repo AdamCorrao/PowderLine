@@ -152,10 +152,49 @@ def test_controls_fit_range_asset_path_and_bounds():
 
 @pytest.mark.parametrize("old, canonical", [
     ("P m -3 m", "P m -3 m"), ("C2/m", "C 1 2/m 1"), ("P21/c", "P 1 21/c 1"), ("R -3 m", "R -3 m:H"),
-    ("R -3 m R", "R -3 m:R"), ("F d -3 m", "F d -3 m:2"), ("F d -3 m:1", "F d -3 m:2"), ("Fd-3m", "F d -3 m:2"),
+    ("R -3 m R", "R -3 m:R"), ("R -3 m:R", "R -3 m:R"), ("R -3 m:H", "R -3 m:H"), ("R 3 2:R", "R 3 2:R"),
+    ("F d -3 m", "F d -3 m:2"), ("F d -3 m:2", "F d -3 m:2"), ("Fd-3m", "F d -3 m:2"),
 ])
 def test_space_group_as_gsasii_read_it(old, canonical):
     assert conv.canonical_space_group(old) == canonical
+
+
+@pytest.mark.parametrize("old", ["F d -3 m:1", "P 4/n:1", "P n -3 n:1"])
+def test_space_group_origin_choice_1_stops(old):
+    """v0.1.1 ran origin-1 coordinates as origin 2 (EB-03): neither structure is known, so stop (A132)."""
+    with pytest.raises(ValueError, match="origin choice 1"):
+        conv.canonical_space_group(old)
+
+
+def test_space_group_every_spelling_gsasii_read_converts_to_the_same_setting():
+    """Every gemmi spelling v0.1.1's GSAS-II read (incl. its StandardizeSpcName fallback) converts to that
+    setting, or stops (origin choice 1, or a setting gsasii 1.0.0 refuses); never another setting (A132)."""
+    G2spc = pytest.importorskip("GSASII.GSASIIspc")
+    import gemmi
+    xyz = (0.1234, 0.2345, 0.3456)
+
+    def read(symbol):
+        err, sgdata = G2spc.SpcGroup(symbol)
+        if err and symbol:
+            normalized = G2spc.StandardizeSpcName(symbol)
+            if normalized and normalized != symbol:
+                err, sgdata = G2spc.SpcGroup(normalized)
+        return None if err else sorted(tuple(np.round(np.mod(r[0], 1.0), 5) % 1.0) for r in G2spc.GenAtom(xyz, sgdata))
+
+    spellings = {s for sg in gemmi.spacegroup_table()
+                 for s in (sg.hm, sg.xhm(), sg.short_name(), sg.hm.replace(" ", ""), sg.xhm().replace(" ", ""))}
+    differ = []
+    for old in sorted(spellings | {"R -3 m R", "R 3 m R", "R -3 c R"}):
+        before = read(old)
+        if before is None:
+            continue
+        try:
+            after = read(gsasii_space_group(conv.canonical_space_group(old)))
+        except ValueError:
+            continue
+        if after != before:
+            differ.append(old)
+    assert differ == []
 
 
 def test_space_group_as_gsasii_read_it_matches_gsasii():
@@ -314,6 +353,53 @@ def test_names_and_phase_name_mismatch_stop():
         conv.convert(r)
     assert any("phase_name" in p for p in exc.value.problems)
     assert any(p.startswith("payload.phases.La B6") for p in exc.value.problems)
+
+
+def test_unknown_keys_and_orphan_atoms_reported():
+    """0.26.0 accepted any extra key (extra='allow') and v0.1.1 ignored it: dropped, and reported (A132)."""
+    r = _lab6()
+    r["payload"]["phases"]["LaB6"]["parameterization"]["preferred_orientation"] = {"ratio": [1.2, True, None, None]}
+    r["payload"]["phases"]["LaB6"]["parameterization"]["atoms"]["Zz"] = {"x": [0.1, True, None, None], "ADP": "Uiso"}
+    r["payload"]["phases"]["LaB6"]["parameterization"]["peak_broadening"]["size_broadening"]["S11"] = 0.5
+    r["payload"]["notes"] = "lab book p. 12"
+    _, report = _convert(r)
+    assert "payload.phases.LaB6.parameterization.preferred_orientation: dropped: not a 0.26.0 field" in report
+    assert "payload.phases.LaB6.parameterization.atoms.Zz: dropped: the structure has no atom of that label" in report
+    assert "size_broadening.S11: dropped (0.5): the isotropic model v0.1.1 ran did not use it" in report
+    assert "payload.notes: dropped: not a 0.26.0 field" in report
+
+
+def test_unknown_correction_key_stops():
+    """v0.1.1 raised for a correction it did not know, so there is nothing to reproduce."""
+    r = _lab6()
+    r["payload"]["instrument"]["parameterization"]["corrections"]["sample_displacement"] = [0.1, True, None, None]
+    with pytest.raises(conv.ConversionError, match="not a 0.26.0 correction; v0.1.1 raised"):
+        conv.convert(r)
+
+
+def test_old_uij_name_read_as_uaniso():
+    """v0.1.1's reader took the structure's Uaniso from the old key Uij too (project.py)."""
+    r = _lab6()
+    atom = _phase(r)["structure"]["atoms"]["La"]
+    atom.pop("Uiso", None)
+    atom.update(ADP="Uaniso", Uij={k: (0.01 if k in ("U11", "U22", "U33") else 0.0)
+                                   for k in ("U11", "U22", "U33", "U12", "U13", "U23")})
+    _phase(r)["parameterization"]["atoms"]["La"]["ADP"] = "Uaniso"
+    _phase(r)["parameterization"]["atoms"]["La"].pop("Uiso", None)
+    new, report = _convert(r)
+    assert new["payload"]["phases"]["LaB6"]["atoms"]["La"]["Uaniso"]["U11"] == [0.01, False]
+    assert "atoms.La.Uij: read as Uaniso" in report
+
+
+def test_partial_uaniso_override_stops():
+    """v0.1.1 raised unless all six Uij were given in the parameterization."""
+    r = _lab6()
+    p = _phase(r)["parameterization"]["atoms"]["La"]
+    p.pop("Uiso")
+    p.update(ADP="Uaniso", Uaniso={k: [0.01 if k == "U11" else None, False, None, None]
+                                   for k in ("U11", "U22", "U33", "U12", "U13", "U23")})
+    with pytest.raises(conv.ConversionError, match="gives U11 only; v0.1.1 raised"):
+        conv.convert(r)
 
 
 # --- every committed example ---------------------------------------------------
