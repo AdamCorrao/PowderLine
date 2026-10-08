@@ -154,6 +154,12 @@ class GSASClient:
             False, returns a structured error explaining the filesystem-view
             mismatch.
         """
+        result = self._dispatch(recipe, output_dir, verbose, auto_start_server, use_server)
+        return _with_validation_warnings(recipe, result)
+
+    def _dispatch(self, recipe, output_dir: Path, verbose: bool, auto_start_server: bool,
+                  use_server: bool) -> Dict[str, Any]:
+        """Run the recipe on the server or in this process (see :meth:`submit_simulation`)."""
         recipe_dict = self._normalize_recipe(recipe)
 
         if not use_server:
@@ -235,7 +241,8 @@ class GSASClient:
                 'method': 'none'
             }
 
-    def _normalize_recipe(self, recipe) -> dict:
+    @staticmethod
+    def _normalize_recipe(recipe) -> dict:
         """Normalize recipe input to a plain JSON-serializable dict.
 
         Accepts Path (loaded from disk), dict (used as-is), or RecipeModel
@@ -385,13 +392,13 @@ class GSASClient:
         """
         import time
         from powderline.kicker import run_refinement
-        from powderline.schema import RecipeModel
+        from powderline.gateways.gsasii.routing import model_from_request
         from pydantic import ValidationError
 
         output_dir.mkdir(parents=True, exist_ok=True)
 
         try:
-            recipe = RecipeModel.model_validate(recipe_dict)
+            recipe = model_from_request(recipe_dict)  # native gsasii.* or 0.26.0 (re/04)
         except ValidationError as e:
             error_lines = [
                 f"{' -> '.join(str(loc) for loc in err['loc'])}: {err['msg']}"
@@ -452,3 +459,31 @@ def run_simulation(recipe, output_dir: Path,
     """
     client = GSASClient()
     return client.submit_simulation(recipe, output_dir, verbose, auto_start_server)
+
+
+def _with_validation_warnings(recipe, result: Dict[str, Any]) -> Dict[str, Any]:
+    """Prepend a native ``gsasii.*`` recipe's validation warnings to the run's ``warnings`` (A115).
+
+    They are collected from the recipe as given (the model the caller validated,
+    or the dict / file validated here), so a default the recipe left out is
+    reported even though the server receives the dumped model, which states it.
+    A 0.26.0 recipe, or one that does not validate (the run already says why),
+    gets none.
+    """
+    from pydantic import ValidationError
+    from powderline.gateways.gsasii.schema import is_native_recipe, validate_recipe
+    from powderline.schema_core import collect_warnings
+
+    if isinstance(recipe, Path):
+        try:
+            recipe = GSASClient._normalize_recipe(recipe)
+        except (OSError, ValueError):
+            return result
+    if not is_native_recipe(recipe):
+        return result
+    try:
+        found = collect_warnings(validate_recipe(recipe))
+    except ValidationError:
+        return result
+    result['warnings'] = found + list(result.get('warnings') or [])
+    return result

@@ -80,8 +80,11 @@ from powderline.gateways.gsasii.executors import (  # noqa: F401
     execute_rietveld_refinement,
     execute_spf_refinement,
     SCHEMA_EXECUTORS,
-    run_refinement,
 )
+# Native gsasii.* models -> executors.run_refinement; 0.26.0 RecipeModel -> the legacy copy (re/04)
+from powderline.gateways.gsasii.routing import run_refinement  # noqa: F401
+from powderline.gateways.gsasii.schema import is_native_recipe
+from powderline.schema_core import collect_warnings
 from powderline.gateways.gsasii.extractors import (  # noqa: F401
     calculate_cell_esds_from_A_matrix,
     extract_refined_params_from_project,
@@ -295,21 +298,32 @@ def run(
 
     # 1. Validate (raises ValidationError / ValueError on failure)
     recipe = validate(recipe, verbose=verbose)
+    # A native gsasii.* recipe's structured warnings come from validating the
+    # user's recipe and are carried to the result (A115, A119): here for
+    # validate_only and the in-process run, by GSASClient on its paths
+    native = is_native_recipe(recipe)
+    warnings = collect_warnings(recipe) if native else None
 
     # 2. Validate_only short-circuit
     if validate_only:
         controls = recipe.payload.refinement_controls
-        return {
+        phases = getattr(recipe.payload, 'phases', None)
+        summary = {
             'success': True,
             'rwp': None,
             'elapsed_time': 0.0,
             'method': 'validate_only',
             'schema_name': recipe.schema_name,
-            'schema_version': recipe.schema_version,
-            'phases': len(recipe.payload.phases) if recipe.payload.phases else 0,
+            'phases': len(phases) if phases else 0,
             'refinement_cycles': controls.refinement_cycles,
             'simulation_mode': controls.refinement_cycles == 1,
         }
+        if native:
+            summary.update(core_schema_version=recipe.core_schema_version,
+                           engine_schema_version=recipe.engine_schema_version, warnings=warnings)
+        else:
+            summary['schema_version'] = recipe.schema_version
+        return summary
 
     # 3. Ensure output directory exists
     output_dir = Path(output_dir)
@@ -328,6 +342,13 @@ def run(
             verbose=verbose,
             auto_start_server=True,
         )
+
+    if native and execution_mode == 'subprocess':  # GSASClient adds them on its own paths
+        result['warnings'] = warnings + list(result.get('warnings') or [])
+    elif not native:  # the server's response model carries the native-only keys as null; a 0.26.0 result never had them
+        for key in ('r_exp', 'gof', 'chi2_red', 'simulation_mode', 'engine_details', 'warnings'):
+            if key in result and result[key] is None:
+                del result[key]
 
     # Normalise structured data fields to DataFrames for a consistent API.
     # run_refinement() and the server return JSON-serializable primitives;

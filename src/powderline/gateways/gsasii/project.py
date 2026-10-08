@@ -25,6 +25,7 @@ from powderline.schema import RecipeModel, RefinementControls
 from powderline.gateways.gsasii.constraints import atom_refinement_plan, cell_refinement_plan
 from powderline._status import CHECK, CROSS, INFO, WARN, emoji
 from dataclasses import dataclass
+from powderline.gateways.gsasii.schema import gsasii_space_group
 
 
 # Functions to add histogram with instrument parameters from recipe.xrd_data (dict with arrays) and recipe.instrument.initialization (list of dicts)
@@ -331,7 +332,7 @@ def add_phase_from_cif_dict(proj: Any, cif_data: Dict[str, Any], phase_name: str
     pname = G2obj.MakeUniqueLabel(pname, existing_names)
 
     # Interpret space group symbol into SGData
-    sg = cif_data.get("space_group", "P 1")
+    sg = gsasii_space_group(cif_data["space_group"])  # canonical name -> GSAS-II symbol (A105, EB-41)
     err, SGData = G2spc.SpcGroup(sg)
 
     # Attempt normalization if initial interpretation failed
@@ -365,7 +366,7 @@ def add_phase_from_cif_dict(proj: Any, cif_data: Dict[str, Any], phase_name: str
     # Set unit cell parameters if available
     unit_cell = cif_data.get("unit_cell", {})
     if unit_cell:
-        unit_cell_constants = [unit_cell.get("a"), unit_cell.get("b"), unit_cell.get("c"), unit_cell.get("alpha"), unit_cell.get("beta"), unit_cell.get("gamma")]
+        unit_cell_constants = [unit_cell[k][0] for k in ("a", "b", "c", "alpha", "beta", "gamma")]  # [value, refine_flag]
         if len(unit_cell_constants) == 6 and None not in unit_cell_constants:
             phase_data['General']['Cell'][1:7] = unit_cell_constants  # insert a,b,c,alpha,beta,gamma
             try:
@@ -397,10 +398,10 @@ def add_phase_from_cif_dict(proj: Any, cif_data: Dict[str, Any], phase_name: str
     # This code will need to be update accordingly and use "get" with defaults for missing values. E.g., don't interpret site sym or mult.
 
     for label, atom in cif_data.get("atoms", {}).items():
-        x = float(atom.get("x", 0.0))
-        y = float(atom.get("y", 0.0))
-        z = float(atom.get("z", 0.0))
-        occ = float(atom.get("occupancy", 1.0))
+        x = float(atom["x"][0])  # [value, refine_flag]
+        y = float(atom["y"][0])
+        z = float(atom["z"][0])
+        occ = float(atom["occupancy"][0])
 
         # Get ADP type for this atom (required in schema 0.22)
         adp_type = atom.get("ADP", None)
@@ -447,16 +448,16 @@ def add_phase_from_cif_dict(proj: Any, cif_data: Dict[str, Any], phase_name: str
                     )
 
                 # Populate U11, U22, U33, U12, U13, U23 (indices 11-16)
-                atom_record[11] = float(uaniso_dict["U11"])
-                atom_record[12] = float(uaniso_dict["U22"])
-                atom_record[13] = float(uaniso_dict["U33"])
-                atom_record[14] = float(uaniso_dict["U12"])
-                atom_record[15] = float(uaniso_dict["U13"])
-                atom_record[16] = float(uaniso_dict["U23"])
+                atom_record[11] = float(uaniso_dict["U11"][0])
+                atom_record[12] = float(uaniso_dict["U22"][0])
+                atom_record[13] = float(uaniso_dict["U33"][0])
+                atom_record[14] = float(uaniso_dict["U12"][0])
+                atom_record[15] = float(uaniso_dict["U13"][0])
+                atom_record[16] = float(uaniso_dict["U23"][0])
 
                 # Set atom_record[10] to Uiso if provided, else calculate from diagonal elements
                 if atom.get("Uiso") is not None:
-                    atom_record[10] = float(atom["Uiso"])
+                    atom_record[10] = float(atom["Uiso"][0])
                 else:
                     # Calculate equivalent isotropic value from diagonal elements
                     atom_record[10] = (atom_record[11] + atom_record[12] + atom_record[13]) / 3.0
@@ -470,7 +471,7 @@ def add_phase_from_cif_dict(proj: Any, cif_data: Dict[str, Any], phase_name: str
             atom_record[9] = "I"
             uiso = atom.get("Uiso")
             if uiso is not None:
-                atom_record[10] = float(uiso)
+                atom_record[10] = float(uiso[0])
             else:
                 atom_record[10] = 0.0
             atom_record[11:17] = [0.0]*6  # six anisotropic Uij (zeros since not used here)
@@ -543,11 +544,7 @@ def add_phases_from_dict(proj: Any, hist: Any, phases_dict: dict, print_info: bo
     """
 
     for phase_name, phase_info in phases_dict.items():
-        structure_info = phase_info.get('structure', {})
-
-        # Validation check (TODO: move this upstream in phase2)
-        if phase_name != structure_info.get('phase_name'):
-            raise NameError(f"Phase name mismatch for '{phase_name}'. Structure info name is '{structure_info.get('phase_name')}'.")
+        structure_info = phase_info  # the phase block (gsasii 1.0.0, A93); the name is the dict key (A100)
 
         # Prevent duplicate phase names - TODO: handle upstream in schema validation / recipe maker
         if phase_name in [p.name for p in proj.phases()]:

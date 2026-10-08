@@ -857,3 +857,23 @@ def coupling_groups(space_group: str, xyz) -> SiteTies:
         xyz=_tie_groups(_orthogonal_projector(sum(stab) / len(stab)), _AXIS_LETTERS, x),
         uij=_tie_groups(_orthogonal_projector(_adp_projector(stab)), _UIJ_NAMES),
     )
+
+
+def orbit(space_group: str, xyz) -> list[tuple[float, float, float]]:
+    """The positions equivalent to ``xyz`` in the conventional cell, in gemmi's operation order.
+
+    Each image is reduced to [0, 1); an image within ``SPECIAL_POSITION_TOL``
+    of an earlier one (mod 1) is the same position and left out, so the list
+    has the site's multiplicity. The order is fixed by gemmi's operations, so
+    "the first member that ..." is reproducible. Engine-free; the gsasii gateway
+    uses it to name a position GSAS-II reads correctly (A117, EB-40, EB-05).
+    """
+    sg = resolve_space_group(space_group, explicit_setting=True)
+    x = np.asarray(xyz, dtype=float)
+    points: list[np.ndarray] = []
+    for R, t in _expanded_ops(sg):
+        y = (R @ x + t) % 1.0
+        y[np.abs(y - 1.0) < 1e-12] = 0.0
+        if not any(np.all(np.abs(_wrap_symmetric(y - p)) < SPECIAL_POSITION_TOL) for p in points):
+            points.append(y)
+    return [tuple(float(v) for v in p) for p in points]

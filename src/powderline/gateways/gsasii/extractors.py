@@ -26,6 +26,13 @@ from powderline.gateways.gsasii.constraints import atom_refinement_plan, cell_re
 from powderline._status import CHECK, CROSS, INFO, WARN, emoji
 from dataclasses import dataclass
 
+from powderline.gateways.gsasii.report_rows import pandas_csv_rows
+from powderline.reports import (
+    write_fit_profile,
+    write_peak_list_report,
+    write_refined_parameters,
+    write_unit_cell_report,
+)
 from powderline.gateways.gsasii.helpers import (
     DEFAULT_SPF_GAMMA_MIN,
     DEFAULT_SPF_SIGMA_MIN,
@@ -706,7 +713,10 @@ def export_refined_parameters_csv(
     df['value'] = df['value'].apply(lambda x: f"{x:.6e}" if pd.notna(x) else "")
     df['esd'] = df['esd'].apply(lambda x: f"{x:.8e}" if pd.notna(x) else "")
 
-    df.to_csv(output_file, index=False, lineterminator="\n")
+    if include_category and Path(output_file).name == "refined_parameters.csv":  # the core writer's file (A83)
+        write_refined_parameters(Path(output_file).parent, pandas_csv_rows(df))
+    else:
+        df.to_csv(output_file, index=False, lineterminator="\n")
     return df
 
 
@@ -745,10 +755,7 @@ def _extract_fit_profile(hist: Any, output_dir: Path) -> dict:
         "q_values": q_values,
         "d_spacings": d_spacings,
     })
-    fit_profile_df.to_csv(
-        output_dir / "fit_profile.txt", sep="\t", float_format="%.8f",
-        header=True, index=False, lineterminator="\n"
-    )
+    write_fit_profile(output_dir, pandas_csv_rows(fit_profile_df, "%.8f"))  # core writer (A83)
     return {col: fit_profile_df[col].tolist() for col in fit_profile_df.columns}
 
 
@@ -776,7 +783,7 @@ def _extract_spf_peak_report(
         ``(spf_peaks_data, spf_diagnostics_data)`` where each is a
         column-oriented dict, or ``({}, {})`` when single peaks are not used.
     """
-    if recipe.payload.single_peaks is None:
+    if getattr(recipe.payload, 'single_peaks', None) is None:  # gsasii.spf only
         return {}, {}
 
     peak_list = proj.data.get(hist.name, {}).get('Peak List', {}).get('peaks', [])
@@ -919,7 +926,7 @@ def _extract_phase_reports(
     unit_cell_data: dict = {}
     peak_list_data: dict = {}
 
-    if recipe.payload.phases is None or len(recipe.payload.phases) == 0:
+    if getattr(recipe.payload, 'phases', None) is None or len(recipe.payload.phases) == 0:  # gsasii.rietveld only
         return unit_cell_data, peak_list_data
 
     phase_names = [p.name for p in proj.phases() if p is not None]
@@ -945,10 +952,7 @@ def _extract_phase_reports(
             "value": unit_cell,
             "esd": esds,
         })
-        unit_cell_df.to_csv(
-            output_dir / f"{phase_name}_unit_cell_report.csv",
-            float_format="%.8f", index=False, lineterminator="\n"
-        )
+        write_unit_cell_report(output_dir, phase_name, pandas_csv_rows(unit_cell_df, "%.8f"))  # core writer (A83)
         unit_cell_data[phase_name] = json.loads(unit_cell_df.to_json(orient='records'))
 
     # Peak list for each phase
@@ -966,10 +970,8 @@ def _extract_phase_reports(
             "phase", "I_corr", "Prfo", "Trans", "ExtP"
         ]
         peak_list_df = pd.DataFrame(reflection_list, columns=headers)
-        peak_list_df.to_csv(
-            output_dir / f"{phase_name}_peak_list_report.csv",
-            float_format="%.8f", index=False, lineterminator="\n"
-        )
+        write_peak_list_report(output_dir, phase_name, pandas_csv_rows(peak_list_df, "%.8f"),
+                               columns=headers)  # core writer (A83)
         peak_list_data[phase_name] = json.loads(peak_list_df.to_json(orient='records'))
 
     return unit_cell_data, peak_list_data

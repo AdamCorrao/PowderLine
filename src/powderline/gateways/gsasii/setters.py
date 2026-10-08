@@ -159,10 +159,10 @@ def set_single_peak_background(proj: Any, hist: Any, bkg_single_peaks_dict: dict
         proj: GSAS-II project object
         hist: Histogram object to set single peaks for
         bkg_single_peaks_dict: Dictionary with keys:
-            - positions: List of [[2θ, refine, min, max], ...] for peak positions
-            - intensities: List of [[I, refine, min, max], ...] for peak heights
-            - pv_gaussian_sigma: List of [[σ, refine, min, max], ...] for Gaussian widths
-            - pv_lorentzian_gamma: List of [[γ, refine, min, max], ...] for Lorentzian widths
+            - positions: List of [[2θ, refine], ...] for peak positions
+            - intensities: List of [[I, refine], ...] for peak heights
+            - pv_gaussian_sigma_sq: List of [[σ², refine], ...] Gaussian variances, centideg² (A89)
+            - pv_lorentzian_gamma: List of [[γ, refine], ...] for Lorentzian widths
             All lists must have same length (number of peaks)
         print_info: If True, print peak configuration to stdout
 
@@ -175,10 +175,10 @@ def set_single_peak_background(proj: Any, hist: Any, bkg_single_peaks_dict: dict
     Examples:
         >>> # Two single peaks at 2θ=35.5° and 42.0°
         >>> single_peaks = {
-        ...     'positions': [[35.5, False, None, None], [42.0, False, None, None]],
-        ...     'intensities': [[50.0, True, None, None], [30.0, True, None, None]],
-        ...     'pv_gaussian_sigma': [[0.1, False, None, None], [0.1, False, None, None]],
-        ...     'pv_lorentzian_gamma': [[0.05, False, None, None], [0.05, False, None, None]]
+        ...     'positions': [[35.5, False], [42.0, False]],
+        ...     'intensities': [[50.0, True], [30.0, True]],
+        ...     'pv_gaussian_sigma_sq': [[0.1, False], [0.1, False]],
+        ...     'pv_lorentzian_gamma': [[0.15, False], [0.15, False]]
         ... }
         >>> set_single_peak_background(proj, hist, single_peaks)
     """
@@ -192,15 +192,12 @@ def set_single_peak_background(proj: Any, hist: Any, bkg_single_peaks_dict: dict
         The histogram to set the background for.
     bkg_single_peaks_dict : dict
         Dictionary containing single peak background parameters:
-        - positions : list of [float, bool, float, float]. Indices 2 and 3 can be None.
-            List of [position value, refine flag, min, max] for each peak.
+        - positions : list of [float, bool]: [position value, refine flag] for each peak.
             These are two-theta values. Q / d can be passed upstream and converted in validation.
-        - intensities: list of [float, bool, float, float]. Indices 2 and 3 can be None.
-            List of [intensity value, refine flag, min, max] for each peak.
-        - pv_gaussian_sigma: list of [float, bool, float, float]. Indices 2 and 3 can be None.
-            List of [gaussian sigma value, refine flag, min, max] for each peak.
-        - pv_lorentzian_gamma: list of [float, bool, float, float]. Indices 2 and 3 can be None.
-            List of [lorentzian gamma value, refine flag, min, max] for each peak.
+        - intensities: list of [float, bool]: [intensity value, refine flag] for each peak.
+        - pv_gaussian_sigma_sq: list of [float, bool]: [Gaussian variance (centideg²), refine flag]
+            for each peak.
+        - pv_lorentzian_gamma: list of [float, bool]: [Lorentzian gamma value, refine flag] for each peak.
     print_info : bool
         Whether to print information about the set background.
     Returns:
@@ -209,7 +206,7 @@ def set_single_peak_background(proj: Any, hist: Any, bkg_single_peaks_dict: dict
     # Parse the bkg_single_peaks_dict
     positions = bkg_single_peaks_dict.get('positions', [])
     intensities = bkg_single_peaks_dict.get('intensities', [])
-    gaussian_sigmas = bkg_single_peaks_dict.get('pv_gaussian_sigma', [])
+    gaussian_sigmas = bkg_single_peaks_dict.get('pv_gaussian_sigma_sq', [])
     lorentzian_gammas = bkg_single_peaks_dict.get('pv_lorentzian_gamma', [])
 
     # Default intensity, sigma, gamma values to use if value input is None
@@ -229,10 +226,10 @@ def set_single_peak_background(proj: Any, hist: Any, bkg_single_peaks_dict: dict
     single_peak_bkg = []
 
     for i in range(num_peaks):
-        pos, pos_refine, pos_min, pos_max = positions[i]
-        inten, inten_refine, inten_min, inten_max = intensities[i]
-        g_sigma, g_refine, g_sigma_min, g_sigma_max = gaussian_sigmas[i]
-        l_gamma, l_refine, l_gamma_min, l_gamma_max = lorentzian_gammas[i]
+        pos, pos_refine, pos_min, pos_max = unpack_refinement_parameter(positions[i], "positions")
+        inten, inten_refine, inten_min, inten_max = unpack_refinement_parameter(intensities[i], "intensities")
+        g_sigma, g_refine, g_sigma_min, g_sigma_max = unpack_refinement_parameter(gaussian_sigmas[i], "pv_gaussian_sigma_sq")
+        l_gamma, l_refine, l_gamma_min, l_gamma_max = unpack_refinement_parameter(lorentzian_gammas[i], "pv_lorentzian_gamma")
 
         # TODO: move default behavior upstream
         # # Use default values if None provided
@@ -490,7 +487,7 @@ def set_phase_unit_cell(proj: Any, phase_name: str, unit_cell_dict: dict, print_
 
     for i, param in enumerate(cell_params):
         if unit_cell_dict.get(param) is not None:
-            value, refine_flag, min_val, max_val = unit_cell_dict[param]
+            value, refine_flag, min_val, max_val = unpack_refinement_parameter(unit_cell_dict[param], param)
 
             # Set the unit cell parameter value - a=1, b=2, c=3, alpha=4, beta=5, gamma=6
             if value is not None:
@@ -864,7 +861,7 @@ def set_phase_atom_parameters(proj: Any, phase_name: str, atom_parameters_dict: 
             if coord in atom_params and atom_params[coord] is not None:
                 param_value = atom_params[coord]
                 if param_value != [None, False, None, None]:
-                    value, refine_flag, min_val, max_val = param_value
+                    value, refine_flag, min_val, max_val = unpack_refinement_parameter(param_value, coord)
 
                     # Update coordinate value if provided
                     if value is not None:
@@ -874,7 +871,7 @@ def set_phase_atom_parameters(proj: Any, phase_name: str, atom_parameters_dict: 
         if 'occupancy' in atom_params and atom_params['occupancy'] is not None:
             param_value = atom_params['occupancy']
             if param_value != [None, False, None, None]:
-                value, refine_flag, min_val, max_val = param_value
+                value, refine_flag, min_val, max_val = unpack_refinement_parameter(param_value, 'occupancy')
 
                 # Update occupancy value if provided
                 if value is not None:
@@ -886,7 +883,7 @@ def set_phase_atom_parameters(proj: Any, phase_name: str, atom_parameters_dict: 
             if 'Uiso' in atom_params and atom_params['Uiso'] is not None:
                 param_value = atom_params['Uiso']
                 if param_value != [None, False, None, None]:
-                    value, refine_flag, min_val, max_val = param_value
+                    value, refine_flag, min_val, max_val = unpack_refinement_parameter(param_value, 'Uiso')
 
                     # Update Uiso value if provided
                     if value is not None:
@@ -906,7 +903,7 @@ def set_phase_atom_parameters(proj: Any, phase_name: str, atom_parameters_dict: 
                     if u_key in uaniso_dict and uaniso_dict[u_key] is not None:
                         param_value = uaniso_dict[u_key]
                         if param_value != [None, False, None, None]:
-                            value, refine_flag, min_val, max_val = param_value
+                            value, refine_flag, min_val, max_val = unpack_refinement_parameter(param_value, u_key)
 
                             # Update anisotropic value if provided
                             if value is not None:
@@ -988,8 +985,8 @@ def set_phase_parameterization(proj: Any, hist: Any, phases_dict: dict, print_in
         # This will call on a few helper functions to set scale, unit cell, peak broadening, atom parameters, etc.
         # Each of these helper functions will take the proj, phase name (rather than phase object), and relevant parameterization dict
 
-        # First, get parameterization dict from phase_info (already phase-specific)
-        param_dict = phase_info.get('parameterization', {})
+        # The phase block itself holds values and refine flags (gsasii 1.0.0, A93)
+        param_dict = phase_info
 
         # Keys in param dict are 'scale', 'unit_cell', 'peak_broadening', and 'atoms' for now
         # It is not as simple as looping over keys since some have nested dicts and others hold values or lists
@@ -1062,7 +1059,7 @@ def set_instrument_parameterization(proj: Any, hist: Any, instrument_param_dict:
     # [0] default/starting value from iprms, [1] = value, [2] = refinement flag
 
     # Wavelength
-    wavelength_param = instrument_param_dict.get('wavelength', None)
+    wavelength_param = instrument_param_dict.get('radiation', {}).get('wavelength', None)
     if wavelength_param is not None:
         value, refine_flag, min_val, max_val = unpack_refinement_parameter(wavelength_param, "wavelength")
         wavelength_changed = False # track if wavelength value changed
@@ -1088,7 +1085,7 @@ def set_instrument_parameterization(proj: Any, hist: Any, instrument_param_dict:
     # Implementing those follows the same pattern as above
 
     # Polarization
-    polarization_param = instrument_param_dict.get('polarization', None)
+    polarization_param = instrument_param_dict.get('corrections', {}).get('polarization', None)
     if polarization_param is not None:
         value, refine_flag, min_val, max_val = unpack_refinement_parameter(polarization_param, "polarization")
         polarization_changed = False # track if polarization value changed
@@ -1148,12 +1145,14 @@ def set_instrument_parameterization(proj: Any, hist: Any, instrument_param_dict:
                 gsas_key = 'Zero'
             elif param_key == 'axial_divergence':
                 gsas_key = 'SH/L'
+            elif param_key == 'polarization':
+                continue  # set above ('Polariz.'); it sits in corrections (A103)
             #elif param_key == 'sample_height_displacement': # irrelevant to area detector data, future work for Bragg-Brentano geometry
             #    gsas_key = 'SampHt'
             else:
                 raise ValueError(f"Unknown instrument correction parameter key '{param_key}'.")
 
-            value, refine_flag, min_val, max_val = correction_param
+            value, refine_flag, min_val, max_val = unpack_refinement_parameter(correction_param, param_key)
             correction_changed = False
 
             # Set correction parameter value

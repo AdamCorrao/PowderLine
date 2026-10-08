@@ -19,6 +19,7 @@ HASHED_MODULES = (
     "executors.py",
     "extractors.py",
     "constraints.py",
+    "_legacy_executor.py",  # verbatim 0.26.0 copy (re/04, A39); removed in re/07
 )
 
 

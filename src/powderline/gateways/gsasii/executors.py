@@ -25,6 +25,10 @@ from powderline.schema import RecipeModel, RefinementControls
 from powderline.gateways.gsasii.constraints import atom_refinement_plan, cell_refinement_plan
 from powderline._status import CHECK, CROSS, INFO, WARN, emoji
 from dataclasses import dataclass
+from powderline.gateways.gsasii.schema import GsasiiRietveldRecipe, GsasiiSpfRecipe, gsasii_iparm1
+from powderline.gateways.gsasii.fit_report import fit_report
+from powderline.gateways.gsasii.sites import check_sites
+from powderline.exceptions import EngineExecutionError
 
 from powderline.gateways.gsasii.helpers import (
     DEFAULT_HIST_SCALE_REFINE_FLAG,
@@ -177,7 +181,15 @@ def execute_spf_refinement(
         print(f"{'='*60}\n")
 
     # Execute single peak fitting (cycles already set in step 10)
-    peak_result = hist.refine_peaks(mode=spf_mode)
+    try:
+        peak_result = hist.refine_peaks(mode=spf_mode)
+    except TypeError as exc:  # DoPeakFit failed and returned None; refine_peaks then indexes it (EB-38)
+        if "'NoneType' object is not subscriptable" not in str(exc):  # any other TypeError keeps its own traceback
+            raise
+        raise EngineExecutionError(
+            "GSAS-II's peak fit failed: DoPeakFit returned no result (GSAS-II prints the reason only in its "
+            "debug mode; GSAS-II quirk EB-38). Check the peak positions, widths and fit range."
+        ) from exc
 
     # Extract Rwp from peak_result
     rwp_final = peak_result[3].get("Rwp") if len(peak_result) > 3 else None
@@ -194,14 +206,17 @@ def execute_spf_refinement(
 
     return {
         'success': True,
-        'rwp': rwp_final
+        'rwp': rwp_final,
+        'engine_rvals': peak_result[3],  # DoPeakFit's own residuals, for engine_details (A23)
     }
 
 
 # Schema executor registry
 SCHEMA_EXECUTORS = {
     'GSASII_Rietveld': execute_rietveld_refinement,
-    'GSASII_SPF': execute_spf_refinement
+    'GSASII_SPF': execute_spf_refinement,
+    'gsasii.rietveld': execute_rietveld_refinement,
+    'gsasii.spf': execute_spf_refinement,
 }
 
 
@@ -209,7 +224,7 @@ SCHEMA_EXECUTORS = {
 # Kicker script for PowderLine
 ########################################
 
-def run_refinement(recipe: RecipeModel, output_dir: Path, verbose: bool = False, method: str = 'server') -> dict:
+def run_refinement(recipe: GsasiiRietveldRecipe | GsasiiSpfRecipe, output_dir: Path, verbose: bool = False, method: str = 'server') -> dict:
     """
     Internal execution engine: run a GSAS-II refinement using already-loaded libraries.
 
@@ -225,8 +240,9 @@ def run_refinement(recipe: RecipeModel, output_dir: Path, verbose: bool = False,
     fields to pandas DataFrames.
 
     Args:
-        recipe: Validated RecipeModel instance (call ``powderline.validate()``
-            first if starting from a raw dict).
+        recipe: Validated ``gsasii.rietveld`` / ``gsasii.spf`` recipe model (call
+            ``powderline.validate()`` first if starting from a raw dict). 0.26.0
+            ``RecipeModel`` recipes run through ``_legacy_executor.run_refinement``.
         output_dir: Directory where output files are written (``dummy.gpx``,
             ``dummy.lst``, CSV reports, ``fit_profile.txt``). Must exist or be
             creatable.
@@ -259,9 +275,8 @@ def run_refinement(recipe: RecipeModel, output_dir: Path, verbose: bool = False,
 
     Example::
 
-        from powderline.kicker import run_refinement
-        from powderline.schema import RecipeModel
-        recipe = RecipeModel.model_validate(recipe_dict)
+        from powderline.kicker import run_refinement, validate
+        recipe = validate(recipe_dict)  # a gsasii.rietveld recipe dict
         result = run_refinement(recipe, Path('output'), verbose=True)
         print(f"Rwp: {result['rwp']:.3f}%  [run_id={result['run_id']}]")
     """
@@ -280,8 +295,8 @@ def run_refinement(recipe: RecipeModel, output_dir: Path, verbose: bool = False,
         gpx_path = output_dir / OUTPUT_NAMING.gpx_filename
         proj = G2.G2Project(newgpx=str(gpx_path))
 
-        # 3. Instrument initialization - now a list of dicts [Iparm1, Iparm2]
-        instrument_init = recipe.payload.instrument.initialization
+        # 3. Instrument parameters: GSAS-II's Iparm1 built from the instrument block (A99, A103)
+        iparm1 = gsasii_iparm1(recipe.payload.instrument)
 
         # 4. Add histogram - phase1B update: xrd_data is now a dict with arrays, instrument_init is list of dicts
         try:
@@ -291,7 +306,7 @@ def run_refinement(recipe: RecipeModel, output_dir: Path, verbose: bool = False,
                 intensity_array=xrd_data.Itth,
                 intensity_weights_array=xrd_data.Itth_weights,
                 histogram_name=OUTPUT_NAMING.histogram_name,
-                instrument_prm_dict=instrument_init[0],  # Use Iparm1 (first dict)
+                instrument_prm_dict=iparm1,
                 comments=None,
                 phases=None, # Optionally could link to phases if order of operations
             )
@@ -313,7 +328,7 @@ def run_refinement(recipe: RecipeModel, output_dir: Path, verbose: bool = False,
         set_hist_scale(proj, hist, hist_scale_val=DEFAULT_HIST_SCALE_VAL, hist_scale_refine_flag=DEFAULT_HIST_SCALE_REFINE_FLAG, print_info=verbose)
 
         # 5. Set fit range
-        fit_range = recipe.payload.fit_range if recipe.payload.fit_range else (None, None)
+        fit_range = (recipe.payload.fit_range.min, recipe.payload.fit_range.max) if recipe.payload.fit_range else (None, None)
         if fit_range != (None, None):
             set_fit_range_hist(hist, fit_range, print_info=verbose)
 
@@ -328,7 +343,7 @@ def run_refinement(recipe: RecipeModel, output_dir: Path, verbose: bool = False,
                 set_single_peak_background(proj, hist, bkg_single_peaks_dict, print_info=verbose)
 
         # 6b. Set single peaks (Peak List mode for non-background peaks)
-        if recipe.payload.single_peaks is not None:
+        if getattr(recipe.payload, 'single_peaks', None) is not None:  # gsasii.spf only
             single_peaks_dict = recipe.payload.single_peaks.model_dump(mode='json')
             # Check if dict has any actual peak data before calling setter
             has_peak_data = False
@@ -340,9 +355,10 @@ def run_refinement(recipe: RecipeModel, output_dir: Path, verbose: bool = False,
                 set_single_peaks(proj, hist, single_peaks_dict, print_info=verbose)
 
         # 7. Add phases (if present)
-        if recipe.payload.phases is not None and len(recipe.payload.phases) > 0:
+        if getattr(recipe.payload, 'phases', None) is not None and len(recipe.payload.phases) > 0:  # gsasii.rietveld only
             phases_dict = recipe.payload.model_dump(mode='json')['phases']
             add_phases_from_dict(proj, hist, phases_dict, print_info=verbose)
+            check_sites(proj, recipe)  # GSAS-II's reading of each atom's site (A117; EB-40, EB-05)
 
             # 8. Parameterize phases
             holds = set_phase_parameterization(proj, hist, phases_dict, print_info=verbose)
@@ -356,7 +372,7 @@ def run_refinement(recipe: RecipeModel, output_dir: Path, verbose: bool = False,
                     print(f"Applied {len(holds)} Hold constraint(s): {holds}")
 
         # 9. Set instrument parameterization
-        instrument_param_dict = recipe.payload.instrument.parameterization.model_dump(mode='json') if recipe.payload.instrument.parameterization else None
+        instrument_param_dict = recipe.payload.instrument.model_dump(mode='json')  # single source (A99, A103)
         if instrument_param_dict is not None:
             instrument_param_changes = False
             for key, value in instrument_param_dict.items():
@@ -374,7 +390,7 @@ def run_refinement(recipe: RecipeModel, output_dir: Path, verbose: bool = False,
         controls = recipe.payload.refinement_controls
 
         # 10a. Validate single_peak_fitting_mode requirements (only for GSASII_SPF)
-        if recipe.schema_name == 'GSASII_SPF':
+        if recipe.schema_name == 'gsasii.spf':
             if controls.single_peak_fitting_mode is None:
                 raise ValueError(
                     f"Schema '{recipe.schema_name}' requires "
@@ -496,6 +512,9 @@ def run_refinement(recipe: RecipeModel, output_dir: Path, verbose: bool = False,
             'refined_parameters': refined_parameters_data,
             'spf_peaks': spf_peaks_data,
             'spf_convergence_diagnostics': spf_diagnostics_data,
+            # Standard fit statistics from core fitstats; 'rwp' becomes the standard Rwp and
+            # GSAS-II's own values go to engine_details (A23, A45, A125)
+            **fit_report(proj, hist, recipe, engine_rwp=rwp, engine_rvals=result.get('engine_rvals')),
         }
 
     except Exception as e:

@@ -19,7 +19,9 @@ from pydantic import ValidationError
 from powderline.schema_core import BoundedRefinableParameter, Phase, RefinableParameter
 
 #: ``(module, class name, parameter type, engine fields of a valid phase)`` of every engine phase model.
-ENGINE_PHASES: list[tuple[str, str, type, dict]] = []
+ENGINE_PHASES: list[tuple[str, str, type, dict]] = [
+    ("powderline.gateways.gsasii.schema", "GsasiiPhase", RefinableParameter, {"scale": [1.0, False]}),
+]
 
 
 def _models():

@@ -219,7 +219,8 @@ def validate(recipe: RecipeModel | dict, verbose: bool = False) -> RecipeModel:
         verbose: If True, print simulation-mode warnings to stdout.
 
     Returns:
-        Validated ``RecipeModel`` instance.
+        Validated ``RecipeModel`` instance; for a native ``gsasii.rietveld`` /
+        ``gsasii.spf`` recipe, its ``GsasiiRietveldRecipe`` / ``GsasiiSpfRecipe``.
 
     Raises:
         pydantic.ValidationError: If the recipe fails schema validation.
@@ -237,6 +238,12 @@ def validate(recipe: RecipeModel | dict, verbose: bool = False) -> RecipeModel:
         print(f"Schema: {recipe_model.schema_name}, phases: {len(recipe_model.payload.phases or [])}")
     """
     from pydantic import ValidationError  # already imported at module level, re-stated for clarity
+
+    # A native ``gsasii.*`` recipe validates against its own schema (re/04, A39);
+    # its simulation rule is part of that schema (A88). 0.26.0 recipes below.
+    from powderline.gateways.gsasii.schema import is_native_recipe, validate_recipe
+    if is_native_recipe(recipe):
+        return validate_recipe(recipe)
 
     if not isinstance(recipe, RecipeModel):
         recipe = RecipeModel.model_validate(recipe)  # raises ValidationError on failure
