@@ -26,6 +26,7 @@ from powderline.gateways.gsasii.constraints import atom_refinement_plan, cell_re
 from powderline._status import CHECK, CROSS, INFO, WARN, emoji
 from dataclasses import dataclass
 from powderline.gateways.gsasii.schema import GsasiiRietveldRecipe, GsasiiSpfRecipe, gsasii_iparm1
+from powderline.gateways.gsasii.sites import check_sites
 
 from powderline.gateways.gsasii.helpers import (
     DEFAULT_HIST_SCALE_REFINE_FLAG,
@@ -346,6 +347,7 @@ def run_refinement(recipe: GsasiiRietveldRecipe | GsasiiSpfRecipe, output_dir: P
         if getattr(recipe.payload, 'phases', None) is not None and len(recipe.payload.phases) > 0:  # gsasii.rietveld only
             phases_dict = recipe.payload.model_dump(mode='json')['phases']
             add_phases_from_dict(proj, hist, phases_dict, print_info=verbose)
+            check_sites(proj, recipe)  # GSAS-II's reading of each atom's site (A117; EB-40, EB-05)
 
             # 8. Parameterize phases
             holds = set_phase_parameterization(proj, hist, phases_dict, print_info=verbose)
