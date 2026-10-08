@@ -299,7 +299,8 @@ def run(
     # 1. Validate (raises ValidationError / ValueError on failure)
     recipe = validate(recipe, verbose=verbose)
     # A native gsasii.* recipe's structured warnings come from validating the
-    # user's recipe, here, once, and are carried to the result (A115, A119)
+    # user's recipe and are carried to the result (A115, A119): here for
+    # validate_only and the in-process run, by GSASClient on its paths
     native = is_native_recipe(recipe)
     warnings = collect_warnings(recipe) if native else None
 
@@ -342,10 +343,10 @@ def run(
             auto_start_server=True,
         )
 
-    if native:
+    if native and execution_mode == 'subprocess':  # GSASClient adds them on its own paths
         result['warnings'] = warnings + list(result.get('warnings') or [])
-    else:  # the server's response model carries the native-only keys as null; a 0.26.0 result never had them
-        for key in ('r_exp', 'gof', 'chi2_red', 'engine_details', 'warnings'):
+    elif not native:  # the server's response model carries the native-only keys as null; a 0.26.0 result never had them
+        for key in ('r_exp', 'gof', 'chi2_red', 'simulation_mode', 'engine_details', 'warnings'):
             if key in result and result[key] is None:
                 del result[key]
 

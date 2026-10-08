@@ -25,12 +25,15 @@ from powderline.symmetry import orbit
 
 
 def _coordinate(v: float) -> str:
-    """A coordinate as a recipe states it: a constant exactly, or with no exact decimal form to 6 decimals."""
+    """A coordinate as a recipe states it (A120, A121): exactly when it has a finite decimal form, else to 6 decimals."""
     frac = Fraction(v).limit_denominator(48)
     if abs(float(frac) - v) < 1e-9:
-        if frac.denominator in (1, 2, 4, 8, 16):
-            return repr(float(frac))
-        return f"{float(frac):.6f}"
+        d = frac.denominator
+        while d % 2 == 0:
+            d //= 2
+        while d % 5 == 0:
+            d //= 5
+        return repr(float(frac)) if d == 1 else f"{float(frac):.6f}"  # 1/5 -> 0.2; 1/3 -> 0.333333
     return repr(round(v, 10))
 
 
@@ -61,12 +64,14 @@ def site_problems(proj, phases) -> list[str]:
             suggestion = next((p for p in orbit(phase.space_group, xyz)
                                if (lambda s: s[1] == core and s[0] != "sp")(G2spc.SytSym(list(p), sgdata)[:2])),
                               None)
-            where = f"phases.{name}.atoms.{label} at ({', '.join(_coordinate(v) for v in xyz)})"
+            where = f"payload.phases.{name}.atoms.{label} at ({', '.join(_coordinate(v) for v in xyz)})"
             if suggestion is None:
                 problems.append(f"{where}: {why}; no equivalent position GSAS-II reads correctly was found")
             else:
+                aniso = ("; its Uaniso must be transformed by the same symmetry operation (U' = R U R^T), not just "
+                         "made site-symmetric" if atom.Uaniso is not None else "")
                 problems.append(f"{where}: {why}; state the equivalent position "
-                                f"({', '.join(_coordinate(v) for v in suggestion)}) instead")
+                                f"({', '.join(_coordinate(v) for v in suggestion)}) instead{aniso}")
     return problems
 
 

@@ -19,8 +19,16 @@ def pandas_csv_rows(df: pd.DataFrame, float_format: str | None = None) -> list[l
         col = df[name]
         if col.dtype.kind == "f":
             fmt = (lambda v, f=float_format: f % v) if float_format else str
-            columns.append(["" if pd.isna(v) else fmt(v) for v in col])
+            # numpy scalars, not Python floats: a float32 0.1 is written "0.1", as pandas does
+            columns.append(["" if pd.isna(v) else fmt(v) for v in col.to_numpy()])
         else:
-            columns.append(["" if v is None or v is pd.NA or (isinstance(v, float) and pd.isna(v)) else str(v)
-                            for v in col.astype(object)])
+            columns.append(["" if _missing(v) else str(v) for v in col.astype(object)])
     return [list(row) for row in zip(*columns)] if columns else []
+
+
+def _missing(v) -> bool:
+    """What ``to_csv`` writes as ``na_rep``: None, NaN of any float type, ``pd.NA``, ``NaT``."""
+    try:
+        return bool(pd.isna(v))
+    except (TypeError, ValueError):  # a list or array in an object column: not a scalar missing value
+        return False

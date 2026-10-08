@@ -13,13 +13,17 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import numpy as np
 import pytest
 
 pytest.importorskip("GSASII.GSASIIscriptable")
 
 import powderline  # noqa: E402
 from powderline.exceptions import EngineExecutionError  # noqa: E402
+from powderline.gateways.gsasii.client import GSASClient  # noqa: E402
 from powderline.gateways.gsasii.executors import execute_spf_refinement  # noqa: E402
+from powderline.gateways.gsasii.fit_report import fit_report, parameters_requested  # noqa: E402
+from powderline.gateways.gsasii.schema import validate_recipe  # noqa: E402
 from powderline.symmetry import analyze_site, orbit  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -103,7 +107,7 @@ def test_site_gsasii_misreads_is_an_error_naming_an_equivalent_position(tmp_path
     """EB-40: GSAS-II doubles the multiplicity at (0, 1/3, 1/6); 4x the intensity, so always an error (A117)."""
     r = _single_atom(tmp_path / "a", *RHOMB, (0.0, 0.333333, 0.166667))
     assert not r["success"]
-    assert ("phases.P.atoms.Fe at (0.0, 0.333333, 0.166667): GSAS-II reads it as site '1' with multiplicity 36, "
+    assert ("payload.phases.P.atoms.Fe at (0.0, 0.333333, 0.166667): GSAS-II reads it as site '1' with multiplicity 36, "
             "but its multiplicity is 18") in r["error"]
     assert "state the equivalent position (0.666667, 0.666667, 0.166667) instead" in r["error"]
     assert _single_atom(tmp_path / "b", *RHOMB, (0.666667, 0.666667, 0.166667))["success"]
@@ -144,3 +148,101 @@ def test_spf_runs_with_standard_statistics(tmp_path):
     assert r["success"], r.get("error")
     assert r["engine_details"]["parameters_varied"] > 0 and isinstance(r["r_exp"], float)
     assert not r["spf_peaks"].empty
+    assert r["simulation_mode"] is False
+
+
+
+# --- re/04 PR review: divergence (A130), simulation statistics (A129), not-varied warning (A128) -------------
+
+
+def _fake_run(recipe, ycalc, n_vars):
+    """GSAS-II's post-run state as fit_report reads it: profile arrays, fit window, Rvals."""
+    x = np.linspace(1.0, 15.0, 50)
+    yobs = 100.0 + 10.0 * np.sin(x)
+    hist = MagicMock()
+    hist.data = {"data": [None, [np.ma.array(x), yobs, np.ones_like(x), ycalc(yobs)]], "Limits": [None, [1.0, 15.0]]}
+    proj = MagicMock()
+    proj.data = {"Covariance": {"data": {"Rvals": {"Nvars": n_vars, "GOF": 1.0, "chisq": 50.0, "Nobs": 50}}}}
+    return proj, hist
+
+
+def test_diverged_refinement_is_a_clear_engine_error():
+    """GSAS-II does not flag a diverged run (NaN profile, wR shown as 100 %); PowderLine reports a failure."""
+    recipe = validate_recipe(_lab6())
+    proj, hist = _fake_run(recipe, lambda y: np.where(np.arange(y.size) < 5, np.nan, y), 17)
+    with pytest.raises(EngineExecutionError, match=r"refinement diverged: the calculated pattern is not finite at "
+                                                   r"5 of 50 points"):
+        fit_report(proj, hist, recipe, engine_rwp=100.0)
+
+
+def test_fewer_parameters_varied_than_requested_warns():
+    recipe = validate_recipe(_lab6())
+    requested = parameters_requested(recipe)
+    proj, hist = _fake_run(recipe, lambda y: y * 1.01, requested - 3)
+    out = fit_report(proj, hist, recipe, engine_rwp=1.0)
+    codes = [w["code"] for w in out["warnings"]]
+    assert codes == ["gsasii_parameters_not_varied"]
+    assert f"GSAS-II varied {requested - 3} parameter(s), but the recipe refines {requested}" in out["warnings"][0]["message"]
+    proj, hist = _fake_run(recipe, lambda y: y * 1.01, requested)
+    assert fit_report(proj, hist, recipe, engine_rwp=1.0)["warnings"] == []
+
+
+def test_undefined_statistic_is_none_not_nan():
+    """No degrees of freedom: r_exp, gof and chi2_red are undefined; None in every execution mode (JSON-safe)."""
+    recipe = validate_recipe(_lab6())
+    proj, hist = _fake_run(recipe, lambda y: y * 1.01, 60)
+    out = fit_report(proj, hist, recipe, engine_rwp=1.0)
+    assert isinstance(out["rwp"], float) and out["r_exp"] is None and out["gof"] is None and out["chi2_red"] is None
+
+
+def test_simulation_reports_statistics_and_says_it_is_one(tmp_path):
+    """A simulation gets the standard statistics, like a refinement, and simulation_mode True (A129)."""
+    old = json.loads((ROOT / "examples" / "example_DRX_33_simulation" / "input.json").read_text(encoding="utf-8"))
+    r = powderline.run(conv.convert(old)[0], tmp_path, execution_mode="subprocess")
+    assert r["success"], r.get("error")
+    assert r["simulation_mode"] is True and isinstance(r["rwp"], float)
+    assert r["engine_details"]["parameters_varied"] == 0
+
+
+@pytest.mark.parametrize("given", ["dict", "model"])
+def test_gsasclient_carries_validation_warnings(tmp_path, monkeypatch, given):
+    """A115: a direct GSASClient call reports the A107 default too (kicker.run adds them only in-process)."""
+    recipe = _lab6()
+    recipe["payload"]["phases"]["LaB6"].pop("peak_broadening", None)
+    if given == "model":
+        recipe = validate_recipe(recipe)
+    monkeypatch.setattr(GSASClient, "_dispatch", lambda self, *a: {"success": True, "warnings": [{"code": "x"}]})
+    result = GSASClient().submit_simulation(recipe, tmp_path)
+    assert [w["code"] for w in result["warnings"]] == ["gsasii_broadening_default_applied"] * 2 + ["x"]
+
+
+
+@pytest.mark.parametrize("value, text", [(0.2, "0.2"), (0.5, "0.5"), (0.0625, "0.0625"), (1 / 3, "0.333333"),
+                                         (23 / 24, "0.958333"), (0.1234567, "0.1234567")])
+def test_site_message_coordinates_exact_where_a_decimal_form_exists(value, text):
+    """A120/A121: a finite decimal is written exactly, a third (or 1/24) to 6 decimals."""
+    from powderline.gateways.gsasii.sites import _coordinate
+    assert _coordinate(value) == text
+
+
+def test_site_message_says_uaniso_must_be_transformed():
+    """Moving an anisotropic atom to an equivalent position also rotates its Uij (U' = R U R^T)."""
+    from types import SimpleNamespace
+    from GSASII import GSASIIspc as G2spc
+    from powderline.gateways.gsasii.schema import GsasiiPhase, gsasii_space_group
+    from powderline.gateways.gsasii.sites import site_problems
+    u = {"U11": 0.011, "U22": 0.011, "U33": 0.023, "U12": 0.0085, "U13": 0.0031, "U23": -0.0031}
+    phase = GsasiiPhase.model_validate({
+        "space_group": "R -3 m:H", "scale": [1.0, False],
+        "unit_cell": {k: [v, False] for k, v in zip(("a", "b", "c", "alpha", "beta", "gamma"),
+                                                    (5.0, 5.0, 13.0, 90.0, 90.0, 120.0))},
+        "atoms": {"Fe": {"element": "Fe", "x": [0.0, False], "y": [0.333333, False], "z": [0.166667, False],
+                         "occupancy": [1.0, False], "ADP": "Uaniso",
+                         "Uaniso": {k: [v, False] for k, v in u.items()}}}})
+    _err, sgdata = G2spc.SpcGroup(gsasii_space_group("R -3 m:H"))
+    xyz = [0.0, 1 / 3, 1 / 6]
+    sym, mult = G2spc.SytSym(xyz, sgdata)[:2]
+    proj = SimpleNamespace(data={"Phases": {"P": {"General": {"SGData": sgdata},
+                                                  "Atoms": [["Fe", "Fe", "", *xyz, 1.0, sym, mult]]}}})
+    (problem,) = site_problems(proj, {"P": phase})
+    assert "its Uaniso must be transformed by the same symmetry operation (U' = R U R^T)" in problem

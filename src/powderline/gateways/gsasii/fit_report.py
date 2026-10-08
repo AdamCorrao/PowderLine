@@ -10,12 +10,21 @@ Read after the refinement from what GSAS-II stored:
   ``Covariance['data']['Rvals']['Nvars']`` (it includes parameters GSAS-II then
   dropped as singular, EB-33), Peak List fit ``len(Peak List['sigDict'])``;
 - GSAS-II's own values (``Rwp``; ``GOF``, which for a Rietveld refinement is
-  sqrt(reduced chi^2), EB-52; ``chisq``; ``Nobs``)
+  sqrt(reduced chi^2) and for a peak fit the reduced chi^2 itself, EB-52;
+  ``chisq``; ``Nobs``)
   under ``engine_details``, with ``parameters_requested`` (the recipe's
   independently refined parameters) next to ``parameters_varied`` (P);
 - GSAS-II's refinement message (``Rvals['msg']``: parameters dropped as
   singular, SVD problems, limits), which ``G2strMain.Refine`` only prints
-  (EB-32), as a structured warning.
+  (EB-32), as a structured warning; and a warning when GSAS-II varied fewer
+  parameters than the recipe requested (A128).
+
+A calculated pattern that is not finite inside the fit window means the
+refinement diverged; GSAS-II does not report that as a failure (its wR shows
+100 %, EB-52), so it is raised here as an ``EngineExecutionError`` (A130). A
+simulation (``refinement_cycles == 1``) gets the same statistics as a
+refinement, and every result says which it was (``simulation_mode``, A129).
+A statistic that is undefined (no degrees of freedom) is ``None``.
 
 Runtime layer (called with GSAS-II objects); imports no GSAS-II module itself.
 """
@@ -25,8 +34,9 @@ from __future__ import annotations
 import re
 
 import numpy as np
+from pydantic import BaseModel
 
-from powderline.exceptions import StructuredWarning
+from powderline.exceptions import EngineExecutionError, StructuredWarning
 from powderline.fitstats import compute_fit_statistics
 from powderline.schema_core import ChebyshevBackground, Phase, RefinableParameter
 from powderline.symmetry import cell_tie_groups, coupling_groups
@@ -48,7 +58,7 @@ def parameters_requested(recipe) -> int:
         elif isinstance(obj, list):
             for v in obj:
                 walk(v)
-        elif hasattr(obj, "model_fields"):
+        elif isinstance(obj, BaseModel):
             for name in type(obj).model_fields:
                 walk(getattr(obj, name))
             if isinstance(obj, Phase):  # a refined tie group is one engine parameter
@@ -71,26 +81,42 @@ def _dropped(msg: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
-def fit_report(proj, hist, recipe, engine_rwp) -> dict:
-    """``rwp``, ``r_exp``, ``gof``, ``chi2_red``, ``engine_details`` and ``warnings`` for the result dict.
+def _finite_or_none(v) -> float | None:
+    """A plain float (the result crosses JSON in server mode), or ``None`` if undefined (NaN) or absent."""
+    return None if v is None or not np.isfinite(v) else float(v)
 
-    ``engine_rwp`` is the Rwp GSAS-II reported for the run (the executor's value).
+
+def fit_report(proj, hist, recipe, engine_rwp, engine_rvals=None) -> dict:
+    """``rwp``, ``r_exp``, ``gof``, ``chi2_red``, ``simulation_mode``, ``engine_details`` and ``warnings``.
+
+    ``engine_rwp`` is the Rwp GSAS-II reported for the run (the executor's
+    value); ``engine_rvals`` the peak fit's own residuals (``DoPeakFit``'s
+    ``Rvals``; single peak fitting only). Raises ``EngineExecutionError`` when
+    the refinement diverged (a non-finite calculated pattern in the fit window).
     """
     x, yobs, weights, ycalc = (hist.data["data"][1][i] for i in range(4))
     lo, hi = hist.data["Limits"][1]
     xs = np.ma.getdata(x)
     mask = (xs >= lo) & (xs <= hi) & ~np.ma.getmaskarray(x)
+    yc = np.ma.getdata(ycalc)
+    diverged = int(np.count_nonzero(~np.isfinite(yc[mask])))
+    if diverged:
+        raise EngineExecutionError(
+            f"GSAS-II's refinement diverged: the calculated pattern is not finite at {diverged} of "
+            f"{int(np.count_nonzero(mask))} points in the fit window, so no result is reported (GSAS-II itself "
+            "does not flag this; its wR shows 100 %, EB-52). Refine fewer or less correlated parameters, or start "
+            "closer to the solution; the GSAS-II files in the output directory show the diverged parameters.")
     spf = recipe.schema_name == "gsasii.spf"
     if spf:
-        rvals = {}
+        rvals = {k: v for k, v in (engine_rvals or {}).items() if k in ("GOF",)}
         n_params = len(hist.data.get("Peak List", {}).get("sigDict") or {})
     else:
         rvals = proj.data.get("Covariance", {}).get("data", {}).get("Rvals", {}) or {}
         n_params = int(rvals.get("Nvars", 0))
-    stats = compute_fit_statistics(np.ma.getdata(yobs), np.ma.getdata(ycalc), np.ma.getdata(weights),
-                                   n_params, mask=mask)
+    stats = compute_fit_statistics(np.ma.getdata(yobs), yc, np.ma.getdata(weights), n_params, mask=mask)
     message = " ".join(str(rvals.get("msg", "")).split())
-    num = lambda v: None if v is None else float(v)  # plain floats: the result crosses JSON (server mode)
+    num = _finite_or_none
+    requested = parameters_requested(recipe)
     details = {
         "engine": "GSAS-II",
         "rwp": num(engine_rwp),
@@ -98,7 +124,7 @@ def fit_report(proj, hist, recipe, engine_rwp) -> dict:
         "chi2": num(rvals.get("chisq")),
         "n_obs": None if rvals.get("Nobs") is None else int(rvals["Nobs"]),
         "n_points": stats.n_points,
-        "parameters_requested": parameters_requested(recipe),
+        "parameters_requested": requested,
         "parameters_varied": n_params,
         "message": message or None,
     }
@@ -111,5 +137,14 @@ def fit_report(proj, hist, recipe, engine_rwp) -> dict:
                      + (f" ({dropped} parameter(s) dropped as singular are still counted in "
                         "parameters_varied, GSAS-II's own count, EB-33)" if dropped else "")),
             field_path=None))
-    return {"rwp": stats.rwp, "r_exp": stats.rexp, "gof": stats.gof, "chi2_red": stats.chi2_red,
+    if n_params < requested:
+        warnings.append(StructuredWarning(
+            code="gsasii_parameters_not_varied",
+            message=(f"GSAS-II varied {n_params} parameter(s), but the recipe refines {requested} (one per "
+                     "symmetry tie group); GSAS-II left the others fixed or dropped them"
+                     + (" as singular without reporting which (single peak fitting, EB-53)" if spf else "")
+                     + "; compare refined_parameters with the recipe's refine flags"),
+            field_path=None))
+    return {"rwp": num(stats.rwp), "r_exp": num(stats.rexp), "gof": num(stats.gof), "chi2_red": num(stats.chi2_red),
+            "simulation_mode": recipe.payload.refinement_controls.refinement_cycles == 1,
             "engine_details": details, "warnings": warnings}

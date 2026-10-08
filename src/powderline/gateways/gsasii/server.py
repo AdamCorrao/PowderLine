@@ -91,6 +91,7 @@ class SimulationResponse(BaseModel):
     r_exp: Optional[float] = None
     gof: Optional[float] = None
     chi2_red: Optional[float] = None
+    simulation_mode: Optional[bool] = None
     engine_details: Optional[dict] = None
     warnings: Optional[list] = None
 
