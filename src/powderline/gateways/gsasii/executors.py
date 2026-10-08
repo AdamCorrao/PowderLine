@@ -26,7 +26,9 @@ from powderline.gateways.gsasii.constraints import atom_refinement_plan, cell_re
 from powderline._status import CHECK, CROSS, INFO, WARN, emoji
 from dataclasses import dataclass
 from powderline.gateways.gsasii.schema import GsasiiRietveldRecipe, GsasiiSpfRecipe, gsasii_iparm1
+from powderline.gateways.gsasii.fit_report import fit_report
 from powderline.gateways.gsasii.sites import check_sites
+from powderline.exceptions import EngineExecutionError
 
 from powderline.gateways.gsasii.helpers import (
     DEFAULT_HIST_SCALE_REFINE_FLAG,
@@ -179,7 +181,13 @@ def execute_spf_refinement(
         print(f"{'='*60}\n")
 
     # Execute single peak fitting (cycles already set in step 10)
-    peak_result = hist.refine_peaks(mode=spf_mode)
+    try:
+        peak_result = hist.refine_peaks(mode=spf_mode)
+    except TypeError as exc:  # DoPeakFit failed and returned None; refine_peaks then indexes it (EB-38)
+        raise EngineExecutionError(
+            "GSAS-II's peak fit failed: DoPeakFit returned no result (GSAS-II prints the reason only in its "
+            "debug mode; GSAS-II quirk EB-38). Check the peak positions, widths and fit range."
+        ) from exc
 
     # Extract Rwp from peak_result
     rwp_final = peak_result[3].get("Rwp") if len(peak_result) > 3 else None
@@ -501,6 +509,9 @@ def run_refinement(recipe: GsasiiRietveldRecipe | GsasiiSpfRecipe, output_dir: P
             'refined_parameters': refined_parameters_data,
             'spf_peaks': spf_peaks_data,
             'spf_convergence_diagnostics': spf_diagnostics_data,
+            # Standard fit statistics from core fitstats; 'rwp' becomes the standard Rwp and
+            # GSAS-II's own values go to engine_details (A23, A45, A125)
+            **fit_report(proj, hist, recipe, engine_rwp=rwp),
         }
 
     except Exception as e:

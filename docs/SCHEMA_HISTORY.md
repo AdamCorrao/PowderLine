@@ -192,9 +192,53 @@ engine schemas adopt it in re/04–06.
 
 ## gsasii engine schema
 
-### 1.0.0 — introduced in PowderLine 0.2.0
+### 1.0.0 — introduced in PowderLine 0.2.0 (in development)
 
-Entries added by re/04 (`gsasii.rietveld`, `gsasii.spf`).
+Defined in `src/powderline/gateways/gsasii/schema.py` (engine-free), on core
+1.0.0. Accepted versions are declared: engine schema `==1.0.0`, requiring
+core `==1.0.0`. A 0.26.0 `GSASII_*` recipe is converted with
+`scripts/convert_recipe_026.py`, which reports every change.
+
+- **Workflows**: `gsasii.rietveld` (`phases`, no `single_peaks`) and
+  `gsasii.spf` (`single_peaks`, no `phases`; `refinement_controls.single_peak_fitting_mode`
+  required).
+- **Parameters**: `[value, refine_flag]` only. GSAS-II applies parameter
+  limits only after the fit, so gsasii 1.0.0 exposes no bounds; a 4-element
+  list is an error.
+- **Phase block**: core's `space_group`, `unit_cell`, `atoms`, plus `scale`
+  (required, >= 0) and `peak_broadening` (isotropic size in µm and microstrain,
+  each with `LG_eta`). The phase name is its key in `phases`.
+  - Space group: GSAS-II cannot use origin choice 1 or 9 other settings (7 it
+    does not read; `P 21 n m` and `A b a m` it reads as another setting), so
+    they are errors.
+  - Cell refinement: GSAS-II refines an oblique cell's parameters together
+    (monoclinic {a, c, β} for b-unique, {b, c, α} a-unique, {a, b, γ}
+    c-unique; all six for triclinic and rhombohedral axes). Refining part of
+    such a group is an error.
+  - **Size/strain left out**: 10 µm / 0 microstrain, isotropic, fixed, with a
+    structured warning, instead of GSAS-II's own 1 µm / 1000 microstrain.
+- **Instrument** (single source; GSAS-II's instrument parameters are built from
+  it): `description` (optional), `radiation {type: "PXC", wavelength}`,
+  `geometry {bank, azimuth}` (plain values), `corrections {zero_shift,
+  polarization, axial_divergence}`, `broadening {U, V, W, X, Y, Z}`. GSAS-II
+  units: U, V, W centideg²; X, Y, Z and zero centideg; SH/L dimensionless.
+  SH/L below 0.002 is an error (GSAS-II computes with 0.002 anyway). Kα
+  doublets, TOF and neutron are not supported.
+- **Background**: `chebyshev` (left out: one fixed term 0.0, no background,
+  instead of GSAS-II's constant 1.0) and optional `single_peaks` (positions,
+  intensities, `pv_gaussian_sigma_sq` in centideg², `pv_lorentzian_gamma` in
+  centideg; all four lists the same length; each position inside the fit
+  window). Values below GSAS-II's silent floors (intensity 0.1, σ² 0.01, γ 0.1)
+  are errors. Peak List peaks (`gsasii.spf`): σ² and γ at least 0.001.
+- **Simulation** (`refinement_cycles` 1): every refine flag must be false.
+- **At run time**, after phase setup: an atom GSAS-II reads with the wrong
+  multiplicity (some 2-fold sites in R32, R-3m, R-3c), or whose site it cannot
+  name while a coordinate or Uaniso is refined, is an error naming an
+  equivalent position to state instead.
+- **Results**: `rwp`, `r_exp`, `gof`, `chi2_red` from PowderLine's uniform fit
+  statistics; GSAS-II's own values, `parameters_requested` and
+  `parameters_varied` under `engine_details`; structured `warnings` (defaults
+  applied, GSAS-II's refinement messages).
 
 ## topas engine schema
 

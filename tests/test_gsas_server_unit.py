@@ -215,3 +215,12 @@ def test_stop_server_force_kill_never_dies_returns_false(isolated_pid_files, mon
     assert result is False
     assert calls["signals"] == [(4242, signal.SIGTERM), (4242, _FORCE_SIGNAL)]
     assert "failed to stop" in capsys.readouterr().out.lower()
+
+
+def test_response_model_keeps_native_result_keys():
+    """A native gsasii.* result crosses the server with its standard statistics and warnings (re/04, A125)."""
+    native = {"success": True, "rwp": 6.53, "r_exp": 12.4, "gof": 0.52, "chi2_red": 0.27,
+              "engine_details": {"engine": "GSAS-II", "parameters_varied": 13},
+              "warnings": [{"code": "c", "message": "m", "field_path": None}]}
+    dumped = gsas_server.SimulationResponse(**native).model_dump()
+    assert {k: dumped[k] for k in native} == native

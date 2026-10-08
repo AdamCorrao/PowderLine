@@ -87,6 +87,12 @@ class SimulationResponse(BaseModel):
     refined_parameters: Optional[list] = None
     spf_peaks: Optional[dict] = None
     spf_convergence_diagnostics: Optional[dict] = None
+    # native gsasii.* runs (re/04): standard fit statistics, GSAS-II's own values, structured warnings
+    r_exp: Optional[float] = None
+    gof: Optional[float] = None
+    chi2_red: Optional[float] = None
+    engine_details: Optional[dict] = None
+    warnings: Optional[list] = None
 
 
 # --- Logging ---

@@ -193,6 +193,10 @@ def _run_with_mocked_gsas(mock_recipe, tmp_path, proj, hist, executor_mode):
     # For native mode, also patch gsasii_iparm1
     if executor_mode == "native":
         patches_list.append(patch(f"{module_path}.gsasii_iparm1", return_value={}))
+        # the native run's site check and fit report read real GSAS-II data (tested in
+        # test_gsasii_native_run); these mocks test missing-key handling only
+        patches_list.append(patch(f"{module_path}.check_sites"))
+        patches_list.append(patch(f"{module_path}.fit_report", return_value={}))
 
     # Apply all patches and call
     from contextlib import ExitStack
@@ -356,6 +360,10 @@ class TestHistogramLoadFailure:
         ]
         if executor_mode == "native":
             patches_list.append(patch(f"{module_path}.gsasii_iparm1", return_value={}))
+            # the native run's site check and fit report read real GSAS-II data (tested in
+            # test_gsasii_native_run); these mocks test missing-key handling only
+            patches_list.append(patch(f"{module_path}.check_sites"))
+            patches_list.append(patch(f"{module_path}.fit_report", return_value={}))
 
         from contextlib import ExitStack
         with ExitStack() as stack:
@@ -389,6 +397,10 @@ class TestHistogramLoadFailure:
         ]
         if executor_mode == "native":
             patches_list.append(patch(f"{module_path}.gsasii_iparm1", return_value={}))
+            # the native run's site check and fit report read real GSAS-II data (tested in
+            # test_gsasii_native_run); these mocks test missing-key handling only
+            patches_list.append(patch(f"{module_path}.check_sites"))
+            patches_list.append(patch(f"{module_path}.fit_report", return_value={}))
 
         from contextlib import ExitStack
         with ExitStack() as stack:
@@ -434,6 +446,10 @@ class TestExecutorFailure:
         ]
         if executor_mode == "native":
             patches_list.append(patch(f"{module_path}.gsasii_iparm1", return_value={}))
+            # the native run's site check and fit report read real GSAS-II data (tested in
+            # test_gsasii_native_run); these mocks test missing-key handling only
+            patches_list.append(patch(f"{module_path}.check_sites"))
+            patches_list.append(patch(f"{module_path}.fit_report", return_value={}))
 
         from contextlib import ExitStack
         with ExitStack() as stack:
@@ -476,6 +492,10 @@ class TestExecutorFailure:
         ]
         if executor_mode == "native":
             patches_list.append(patch(f"{module_path}.gsasii_iparm1", return_value={}))
+            # the native run's site check and fit report read real GSAS-II data (tested in
+            # test_gsasii_native_run); these mocks test missing-key handling only
+            patches_list.append(patch(f"{module_path}.check_sites"))
+            patches_list.append(patch(f"{module_path}.fit_report", return_value={}))
 
         from contextlib import ExitStack
         with ExitStack() as stack:
@@ -522,6 +542,10 @@ class TestUnknownSchemaName:
         ]
         if executor_mode == "native":
             patches_list.append(patch(f"{module_path}.gsasii_iparm1", return_value={}))
+            # the native run's site check and fit report read real GSAS-II data (tested in
+            # test_gsasii_native_run); these mocks test missing-key handling only
+            patches_list.append(patch(f"{module_path}.check_sites"))
+            patches_list.append(patch(f"{module_path}.fit_report", return_value={}))
 
         from contextlib import ExitStack
         with ExitStack() as stack:
@@ -569,6 +593,10 @@ class TestCorruptCovariance:
         ]
         if executor_mode == "native":
             patches_list.append(patch(f"{module_path}.gsasii_iparm1", return_value={}))
+            # the native run's site check and fit report read real GSAS-II data (tested in
+            # test_gsasii_native_run); these mocks test missing-key handling only
+            patches_list.append(patch(f"{module_path}.check_sites"))
+            patches_list.append(patch(f"{module_path}.fit_report", return_value={}))
 
         from contextlib import ExitStack
         with ExitStack() as stack:
@@ -608,6 +636,10 @@ class TestTracebackConsistency:
         ]
         if executor_mode == "native":
             patches_list.append(patch(f"{module_path}.gsasii_iparm1", return_value={}))
+            # the native run's site check and fit report read real GSAS-II data (tested in
+            # test_gsasii_native_run); these mocks test missing-key handling only
+            patches_list.append(patch(f"{module_path}.check_sites"))
+            patches_list.append(patch(f"{module_path}.fit_report", return_value={}))
 
         from contextlib import ExitStack
         with ExitStack() as stack:
@@ -655,6 +687,10 @@ class TestTracebackConsistency:
         ]
         if executor_mode == "native":
             patches_list.append(patch(f"{module_path}.gsasii_iparm1", return_value={}))
+            # the native run's site check and fit report read real GSAS-II data (tested in
+            # test_gsasii_native_run); these mocks test missing-key handling only
+            patches_list.append(patch(f"{module_path}.check_sites"))
+            patches_list.append(patch(f"{module_path}.fit_report", return_value={}))
 
         from contextlib import ExitStack
         with ExitStack() as stack:
@@ -708,6 +744,10 @@ class TestTracebackConsistency:
         ]
         if executor_mode == "native":
             patches_list.append(patch(f"{module_path}.gsasii_iparm1", return_value={}))
+            # the native run's site check and fit report read real GSAS-II data (tested in
+            # test_gsasii_native_run); these mocks test missing-key handling only
+            patches_list.append(patch(f"{module_path}.check_sites"))
+            patches_list.append(patch(f"{module_path}.fit_report", return_value={}))
 
         from contextlib import ExitStack
         with ExitStack() as stack:
@@ -752,6 +792,10 @@ class TestTracebackConsistency:
         ]
         if executor_mode == "native":
             patches_list.append(patch(f"{module_path}.gsasii_iparm1", return_value={}))
+            # the native run's site check and fit report read real GSAS-II data (tested in
+            # test_gsasii_native_run); these mocks test missing-key handling only
+            patches_list.append(patch(f"{module_path}.check_sites"))
+            patches_list.append(patch(f"{module_path}.fit_report", return_value={}))
 
         from contextlib import ExitStack
         with ExitStack() as stack:
