@@ -40,6 +40,7 @@ EXPECTED_MODULES = (
     "executors.py",
     "extractors.py",
     "constraints.py",
+    "_legacy_executor.py",
 )
 
 
