@@ -423,10 +423,15 @@ class SiteAnalysis:
 
     Attributes:
         stated: the coordinates as given.
-        canonical: the coordinates every gateway uses -- equal to ``stated`` for
-            a general position; on a special position, symmetry-fixed axes are
-            exact (see ``exact``) and coupled axes satisfy their relation (to
-            floating-point precision), by the least change from ``stated``.
+        canonical: ``stated`` moved onto the special position by the least
+            (orthogonal) change: equal to ``stated`` for a general position;
+            on a special position, symmetry-fixed axes are exact (see
+            ``exact``) and coupled axes satisfy their relation (to
+            floating-point precision). Used here to find the stabilizer and
+            the tie offsets. It is **not** what the engines receive: the
+            validated core ``Phase`` holds those coordinates (A120), and keeps
+            a tie group's first member as stated where ``canonical`` may move
+            it (e.g. by ~1e-7 at a ``y = x + 1/3`` tie).
         exact: per axis, the exact rational value of a symmetry-fixed
             coordinate (``None`` for a free or coupled axis).
         axes: ``"FREE"`` / ``"FIXED"`` / ``"COUPLED"`` per axis.
@@ -454,7 +459,7 @@ def _fmt_xyz(xyz) -> str:
 
 
 def _fmt_exact(values, exact) -> str:
-    return "(" + ", ".join(str(e) if e is not None else f"{v:.6g}" for v, e in zip(values, exact)) + ")"
+    return "(" + ", ".join(str(e) if e is not None else f"{v:.6f}" for v, e in zip(values, exact)) + ")"
 
 
 def _barycenter(x: np.ndarray, ops) -> np.ndarray:
