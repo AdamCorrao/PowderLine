@@ -22,6 +22,14 @@ version numbers (`powderline.support_matrix()` lists the declarations).
 Defined in `src/powderline/schema_core.py`. Not used by any gateway yet: the
 engine schemas adopt it in re/04–06.
 
+> **Pre-release revision (re/03b, not a new version).** Before its first
+> release, core 1.0.0 replaced its structure-only phase model (`PhaseStructure`
+> with plain values, plus `null`-valued "structure" parameters) with the
+> **phase block** described below: one block per phase, every structural
+> quantity a refinable parameter, flags and bounds checked against the symmetry,
+> and `space_group` in gemmi's canonical spelling. No recipe was ever written
+> against the earlier draft.
+
 - **Recipe frame** (`CoreRecipe`): `schema_name` (`"<engine>.<workflow>"`),
   `core_schema_version`, `engine_schema_version`, `metadata`, `payload` (typed
   by the engine schema). Unknown keys are errors at every level.
@@ -29,10 +37,10 @@ engine schemas adopt it in re/04–06.
   at most **1 MiB** as UTF-8 JSON. The cap is the constant
   `schema_core.METADATA_MAX_BYTES`; change it there and record the change here.
 - **Parameters**: `[value, refine_flag]` (no bounds) or
-  `[value, refine_flag, min, max]` (bounds the engine honors). A bounded list
-  where bounds aren't supported is an error. `refine_flag` is a JSON boolean.
-  `value` may be `null` (= start from the phase structure's value) only for
-  quantities that mirror a structure value.
+  `[value, refine_flag, min, max]` (bounds the engine honors; `min`/`max` may
+  be `null` = open). A bounded list where bounds aren't supported is an error.
+  `value` is always a number and `refine_flag` a JSON boolean; neither is ever
+  `null`.
 - **Data and ranges**: `xrd_data` (2θ in degrees, weights 1/σ², validated as in
   0.26.0); `fit_range` `[min, max]`, with `max > min`, inside the data's 2θ range.
 - **Background**: Chebyshev (`num_coefficients`, `coefficients`, `refine_flag`).
@@ -43,40 +51,144 @@ engine schemas adopt it in re/04–06.
   take a whole number (`4` or `4.0`), not `4.5`.
 - **Accepted core versions** (this release): `==1.0.0`.
 
-- **Phase structure** (`PhaseStructure`): `phase_name`, `space_group`,
-  `unit_cell`, `atoms` (keyed by label). Structural interpretation is checked
-  once, in core, so every engine gets the same structure. All structural
-  problems are reported together, each at its own field (`unit_cell`,
-  `atoms.<label>`, `atoms.<label>.Multiplicity`, `atoms.<label>.Uaniso`); they
-  are checked once the individual fields are valid:
-  - **Space group**: a Hermann–Mauguin symbol. Two-origin groups need an explicit
-    `:1`/`:2` and rhombohedral groups `:H`/`:R` (e.g. `"F d -3 m:2"`,
-    `"R -3 m:H"`). Individual engines may accept fewer settings.
+- **Phase block** (`Phase`): one block per phase, keyed by the phase name in
+  the engine payload's `phases` (no `phase_name` field). Core owns
+  `space_group`, `unit_cell` and `atoms`; each engine schema adds its own phase
+  fields next to them (e.g. gsasii `scale`, `peak_broadening`) and may add
+  its own checks, but never redefine, skip or rewrite core's fields and
+  validation (checked when the engine schema is defined, and by a test). Every structural quantity is a parameter (`[value, flag]`,
+  or `[value, flag, min, max]` in engines with bounds): cell `a`–`gamma`; atom
+  `x`, `y`, `z`, `occupancy`, `Uiso` or `U11`…`U23`. `element`, `ADP`,
+  `Multiplicity` and `space_group` are plain values. Nothing is `null` and
+  nothing has a default: `occupancy` must be stated; `Multiplicity` (derived,
+  so optional) is left out when not stated, never `null`.
+  **Names:** atom labels (the `atoms` keys) and phase names (the engine
+  payload's `phases` keys) start with a letter and contain only ASCII letters,
+  digits and `_` (`O1`, `LaB6_a`); phase names, and the atom labels of a
+  phase, must also differ by more than case. This is the form every engine can use as-is: GSAS-II renames a phase
+  with surrounding spaces or non-ASCII characters (and its settings were then
+  skipped), easydiffraction accepts no other atom label, TOPAS writes the names
+  into its input file, phase names become report file names (which ignore case
+  on Windows and macOS), and problems are reported at `.`-joined paths
+  (`atoms.O1.Uiso`). So `"2H-MoS2"` is written e.g. `MoS2_2H`.
+  Structural interpretation is checked once, in core, so every engine gets the
+  same structure. **The recipe is the record of the refinement intent**, and
+  validation never changes what it means. Values fixed or tied by symmetry
+  follow one rule (see *Symmetry-determined values* below): the first member
+  of each tie group is stated freely and kept as written; every other value is
+  derived from the symmetry and must be stated, either exactly (a constant
+  with a decimal form, such as `0.5` or `0`) or to the precision that states it
+  beyond doubt (a third, `0.333333`; a value derived from another stated
+  value). The validated model, which every engine receives, holds the derived
+  values. PowderLine never rewrites a recipe file; only a Python dump of a
+  validated model shows a derived value's full spelling
+  (`0.3333333333333333`), which means the same and validates the same. All problems
+  are reported together, each at its own field
+  (`unit_cell`, `atoms.<label>` for the position, `atoms.<label>.Multiplicity`,
+  `atoms.<label>.Uaniso`, or the parameter a flag/bound rule concerns, e.g.
+  `unit_cell.b`, `atoms.<label>.y`, `atoms.<label>.Uaniso.U12`); they are checked
+  once the individual fields are valid:
+  - **Space group**: gemmi's canonical extended Hermann–Mauguin name, exactly:
+    `"P m -3 m"`, `"C 1 2/m 1"`, `"P 1 21/c 1"`, `"R -3 m:H"`, `"F d -3 m:2"`.
+    Every setting has exactly one such name, and it states the setting
+    (two-origin groups `:1`/`:2`, rhombohedral groups `:H`/`:R`, the monoclinic
+    unique axis). Any other spelling (`"Pm-3m"`, `"C2/m"`, `"p m -3 m"`) is an
+    error whose message gives the canonical name; a symbol without a setting
+    (`"R -3 m"`, `"F d -3 m"`) lists both choices, and a short monoclinic
+    symbol (`"P21/c"`, `"C2/m"`) lists every setting of that space group by
+    unique axis, because it states neither the unique axis nor the cell choice.
+    Each engine translates the name to its own convention, and may accept fewer
+    settings. The accepted names are those of gemmi 0.7.5, which PowderLine pins
+    exactly; the list is `tests/data/canonical_space_groups.txt`, and any change
+    to it is recorded here.
   - **Unit cell**: `a`, `b`, `c` (Å, > 0), `alpha`, `beta`, `gamma` (degrees,
-    0–180). No `volume` (every engine derives it). The cell must fit the
-    space group **exactly** (to floating-point precision): e.g. cubic
-    `a = b = c` and all angles 90°. A mismatch is an error naming each
-    parameter and its symmetric value. (GSAS-II alone would silently apply the
-    symmetry only when the cell is refined.)
+    0–180). In engines with bounds, a stated bound must lie in the same range
+    (a length's `min` > 0; an angle's `min`/`max` strictly between 0 and 180);
+    `null` means no bound. No `volume` (every engine derives it). The cell must fit the
+    space group: tied lengths and angles equal the first one (cubic
+    `b = a`, `c = a`), and fixed angles are exactly 90° (or 120° for `gamma`
+    on hexagonal axes), to within 1e-9 (relative on lengths, degrees on
+    angles), the floating-point noise of a cell computed by a program. The
+    validated model holds the first member's value and the exact angles. A
+    mismatch is an error stating each value and the value to write
+    (`stated b = 4.2, but by symmetry b = a; write b = 4.15692`). (GSAS-II
+    alone would silently apply the symmetry only when the cell is refined.)
   - **Elements**: a bare element symbol spelled exactly (`"Fe"`, not `"FE"`).
     Charged scattering types (`"Fe3+"`) are not supported yet and are rejected,
     never reduced to the neutral atom.
   - **Occupancy**: 0 to 1 inclusive, even where an engine would accept more.
-  - **Special positions**: an atom whose symmetry images lie within 5e-6
-    (fractional) of itself is on a special position, so write special
-    coordinates with **at least 6 decimals** (e.g. `0.333333`). An atom 5e-6 to
-    2e-3 from a special position is an **error** (`0.33`, `0.3333`, `0.33333`):
-    state it to ≥ 6 decimals or move it off. Accepted special positions are
-    replaced by their **exact** coordinates (fixed coordinates become the exact
-    fraction; coupled ones satisfy their relation, by the smallest change). Each
-    adjustment is reported as a structured warning, and these exact values are
-    what every engine receives.
+  - **Symmetry-determined values** (special positions, anisotropic ADPs,
+    tied bounds). Within 5e-6 of a special position an atom is on it; from
+    5e-6 to 2e-3 off is an error (state the position, or move the atom at least
+    2e-3 off it: `0.33` and `0.3333` are neither). On a special position:
+    - the **first member of each tie group** (x before y before z; U11 before
+      U22 …) is the free parameter: it is kept exactly as written, whatever its
+      value;
+    - a **constant** of the site, i.e. a coordinate fixed by symmetry or a
+      Uij that must be 0, is written **exactly** when it has a decimal form
+      (`0.5`, `0.25`, `0.125`, `0`), and to **at least 6 decimals** when it has
+      none, i.e. when it is a third (`0.333333` for 1/3, `0.166667` for 1/6);
+    - a value **derived from another stated value**, i.e. a coupled
+      coordinate (`(x, 2x, 1/4)`, `(x, x + 1/2, z)`, `(x, x + 1/3, 1/6)`), a
+      coupled Uij (`U22 = U11`, `U12 = U22/2`) or a tied member's bounds, is
+      stated to the precision of its kind (coordinates within 5e-6, i.e. 6
+      decimals; Uij within 1e-6 Å²) and read as the value derived from the
+      first member;
+    - anything else is an **error** whose message gives the values to write.
+
+    The validated model holds the derived values, so every tie holds exactly
+    and every engine starts from the same structure. How PowderLine reads
+    some typical statements:
+
+    | Stated | Symmetry | Validated model | Why |
+    |---|---|---|---|
+    | `x = 0.4999999` at (1/2, 0, 0) | x fixed = 1/2 | **error**: write `x = 0.5` | 1/2 has a decimal form: write it exactly |
+    | `x, y = 0.333333, 0.666667` at (1/3, 2/3, 1/4) | fixed thirds | 1/3, 2/3 | a third has no decimal form; 6 decimals state it |
+    | `x, y = 0.3333333333333, 0.6666666666667` | fixed thirds | 1/3, 2/3 | any precision beyond 6 decimals reads the same |
+    | `x, y = 0.833333, 0.666667` at 6h (x, 2x, 1/4) | y = 2x − 1 | x = 0.833333, y = 0.666666 | x is free and kept; y follows it |
+    | `x, y = 0.1, 0.2000001` at (x, 2x, 0) | y = 2x | x = 0.1, y = 0.2 | y follows x |
+    | `x, y = 0.066667, 0.4` at (x, x + 1/3, 1/6) | y = x + 1/3 | x = 0.066667, y = 0.40000033… | y follows x, even where the stated y is a short decimal |
+    | `U13 = 1e-9` at 6h | U13 fixed = 0 | **error**: write `U13 = 0.0` | 0 has a decimal form: write it exactly |
+    | `U12 = 0.006174` with `U22 = 0.012347` at 6h | U12 = U22/2 | U12 = 0.0061735 | U12 follows U22 |
+    | y bounds `[0.300004, 0.5]`, x bounds `[0, 0.2]` at (x, −x + 1/2, z) | y = −x + 1/2 | `[0.3, 0.5]` | bounds follow the first member's |
+
+    Most crystallographic programs instead move any atom within a distance
+    tolerance onto the special position (SHELXL 0.2 Å, cctbx 0.5 Å), and
+    pymatgen reads `0.3333` as 1/3. PowderLine does not: a constant that can
+    be written exactly must be, and `0.3333` is ambiguous.
   - **Multiplicity**: optional; when stated it must equal the multiplicity
     derived from the space group.
-  - **ADPs**: `ADP` is `"Uiso"` (with `Uiso`, Å²) or `"Uaniso"` (with all of
-    `U11 U22 U33 U12 U13 U23`, Å²). Anisotropic ADPs must respect the site
-    symmetry: within 1e-6 Å² they are set to the symmetric values and reported;
-    beyond that it is an error.
+  - **ADPs**: `ADP` selects the thermal parameter that is **required**:
+    `"Uiso"` requires `Uiso` (Å²); `"Uaniso"` requires `Uaniso` with all six of
+    `U11 U22 U33 U12 U13 U23` (Å²). The other one must be left out. A missing
+    or extra one is an error at that field (`atoms.<label>.Uiso`,
+    `atoms.<label>.Uaniso.U23`), and the JSON Schema states the same rule.
+    Anisotropic ADPs follow the site symmetry as described under
+    *Symmetry-determined values*. A `Uaniso` that is not positive definite (a
+    principal mean-square displacement ≤ 0, so no thermal ellipsoid exists) is
+    **accepted with a structured warning** (`uaniso_not_positive_definite`,
+    giving the principal values in Å² along Cartesian axes), like a negative
+    `Uiso`: it can show that the parameter compensates for something the model
+    lacks (e.g. absorption). Engines carry it as given.
+  - **Refinement intent follows the symmetry.** Parameters tied by symmetry
+    are **one** parameter, and every member is stated: cubic `a, b, c`;
+    tetragonal/hexagonal `a, b`; rhombohedral axes (`:R`) `a, b, c` and
+    `alpha, beta, gamma`; coordinates such as `(x, 2x, 1/4)` or
+    `(x, x + 1/2, z)`; Uij such as `U11 = U22`, `U12 = U22/2`, `U13 = -U23`.
+    - Tied members carry the **same refine flag**; the error is reported at
+      every member whose flag differs from the first member's.
+    - A parameter **fixed** by symmetry (a cubic angle, `x` of an atom at the
+      origin, `U12` on a mirror site) has refine flag `false` and, where the
+      engine has bounds, no bounds (`null`, `null`).
+    - Different groups are independent (orthorhombic `a` refined, `b` fixed).
+    - **Bounds** (engines with bounds) follow the tie like the values:
+      `y = k·x + c` maps x's `[min, max]` to `[k·min + c, k·max + c]`
+      (swapped for negative k; an open side stays open), e.g. `(x, x + 1/2, z)`
+      with x in `[0, 0.2]` needs y in `[0.5, 0.7]`. They are derived values
+      (see *Symmetry-determined values*): stated within 5e-6 for coordinates,
+      1e-6 Å² for Uij and 1e-9 (relative) for the cell, and read as the mapped
+      values; otherwise the error gives them.
+    - Atoms at the same position are independent: their flags are never tied.
 
 ## gsasii engine schema
 

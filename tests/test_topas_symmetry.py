@@ -45,6 +45,46 @@ def test_monoclinic_unique_a_and_c():
     assert sym.cell_constraints("P 1 1 2/m").free_angles == ("gamma",)
 
 
+# Mirror-only groups (Pm, Pc, Cm, Cc: no proper 2-fold, the axis is the mirror
+# normal) and 2-fold groups, in all three unique-axis settings and several cell
+# choices (A102: these four groups raised "could not determine the monoclinic
+# unique axis" before).
+@pytest.mark.parametrize("space_group, axis", [
+    ("P 1 m 1", "b"), ("P 1 1 m", "c"), ("P m 1 1", "a"),
+    ("P 1 c 1", "b"), ("P 1 n 1", "b"), ("P 1 1 a", "c"), ("P 1 1 n", "c"),
+    ("P b 1 1", "a"), ("P c 1 1", "a"),
+    ("C 1 m 1", "b"), ("A 1 1 m", "c"), ("B m 1 1", "a"), ("I 1 m 1", "b"),
+    ("C 1 c 1", "b"), ("I 1 a 1", "b"), ("A 1 1 a", "c"), ("I 1 1 b", "c"),
+    ("B b 1 1", "a"), ("C c 1 1", "a"),
+    ("P 1 2 1", "b"), ("P 1 1 2", "c"), ("P 2 1 1", "a"),
+    ("P 1 21/c 1", "b"), ("P 1 1 21/a", "c"), ("P 21/b 1 1", "a"),
+    ("C 1 2/c 1", "b"), ("I 1 2/a 1", "b"), ("A 1 1 2/a", "c"), ("B 2/b 1 1", "a"),
+])
+def test_monoclinic_unique_axis_every_setting(space_group, axis):
+    r = sym.cell_constraints(space_group)
+    free_angle = {"a": "alpha", "b": "beta", "c": "gamma"}[axis]
+    assert r.crystal_system == "monoclinic"
+    assert r.unique_axis == axis
+    assert r.length_groups == (("a",), ("b",), ("c",))
+    assert r.free_angles == (free_angle,)
+    assert r.fixed_angles == tuple(a for a in ("alpha", "beta", "gamma") if a != free_angle)
+
+
+def test_monoclinic_unique_axis_all_gemmi_settings():
+    """Every monoclinic setting in gemmi's table: the axis is the H-M symbol's non-'1' slot."""
+    import gemmi
+
+    checked = 0
+    for sg in gemmi.spacegroup_table():
+        if sg.crystal_system_str() != "monoclinic":
+            continue
+        slots = sg.hm.split()[1:]
+        expected = "abc"[[i for i, s in enumerate(slots) if s != "1"][0]]
+        assert sym.cell_constraints(sg.xhm()).unique_axis == expected, sg.xhm()
+        checked += 1
+    assert checked == 115
+
+
 def test_tetragonal_hexagonal_ortho_triclinic():
     assert sym.cell_constraints("P 4/m m m").length_groups == (("a", "b"), ("c",))
     hexr = sym.cell_constraints("P 6/m m m")

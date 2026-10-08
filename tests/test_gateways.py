@@ -474,6 +474,22 @@ import powderline.topas.gateway
 import powderline.easydiff.gateway
 from powderline import registry
 
+# The core phase block and its symmetry rules run engine-free (re/03b)
+from powderline.schema_core import Phase, RefinableParameter
+from powderline.symmetry import canonical_space_group, cell_tie_groups, coupling_groups
+canonical_space_group("F d -3 m:2")
+assert [g.members for g in cell_tie_groups("R -3 m:R").groups] == [("a", "b", "c"), ("alpha", "beta", "gamma")]
+assert coupling_groups("P -4 21 m", (0.1, 0.6, 0.3)).xyz.groups[0].relations_text() == "y = x + 1/2"
+p = lambda v, f=False: [v, f]
+phase = Phase[RefinableParameter].model_validate({{
+    "space_group": "P 63/m m c",
+    "unit_cell": {{"a": p(3.0, True), "b": p(3.0, True), "c": p(5.0), "alpha": p(90.0), "beta": p(90.0),
+                  "gamma": p(120.0)}},
+    "atoms": {{"C": {{"element": "C", "x": p(1 / 6, True), "y": p(1 / 3, True), "z": p(0.25),
+                     "occupancy": p(1.0), "ADP": "Uiso", "Uiso": p(0.01)}}}},
+}})
+assert phase.site("C").multiplicity == 6 and phase.atoms["C"].x.value == 1 / 6
+
 recipes = {{
     "gsasii": json.loads(Path(r'{recipe_path}').read_text(encoding="utf-8")),
     "topas": json.loads(Path(r'{recipe_path}').read_text(encoding="utf-8")),

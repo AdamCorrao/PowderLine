@@ -51,7 +51,7 @@ dependencies = [
     "fastapi>=0.115",
     "uvicorn>=0.34",
     "httpx>=0.28",
-    "gemmi>=0.7,<0.8",
+    "gemmi==0.7.5",  # exact: the space-group names and symmetry rules depend on it (pixi.toml)
     "packaging>=22",
 ]
 

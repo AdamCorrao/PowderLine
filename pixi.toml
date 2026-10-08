@@ -58,7 +58,11 @@ emmet-core = ">=0.87.1,<0.88"
 fastapi = ">=0.115.0,<1"
 uvicorn = ">=0.34.0,<1"
 httpx = ">=0.28.0,<1"
-gemmi = ">=0.7.5,<0.8"
+# gemmi is pinned exactly: core's space-group contract is its canonical names
+# (A105, tests/data/canonical_space_groups.txt) and the symmetry rules are
+# characterized against this version. Widen only after re-running the symmetry
+# tests and updating that file (re/03b review B4).
+gemmi = "==0.7.5"
 packaging = ">=22"
 # GSAS-II is built as a conda package via pixi-build (see `preview` above) from
 # the tacaswell fork, which adds the conda recipe. This installs GSAS-II on ALL
