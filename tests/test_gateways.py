@@ -469,6 +469,7 @@ import powderline.schema_core
 import powderline.compat
 import powderline.gateways.gsasii
 import powderline.gateways.gsasii.gateway
+import powderline.gateways.gsasii.schema
 import powderline.gateways.gsasii.validation
 import powderline.topas.gateway
 import powderline.easydiff.gateway
@@ -489,6 +490,22 @@ phase = Phase[RefinableParameter].model_validate({{
                      "occupancy": p(1.0), "ADP": "Uiso", "Uiso": p(0.01)}}}},
 }})
 assert phase.site("C").multiplicity == 6 and phase.atoms["C"].x.value == 1 / 6
+
+# The native gsasii schema validates engine-free (re/04, A39)
+native = {{
+    "schema_name": "gsasii.rietveld", "core_schema_version": "1.0.0", "engine_schema_version": "1.0.0",
+    "payload": {{
+        "xrd_data": {{"tth": [1.0, 2.0], "Itth": [1.0, 2.0], "Itth_weights": [1.0, 1.0]}},
+        "instrument": {{"radiation": {{"type": "PXC", "wavelength": p(0.1665)}},
+                        "geometry": {{"bank": 1, "azimuth": 0.0}},
+                        "corrections": {{"zero_shift": p(0.0), "polarization": p(0.99),
+                                         "axial_divergence": p(0.002)}},
+                        "broadening": {{k: p(1.0) for k in "UVWXYZ"}}}},
+        "phases": {{"C": {{**phase.model_dump(mode="json"), "scale": p(1.0)}}}},
+        "refinement_controls": {{"refinement_cycles": 5}},
+    }},
+}}
+assert type(registry.get("gsasii").validate(native)).__name__ == "GsasiiRietveldRecipe"
 
 recipes = {{
     "gsasii": json.loads(Path(r'{recipe_path}').read_text(encoding="utf-8")),

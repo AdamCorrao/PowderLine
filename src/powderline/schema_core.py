@@ -1364,3 +1364,45 @@ class CoreRecipe(CoreModel):
     @classmethod
     def _metadata(cls, v):
         return _check_metadata(v)
+
+
+# --- warnings (A23, A115) ----------------------------------------------------
+
+
+def collect_warnings(model: BaseModel, path: str = "") -> list[StructuredWarning]:
+    """Every structured warning in a validated model tree, with full field paths.
+
+    Each model in the tree that has a ``warnings()`` method (:meth:`Phase.warnings`,
+    an engine payload's documented defaults) contributes its warnings, whose
+    paths are relative to it; ``path`` names ``model`` itself. Called on a
+    validated recipe, a phase warning reads ``payload.phases.<name>.atoms.<label>.Uaniso``.
+
+    Collect once, from the model validated from the user's recipe, and carry the
+    list to the result: a warning about a default applied reflects what the
+    recipe left out, which a dump of the model (stating the default) no longer
+    shows.
+    """
+    found: list[StructuredWarning] = []
+
+    def join(prefix: str, name) -> str:
+        return f"{prefix}.{name}" if prefix else str(name)
+
+    def visit(obj: Any, prefix: str) -> None:
+        if isinstance(obj, BaseModel):
+            own = getattr(obj, "warnings", None)
+            if callable(own):
+                for w in own():
+                    rel = w["field_path"]
+                    found.append(StructuredWarning(code=w["code"], message=w["message"],
+                                                   field_path=join(prefix, rel) if rel else (prefix or None)))
+            for name in type(obj).model_fields:
+                visit(getattr(obj, name), join(prefix, name))
+        elif isinstance(obj, dict):
+            for key, value in obj.items():
+                visit(value, join(prefix, key))
+        elif isinstance(obj, (list, tuple)):
+            for i, value in enumerate(obj):
+                visit(value, join(prefix, i))
+
+    visit(model, path)
+    return found

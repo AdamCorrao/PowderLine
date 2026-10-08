@@ -1,7 +1,9 @@
 """Engine-free factory for the GSAS-II gateway (entry point ``powderline.gateways:gsasii``).
 
 - **Schema layer** — ``validate`` / ``capabilities``: engine-free; runs with
-  GSAS-II not installed (``gateways.gsasii.validation`` is recipe-only).
+  GSAS-II not installed. ``gsasii.*`` recipes validate against the native
+  schemas (``gateways.gsasii.schema``, A39); 0.26.0 ``GSASII_*`` recipes keep
+  the legacy validation (``gateways.gsasii.validation``) until re/07.
 - **Runtime layer** — ``run``: a thin wrapper over ``powderline.kicker.run``
   (behavior unchanged), imported inside the function. On a real run it first
   reads the installed GSAS-II version and enforces ``ENGINE_VERSION_SPEC``.
@@ -14,25 +16,31 @@ Enforced by an import-block test.
 from __future__ import annotations
 
 from powderline.exceptions import EngineNotAvailableError
+from powderline.gateways.gsasii import schema
 from powderline.gateways.gsasii.validation import validate as _validate_recipe
 from powderline.registry import Gateway, check_engine_version
 
 NAME = "gsasii"
 #: Supported GSAS-II runtime versions (A41/A44); pixi pins align in re/08.
 ENGINE_VERSION_SPEC = "==5.7.9"
-#: Workflows served (0.26.0 schema names until re/04 introduces ``gsasii.*``).
-WORKFLOWS = ("GSASII_Rietveld", "GSASII_SPF")
+#: Workflows served: the native schemas, and the 0.26.0 names until re/07 removes them.
+WORKFLOWS = (*schema.SCHEMA_NAMES, "GSASII_Rietveld", "GSASII_SPF")
 #: pixi environment providing GSAS-II + how to install it (names final in re/08).
 ENV = "default"
 INSTALL_COMMAND = "pixi install"
 
 
 def capabilities() -> dict:
-    return {"name": NAME, "workflows": WORKFLOWS, "engine_version_spec": ENGINE_VERSION_SPEC}
+    return {"name": NAME, "workflows": WORKFLOWS, "engine_version_spec": ENGINE_VERSION_SPEC,
+            **schema.DECLARATIONS}
 
 
 def validate(recipe, *, verbose: bool = False):
-    """Validate a recipe (dict or ``RecipeModel``); return the ``RecipeModel`` (A50, A59)."""
+    """Validate a recipe (dict or model); return the validated model (A50, A59).
+
+    A ``gsasii.*`` recipe gives its native model (``GsasiiRietveldRecipe`` /
+    ``GsasiiSpfRecipe``); a 0.26.0 one the legacy ``RecipeModel``.
+    """
     return _validate_recipe(recipe, verbose=verbose)
 
 
