@@ -27,7 +27,8 @@ import keyword
 import math
 import re
 from fractions import Fraction
-from typing import Annotated, Any, Generic, Literal, Optional, TypeVar
+from dataclasses import dataclass
+from typing import Annotated, Any, Callable, Generic, Literal, Optional, TypeVar
 
 import gemmi
 import numpy as np
@@ -54,13 +55,14 @@ from pydantic_core import InitErrorDetails, PydanticCustomError
 from powderline.exceptions import StructuredWarning, SymmetryError
 from powderline.symmetry import (
     ADJUSTMENT_REPORT_TOL,
+    CELL_TOL,
     SPECIAL_POSITION_TOL,
+    UIJ_TOL,
     Ties,
     analyze_site,
     canonical_space_group,
     cell_tie_groups,
     check_cell,
-    check_uij,
     coupling_groups,
 )
 
@@ -675,18 +677,18 @@ _ADP_PAIRING_SCHEMA = {"allOf": [
 class Atom(CoreModel, Generic[P]):
     """One atom of a phase: coordinates, occupancy and ADPs are refinable parameters.
 
-    Coordinates are fractional JSON numbers. A special position is stated
-    exactly where its value has a decimal form (``0.5``, ``0.25``), and to at
-    least 6 decimals where it has none (``0.333333`` for 1/3, read as 1/3); a
-    position near one but not on it is an error giving the values to write (A73,
-    A115, A120). ``occupancy`` is required
+    Coordinates are fractional JSON numbers. On a special position, the values
+    fixed or tied by symmetry follow :class:`Phase`'s rule (A73, A120, A121): a
+    fixed value with a decimal form exactly (``0.5``), a third to at least 6
+    decimals (``0.333333``), a coupled one within 6 decimals of the value
+    derived from its group's first member. ``occupancy`` is required
     and 0 to 1 inclusive (A76, A96). ``Multiplicity`` is optional and, when
     stated, must match the derived value (A69 T3). ``ADP`` selects which
     thermal parameter is **required**: ``Uiso``, or ``Uaniso`` with all six of
     U11..U23; the other must be left out (an error at that field otherwise, and
-    the JSON Schema states the rule). ``Uaniso`` must respect the site symmetry
-    exactly; otherwise it is an error, giving the symmetric values when they are
-    within 1e-6 A^2 (A78, A115). Nothing is ``null`` (A96).
+    the JSON Schema states the rule). ``Uaniso`` follows the site symmetry by
+    the same rule: a fixed component exactly 0, a coupled one within 1e-6 A^2
+    (A78, A121). Nothing is ``null`` (A96).
     """
 
     model_config = ConfigDict(extra="forbid", json_schema_extra=_ADP_PAIRING_SCHEMA)
@@ -770,19 +772,32 @@ class Phase(CoreModel, Generic[P]):
     ``space_group`` is gemmi's canonical name (A105). Validation derives each
     atom's site (multiplicity, DOF) from it (:func:`powderline.symmetry.analyze_site`)
     and rejects ambiguous positions and stated multiplicities that don't match.
-    The unit cell must fit the space group exactly (A77).
 
-    **Validation never changes the meaning of a recipe** (A115, A120): the recipe
-    is the record of the refinement intent. A value that has an exact decimal
-    form must be written exactly (to floating-point precision,
-    :data:`~powderline.symmetry.ADJUSTMENT_REPORT_TOL`): a special position
-    (``0.5``, not ``0.4999999``; A73), an anisotropic ADP (A78) and tied bounds
-    (A108); otherwise it is an error that gives the value to write. A value with
-    no exact decimal form (a third: 1/3, 1/6, ``x + 1/3``) cannot be written
-    exactly, so 6 decimals state it (within 5e-6, A73's threshold) and it is read
-    as the exact value, with no warning: that is what the recipe says. Only
-    coordinates and coordinate bounds can be thirds; Uij ties and cell ties
-    never are.
+    **One rule for symmetry-determined values** (A115, A120, A121, A123): the
+    first member of each tie group is an independent parameter, kept exactly as
+    stated. Every other value is *derived* from the space group and those
+    parameters in exact rational arithmetic, and the validated model holds the
+    derived value (the float nearest it), so every tie holds exactly and every
+    engine receives one structure. The recipe states every derived value; how
+    closely is checked per kind:
+
+    - a **constant** of the space group (a fixed coordinate, a fixed Uij = 0)
+      with an exact decimal form must be written exactly (to floating-point
+      precision, :data:`~powderline.symmetry.ADJUSTMENT_REPORT_TOL`): ``0.5``,
+      not ``0.4999999``; ``0``, not ``1e-9``. One with none (a third) is
+      written to at least 6 decimals (within 5e-6, A73) and read;
+    - a value **derived from another stated value** (a coupled coordinate
+      ``y = 2x``, ``y = x + 1/3``; a coupled Uij ``U12 = U22/2``; a tied
+      member's bounds) is read within the stated precision of its family:
+      coordinates 5e-6 (A73), Uij 1e-6 A^2 (A78);
+    - the **cell** (A77, A123): tied lengths and angles equal the first
+      member's, and fixed angles are 90 or 120, within ``CELL_TOL``
+      (1e-9, relative on lengths).
+
+    Anything else is an error that gives the values to write. Reading carries
+    no warning: within these tolerances the recipe has only that meaning (A73's
+    band rule excludes "just off" positions), and a dump of the model validates
+    as itself.
 
     Refine flags and bounds must agree with the symmetry ties
     (:func:`~powderline.symmetry.cell_tie_groups`,
@@ -820,19 +835,41 @@ class Phase(CoreModel, Generic[P]):
 
     @classmethod
     def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
-        """Guard core's contract in every engine subclass (A93; re/03b review).
+        """Guard core's contract in every engine subclass (A93, A109, A114, A122).
 
-        A subclass may add fields and validators, but may not redeclare core's
-        fields or reuse the name of a core validator, private attribute or
-        method: pydantic collects validators by name, so a same-named engine
-        validator would silently replace core's (e.g. the canonical space-group
-        check or every symmetry rule). Its ``extra`` must stay ``'forbid'`` (A19).
+        A subclass may add fields and validators that *check*, but nothing that
+        replaces, skips or rewrites core's validation:
+
+        1. no class in its MRO besides core's own (a subclass or a mixin) may
+           redeclare core's fields, reuse the name of a core validator, private
+           attribute or method, or define a pydantic entry point
+           (:data:`_RESERVED_ENTRY_POINTS`); pydantic collects validators by
+           name, so a same-named validator would silently replace core's;
+        2. every core validator must still be core's own function (catches any
+           route the names miss);
+        3. its own validators run in ``'after'`` mode only (a model validator,
+           or a field validator on a core field): a ``'before'``, ``'wrap'`` or
+           ``'plain'`` one could rewrite the recipe before core reads it, or
+           skip core entirely;
+        4. ``extra`` stays ``'forbid'`` (A19), and the parameter type is
+           :class:`RefinableParameter` or :class:`BoundedRefinableParameter`.
+
+        A canary test runs core's must-fail recipes through every engine phase
+        model (``tests/test_phase_canary.py``).
         """
         super().__pydantic_init_subclass__(**kwargs)
+        generic = cls.__pydantic_generic_metadata__
+        if generic["origin"] is not None:
+            wrong = [a for a in generic["args"] if not isinstance(a, TypeVar)
+                     and not (isinstance(a, type) and issubclass(a, (RefinableParameter, BoundedRefinableParameter)))]
+            if wrong:
+                raise TypeError(f"{cls.__name__}: the parameter type must be RefinableParameter or "
+                                f"BoundedRefinableParameter, not {', '.join(map(repr, wrong))}")
+        core_ancestry = set(Phase.__mro__)
         for klass in cls.__mro__:
-            if klass is Phase or not (isinstance(klass, type) and issubclass(klass, Phase)):
+            if klass in core_ancestry:
                 continue
-            if klass.__pydantic_generic_metadata__["origin"] is not None:
+            if issubclass(klass, Phase) and klass.__pydantic_generic_metadata__["origin"] is not None:
                 continue  # a parametrization (e.g. Phase[RefinableParameter]); its origin is checked itself
             annotations = inspect.get_annotations(klass)
             redeclared = [n for n in RESERVED_PHASE_FIELDS if n in annotations]
@@ -847,6 +884,31 @@ class Phase(CoreModel, Generic[P]):
                     f"{klass.__name__} reuses the core phase name(s) {', '.join(reused)}; a same-named "
                     "validator, method or private attribute would replace core's silently; rename it"
                 )
+            entry = sorted(n for n in _RESERVED_ENTRY_POINTS
+                           if n in klass.__dict__ and _defined_outside_pydantic(klass.__dict__[n]))
+            if entry:
+                raise TypeError(
+                    f"{klass.__name__} defines {', '.join(entry)}; a phase model may not override pydantic's "
+                    "entry points, which could skip or replace core's validation (A122)"
+                )
+        decorators = cls.__pydantic_decorators__
+        replaced = sorted(name for kind, name, func in _core_decorators()
+                          if _underlying(getattr(decorators, kind).get(name)) is not func)
+        if replaced:
+            raise TypeError(f"{cls.__name__} replaces the core validator(s) {', '.join(replaced)} (A109, A122)")
+        core_names = {name for _kind, name, _func in _core_decorators()}
+        rewriting = sorted(
+            [n for n, d in decorators.model_validators.items() if n not in core_names and d.info.mode != "after"]
+            + [n for n, d in decorators.field_validators.items()
+               if n not in core_names and d.info.mode != "after"
+               and ({"*", *RESERVED_PHASE_FIELDS} & set(d.info.fields))]
+            + list(decorators.validators) + list(decorators.root_validators))
+        if rewriting:
+            raise TypeError(
+                f"{cls.__name__}: validator(s) {', '.join(rewriting)} must be 'after' validators (pydantic v2 "
+                "@model_validator / @field_validator): a 'before', 'wrap' or 'plain' validator could rewrite "
+                "the recipe before core reads it, or skip core's validation (A115, A122)"
+            )
         if cls.model_config.get("extra") != "forbid":
             raise TypeError(f"{cls.__name__} must keep extra='forbid' (A19)")
         if cls.__pydantic_generic_metadata__["parameters"] and "__orig_bases__" not in cls.__dict__:
@@ -882,22 +944,47 @@ class Phase(CoreModel, Generic[P]):
             problems.append(InitErrorDetails(type="value_error", loc=loc, input=value,
                                              ctx={"error": ValueError(message)}))
 
-        def tie_rules(loc: tuple, params: dict, ties: Ties, context: str, fixed_value) -> dict:
-            errors, updates = _tie_rules(params, ties, context, fixed_value)
+        def tie_rules(loc: tuple, params: dict, ties: Ties, family: "_Family", context: str,
+                      fixed_text) -> dict:
+            errors, bounds = _tie_rules(params, ties, family, context, fixed_text)
             for name, message in errors:
                 problem((*loc, name), message, params[name].model_dump())
-            return updates
+            return bounds
 
         sg = self.space_group
+        seen: dict[str, str] = {}
+        for label in self.atoms:  # A112 (amended): an atom label is unique ignoring case
+            other = seen.setdefault(label.lower(), label)
+            if other != label:
+                problem(("atoms", label), f"atom labels {other!r} and {label!r} differ only in case; rename one",
+                        label)
+
         cell = self.unit_cell
-        try:
-            check_cell(sg, tuple(getattr(cell, k).value for k in _CELL_FIELDS))
-        except SymmetryError as exc:
-            problem(("unit_cell",), str(exc), cell.model_dump())
-        else:  # flag and bound rules need a valid cell (A95, A98)
-            ties = cell_tie_groups(sg)
-            tie_rules(("unit_cell",), {k: getattr(cell, k) for k in _CELL_FIELDS}, ties,
-                      f"{ties.crystal_system} cell ({sg!r})", lambda name: f"{getattr(cell, name).value:g}")
+        cell_params = {k: getattr(cell, k) for k in _CELL_FIELDS}
+        cell_ties = cell_tie_groups(sg)
+        fixed_angle = lambda name: _fixed_cell_angle(cell_ties, name)  # noqa: E731
+        derived_cell, write = _derive(cell_ties, {k: p.value for k, p in cell_params.items()}, fixed_angle, _CELL)
+        cell_ok = not write
+        if write:  # A77, A123
+            problem(("unit_cell",),
+                    f"unit cell is inconsistent with {sg!r} ({cell_ties.crystal_system}): stated "
+                    f"{', '.join(f'{k} = {cell_params[k].value!r}' for k in write)}, but by symmetry "
+                    f"{_ties_text(cell_ties, fixed_angle, only=write)}; write {_write_text(write)}",
+                    cell.model_dump())
+        else:
+            try:  # the metric must then be invariant (A77); the tie groups are checked against it exhaustively
+                check_cell(sg, tuple(derived_cell[k] for k in _CELL_FIELDS))
+            except SymmetryError as exc:  # pragma: no cover - cell_tie_groups agrees with the metric
+                problem(("unit_cell",), str(exc), cell.model_dump())
+                cell_ok = False
+        if cell_ok:  # flag and bound rules need a valid cell (A95, A98)
+            bounds = tie_rules(("unit_cell",), cell_params, cell_ties, _CELL,
+                               f"{cell_ties.crystal_system} cell ({sg!r})", lambda name: f"{fixed_angle(name)}")
+            updates = _updated(cell_params, derived_cell, bounds)
+            if updates:
+                self.unit_cell = cell.model_copy(update=updates)  # the caller's cell stays as given
+        model_cell = tuple(getattr(self.unit_cell, k).value for k in _CELL_FIELDS)
+
         for label, atom in self.atoms.items():
             try:
                 site = analyze_site(sg, (atom.x.value, atom.y.value, atom.z.value))
@@ -908,58 +995,53 @@ class Phase(CoreModel, Generic[P]):
             context = f"atom {label!r} (multiplicity {site.multiplicity} in {sg!r})"
             ties = coupling_groups(sg, site.canonical)
             exact_xyz = lambda name: site.exact["xyz".index(name)]  # noqa: E731
+            xyz = {k: getattr(atom, k) for k in "xyz"}
             stated = dict(zip("xyz", site.stated))
-            read, write = _special_position_values(ties.xyz, stated, exact_xyz)
-            if write:  # A73, A115, A120: on a special position, but not exactly
-                off = max(abs(c - v) for c, v in zip(site.canonical, site.stated))
+            derived_xyz, write = _derive(ties.xyz, stated, exact_xyz, _COORDINATES)
+            if write:  # A73, A120, A121: within 5e-6 of a special position, but not stated as it
+                off = max(abs(stated[name] - value) for name, (value, _tol) in write.items())
                 problem(("atoms", label),
                         f"{context}: {site.stated} is {off:.2g} from a special position, not on it "
                         f"({_ties_text(ties.xyz, exact_xyz)}); write {_write_text(write)}", atom.model_dump())
-            xyz = {k: getattr(atom, k) for k in "xyz"}
-            if read and not write:  # A120: a value with no exact decimal form, stated to >= 6 decimals
-                xyz.update({k: getattr(atom, k).model_copy(update={"value": v}) for k, v in read.items()})
             if atom.Multiplicity is not None and atom.Multiplicity != site.multiplicity:
                 problem(("atoms", label, "Multiplicity"),
                         f"stated Multiplicity {atom.Multiplicity}, derived {site.multiplicity} "
                         f"({sg!r}, site {site.stated})", atom.Multiplicity)
-            uaniso_ok = False
+            updates = _updated(xyz, derived_xyz, tie_rules(("atoms", label), xyz, ties.xyz, _COORDINATES, context,
+                                                            lambda name: str(exact_xyz(name))))
             if atom.Uaniso is not None:
-                stated_u = tuple(getattr(atom.Uaniso, k).value for k in _UANISO_KEYS)
-                try:
-                    symmetric_u, u_adjusted = check_uij(sg, site.canonical, stated_u)
-                except SymmetryError as exc:
-                    problem(("atoms", label, "Uaniso"), str(exc), atom.model_dump()["Uaniso"])
-                else:
-                    uaniso_ok = True
-                    principal = np.linalg.eigvalsh(_uij_matrix(stated_u))
-                    if principal[0] <= 0:  # informative, not an error (A118): never changes a value
+                uij = {k: getattr(atom.Uaniso, k) for k in _UANISO_KEYS}
+                derived_u, write_u = _derive(ties.uij, {k: p.value for k, p in uij.items()},
+                                             lambda _name: Fraction(0), _UIJ)
+                if write_u:  # A78, A115, A121
+                    problem(("atoms", label, "Uaniso"),
+                            f"{context}: Uaniso is not site-symmetric ({_ties_text(ties.uij, lambda _n: 0)}); "
+                            f"write {_write_text(write_u)}", atom.model_dump()["Uaniso"])
+                elif cell_ok:
+                    principal = _principal_msd(model_cell, tuple(derived_u[k] for k in _UANISO_KEYS))
+                    scale = float(np.max(np.abs(principal)))
+                    if principal[0] <= 1e-12 * scale:  # informative, not an error (A118): changes nothing
+                        shown = ", ".join("0" if abs(v) <= 1e-12 * scale else f"{v:.3g}" for v in principal)
                         self._warnings.append(StructuredWarning(
                             code="uaniso_not_positive_definite",
-                            message=(f"{context}: Uaniso is not positive definite (principal values "
-                                     f"{', '.join(f'{v:.3g}' for v in principal)} A^2), so it describes no "
-                                     "thermal ellipsoid; it is used as stated"),
+                            message=(f"{context}: Uaniso is not positive definite (principal mean-square "
+                                     f"displacements {shown} A^2), so it describes no thermal ellipsoid; "
+                                     "it is used as stated"),
                             field_path=f"atoms.{label}.Uaniso",
                         ))
-                    if u_adjusted:  # A78, A115: within 1e-6 A^2 of symmetric, but not exactly
-                        problem(("atoms", label, "Uaniso"),
-                                f"{context}: Uaniso is not exactly site-symmetric "
-                                f"({_ties_text(ties.uij, lambda _name: 0)}); write "
-                                f"{_values_to_write(ties.uij, dict(zip(_UANISO_KEYS, stated_u)), lambda _n: 0)}",
-                                atom.model_dump()["Uaniso"])
-
-            # Flag and bound rules F1, F2, F4, A106 (A95, A98, A106).
-            xyz.update(tie_rules(("atoms", label), xyz, ties.xyz, context, lambda name: str(exact_xyz(name))))
-            if uaniso_ok:
-                tie_rules(("atoms", label, "Uaniso"), {k: getattr(atom.Uaniso, k) for k in _UANISO_KEYS},
-                          ties.uij, context, lambda _name: "0")
-            if any(xyz[k] is not getattr(atom, k) for k in "xyz"):
-                self.atoms[label] = atom.model_copy(update=xyz)  # the caller's atom stays as given
+                u_updates = _updated(uij, derived_u, tie_rules(("atoms", label, "Uaniso"), uij, ties.uij, _UIJ,
+                                                                context, lambda _name: "0"))
+                if u_updates:
+                    updates["Uaniso"] = atom.Uaniso.model_copy(update=u_updates)
+            if updates:
+                self.atoms[label] = atom.model_copy(update=updates)  # the caller's atom stays as given
         if problems:
             raise ValidationError.from_exception_data(type(self).__name__, problems)
         return self
 
     def site(self, label: str):
-        """The :class:`~powderline.symmetry.SiteAnalysis` of atom ``label``."""
+        """The :class:`~powderline.symmetry.SiteAnalysis` of atom ``label`` (its symmetry, not its values:
+        the model's atom holds the coordinates the engines receive)."""
         return self._sites[label]
 
     def warnings(self) -> list:
@@ -983,18 +1065,57 @@ def _reserved_phase_members() -> frozenset[str]:
     return frozenset(validators | methods | set(Phase.__private_attributes__))
 
 
+#: pydantic entry points a phase model (or a mixin in its MRO) may not define: each could
+#: skip or replace core's validation without reusing a core name (A122).
+_RESERVED_ENTRY_POINTS = ("__init__", "model_post_init", "model_validate", "model_validate_json",
+                          "model_validate_strings", "model_construct", "__get_pydantic_core_schema__",
+                          "__pydantic_init_subclass__", "__class_getitem__")
+
+
+def _underlying(obj: Any) -> Any:
+    """The plain function behind a pydantic decorator, classmethod or bound method."""
+    func = getattr(obj, "func", obj)
+    return getattr(func, "__func__", func)
+
+
+def _defined_outside_pydantic(obj: Any) -> bool:
+    """False for the members pydantic generates in every model (e.g. ``model_post_init``)."""
+    func = _underlying(obj)
+    func = getattr(func, "__wrapped__", func)
+    return not (getattr(func, "__module__", None) or "").startswith("pydantic")
+
+
+def _core_decorators() -> list[tuple[str, str, Any]]:
+    """``(kind, name, function)`` of every validator and serializer core's :class:`Phase` defines."""
+    decorators = Phase.__pydantic_decorators__
+    return [(kind, name, _underlying(info))
+            for kind in ("validators", "field_validators", "root_validators", "field_serializers",
+                         "model_serializers", "model_validators")
+            for name, info in getattr(decorators, kind).items()]
+
+
 _CELL_FIELDS = ("a", "b", "c", "alpha", "beta", "gamma")
 
 
 def _uij_matrix(u) -> np.ndarray:
-    """The symmetric 3x3 matrix of (U11, U22, U33, U12, U13, U23).
-
-    Its eigenvalues have the signs of the Cartesian tensor's (a congruence
-    transform keeps them, Sylvester's law of inertia), so it tells whether the
-    thermal ellipsoid exists without the cell.
-    """
+    """The symmetric 3x3 matrix of (U11, U22, U33, U12, U13, U23)."""
     u11, u22, u33, u12, u13, u23 = u
     return np.array([[u11, u12, u13], [u12, u22, u23], [u13, u23, u33]], dtype=float)
+
+
+def _principal_msd(cell: tuple, u) -> np.ndarray:
+    """The principal mean-square displacements (A^2, ascending) of ``u`` in ``cell`` (A118).
+
+    The Cartesian tensor is ``A N U N A^T`` (``A`` the orthogonalization matrix,
+    ``N = diag(a*, b*, c*)``). It is a congruence transform of the Uij matrix, so
+    the signs are the Uij matrix's (Sylvester's law of inertia), but the values
+    are only right in Cartesian axes (an isotropic hexagonal U has U12 = U11/2).
+    """
+    unit_cell = gemmi.UnitCell(*cell)
+    orth = np.array(unit_cell.orth.mat.tolist())
+    reciprocal = unit_cell.reciprocal()
+    n = np.diag([reciprocal.a, reciprocal.b, reciprocal.c])
+    return np.linalg.eigvalsh(orth @ n @ _uij_matrix(u) @ n @ orth.T)
 
 
 def _same(got: float, want: float) -> bool:
@@ -1002,19 +1123,17 @@ def _same(got: float, want: float) -> bool:
     return abs(got - want) <= ADJUSTMENT_REPORT_TOL * max(1.0, abs(want))
 
 
-def _ties_text(ties: Ties, exact) -> str:
-    """The symmetry relations of a parameter set, e.g. ``"x = 1/3, y = 2/3"`` or ``"y = 2x"``."""
-    parts = [f"{name} = {exact(name)}" for name in ties.fixed]
-    parts += [g.relations_text() for g in ties.groups if g.relations_text()]
-    return ", ".join(parts)
+def _within(got: float, want: float, tol: float) -> bool:
+    """``got`` states ``want`` within ``tol`` (never tighter than floating-point precision)."""
+    return _same(got, want) or abs(got - want) <= tol
 
 
 def _has_decimal_form(value: Fraction) -> bool:
     """True when ``value`` has a finite decimal form (1/2, 1/4, 3/8), False for 1/3, 1/6, 1/12.
 
     Symmetry only produces denominators 1, 2, 3, 4, 6, 8, 12 for fixed
-    coordinates, tie factors ±1, ±2, ±1/2 and offsets with denominators 1-4 (all
-    settings, every distinct special site), so "no decimal form" means "a third".
+    coordinates (all settings, every distinct special site), so "no decimal
+    form" means "a third".
     """
     d = value.denominator
     for p in (2, 5):
@@ -1023,59 +1142,119 @@ def _has_decimal_form(value: Fraction) -> bool:
     return d == 1
 
 
-def _special_position_values(ties: Ties, stated: dict, exact) -> tuple[dict, dict]:
-    """``(read, write)``: the coordinates read as their exact value, and those to write (A120).
+@dataclass(frozen=True)
+class _Family:
+    """How closely a recipe must state the derived values of one kind of parameter (A121, A123).
 
-    Each tie group keeps its first member as stated (the one parameter, A94);
-    every other member's exact value is ``k * rep + c``, a fixed one's its exact
-    fraction. Where it differs from the stated value beyond floating-point noise:
-    a value with no exact decimal form (a third: 1/3, 1/6, ``x + 1/3``) stated
-    within ``SPECIAL_POSITION_TOL`` (6 decimals) is **read** as the exact value;
-    any other is to be **written** (``0.4999999`` must be ``0.5``). ``write`` maps
-    a name to ``(value, has_decimal_form)``.
+    ``fixed(name, exact)`` and ``member(name, derived)`` give the tolerance for a
+    symmetry-fixed parameter and for a tied member (0 = floating-point precision).
     """
-    target: dict[str, tuple[float, bool]] = {}
+
+    fixed: Callable[[str, Fraction], float]
+    member: Callable[[str, float], float]
+
+
+#: Coordinates: a fixed one with a decimal form exactly, a third to 6 decimals (A73, A120);
+#: a coupled one within 6 decimals of the value derived from its group's first member (A121).
+_COORDINATES = _Family(fixed=lambda _n, exact: 0.0 if _has_decimal_form(exact) else SPECIAL_POSITION_TOL,
+                       member=lambda _n, _v: SPECIAL_POSITION_TOL)
+#: Uij: a fixed one is exactly 0; a coupled one within 1e-6 A^2 (A78, A121).
+_UIJ = _Family(fixed=lambda _n, _exact: 0.0, member=lambda _n, _v: UIJ_TOL)
+
+
+def _cell_tol(name: str, value) -> float:
+    return CELL_TOL * abs(float(value)) if name in ("a", "b", "c") else CELL_TOL
+
+
+#: Cell: within CELL_TOL, relative on lengths, degrees on angles (A77, A123).
+_CELL = _Family(fixed=_cell_tol, member=_cell_tol)
+
+
+def _fixed_cell_angle(ties, name: str) -> Fraction:
+    """The exact value of a symmetry-fixed cell angle: 120 for gamma on hexagonal axes, else 90."""
+    return Fraction(120) if name == "gamma" and ties.crystal_system in ("hexagonal", "trigonal") else Fraction(90)
+
+
+def _derive(ties: Ties, stated: dict, exact, family: _Family) -> tuple[dict, dict]:
+    """``(derived, write)`` for one parameter set (a cell, a site's x/y/z, or its Uij; A121).
+
+    Each tie group's first member is the independent parameter and keeps its
+    stated value. Every other value is derived in exact rational arithmetic:
+    a fixed one is its exact value ``exact(name)``, a member ``k * rep + c``.
+    ``derived`` maps every name to the float nearest its derived value (what
+    the model holds); ``write`` maps the names stated beyond ``family``'s
+    tolerance to ``(derived, tolerance)``.
+    """
+    targets: dict[str, tuple[Fraction, float]] = {}
     for name in ties.fixed:
-        target[name] = (float(exact(name)), _has_decimal_form(exact(name)))
+        value = Fraction(exact(name))
+        targets[name] = (value, family.fixed(name, value))
     for group in ties.groups:
-        rep = stated[group.members[0]]
-        for name, k, c in zip(group.members, group.coefficients, group.offsets):
-            target[name] = (float(k) * rep + float(c), _has_decimal_form(k) and _has_decimal_form(c))
-    read, write = {}, {}
+        rep = Fraction(stated[group.members[0]])
+        targets[group.members[0]] = (rep, 0.0)
+        for name, k, c in zip(group.members[1:], group.coefficients[1:], group.offsets[1:]):
+            value = k * rep + c
+            targets[name] = (value, family.member(name, float(value)))
+    derived, write = {}, {}
     for name, value in stated.items():
-        exact_value, decimal = target[name]
-        if _same(value, exact_value):
-            continue
-        if not decimal and abs(value - exact_value) <= SPECIAL_POSITION_TOL:
-            read[name] = exact_value
-        else:
-            write[name] = (exact_value, decimal)
-    return read, write
+        target, tol = targets[name]
+        derived[name] = float(target)
+        if not _within(value, derived[name], tol):
+            write[name] = (derived[name], tol)
+    return derived, write
 
 
-def _fmt_exact(value: float, decimal: bool) -> str:
-    """A value to write: exactly (``repr``) when it has a decimal form, else to 6 decimals."""
-    return repr(value) if decimal else f"{value:.6f} (to at least 6 decimals)"
+def _updated(params: dict, derived: dict, bounds: dict) -> dict:
+    """``model_copy`` updates for the parameters whose value or bounds the model holds derived."""
+    updates = {}
+    for name, param in params.items():
+        update = {} if derived[name] == param.value else {"value": derived[name]}
+        if name in bounds and bounds[name] != (param.min, param.max):
+            update["min"], update["max"] = bounds[name]
+        if update:
+            updates[name] = param.model_copy(update=update)
+    return updates
+
+
+def _ties_text(ties: Ties, exact, only=None) -> str:
+    """The symmetry relations of a parameter set, e.g. ``"x = 1/3, y = 2/3"``, ``"y = 2x"``, ``"b = a"``."""
+    parts = [f"{name} = {exact(name)}" for name in ties.fixed]
+    parts += [g.relation_text(m) for g in ties.groups for m in g.members[1:]]
+    if only is not None:
+        parts = [p for p in parts if p.split(" = ")[0] in only]
+    return ", ".join(parts)
+
+
+def _fmt_value(value: float, tol: float) -> str:
+    """A value to write: exactly when its decimal form is short (``0.5``, ``0.0061735``), else the
+    fewest decimals (at least 6) that state it within ``tol`` (``0.333333 (to at least 6 decimals)``)."""
+    text = repr(value)
+    if "e" not in text and len(text.partition(".")[2]) <= 8:
+        return text
+    for n in range(6, 17):
+        rounded = f"{value:.{n}f}"
+        if abs(float(rounded) - value) <= tol / 10:
+            return f"{rounded} (to at least {n} decimals)"
+    return text
 
 
 def _write_text(write: dict) -> str:
-    return ", ".join(f"{name} = {_fmt_exact(v, decimal)}" for name, (v, decimal) in write.items())
+    return ", ".join(f"{name} = {_fmt_value(value, tol)}" for name, (value, tol) in write.items())
 
 
-def _values_to_write(ties: Ties, stated: dict, exact) -> str:
-    """``"U12 = 0.0061735"``: the values that make ``stated`` exactly symmetric (Uij: always a decimal form)."""
-    _read, write = _special_position_values(ties, stated, exact)
-    return _write_text(write)
-
-
-def _fmt_bounds(lo: Optional[float], hi: Optional[float], decimal: bool = True) -> str:
-    return "[" + ", ".join("null" if v is None else repr(v) if decimal else f"{v:.6f}" for v in (lo, hi)) + "]"
+def _fmt_bounds(lo: Optional[float], hi: Optional[float], tol: Optional[float] = None) -> str:
+    """``[min, max]`` as stated (``repr``), or, with ``tol``, as values to write (:func:`_fmt_value`)."""
+    texts = ["null" if v is None else repr(v) if tol is None else _fmt_value(v, tol) for v in (lo, hi)]
+    values, notes = zip(*(t.partition(" (")[::2] for t in texts))
+    note = max(notes)
+    return f"[{', '.join(values)}]" + (f" ({note}" if note else "")
 
 
 _HOW_MANY = {2: "both", 3: "all three"}
 
 
-def _tie_rules(params: dict, ties: Ties, context: str, fixed_value) -> tuple[list[tuple[str, str]], dict]:
+def _tie_rules(params: dict, ties: Ties, family: _Family, context: str,
+               fixed_value) -> tuple[list[tuple[str, str]], dict]:
     """The flag and bound rules of one parameter set (cell, a site's x/y/z, or its Uij).
 
     - **F2** (A95): a symmetry-fixed parameter has refine flag false.
@@ -1083,19 +1262,17 @@ def _tie_rules(params: dict, ties: Ties, context: str, fixed_value) -> tuple[lis
     - **F1** (A95): the members of a tie group carry the same flag. The error is
       reported at every member whose flag differs from the group's first
       member, naming the whole group (review N1).
-    - **F4** (A98, A115): with bounds, each member's bounds follow the tie from
-      the first member's: ``member = k*rep + c`` maps ``[min, max]`` to
-      ``[k*min + c, k*max + c]``, swapped for k < 0; a null side stays null on
-      the matching side. Anything but the exact mapped bounds (to floating-point
-      precision) is an error giving them, except that a bound with no exact
-      decimal form (an offset of a third) stated to 6 decimals is read as the
-      exact one (A120).
+    - **F4** (A98, A121): with bounds, each member's bounds are derived from the
+      first member's like its value: ``member = k*rep + c`` maps ``[min, max]``
+      to ``[k*min + c, k*max + c]``, swapped for k < 0; a null side stays null on
+      the matching side. Stated within ``family``'s member tolerance, they are
+      read as the derived bounds; otherwise an error gives them.
     - **F3**: different groups are independent (nothing to check).
 
-    Returns ``([(name, message)], {name: param with the read bounds})``.
+    Returns ``([(name, message)], {name: (min, max) derived})``.
     """
     errors: list[tuple[str, str]] = []
-    updates: dict[str, Any] = {}
+    bounds: dict[str, tuple] = {}
     for name in ties.fixed:
         param = params[name]
         if param.refine_flag:
@@ -1119,28 +1296,20 @@ def _tie_rules(params: dict, ties: Ties, context: str, fixed_value) -> tuple[lis
             continue
         for name in group.members[1:]:
             param = params[name]
-            k, c = (float(v) for v in group.relation(name))
-            lo, hi = (None if v is None else k * v + c for v in (rep.min, rep.max))
+            k, c = group.relation(name)
+            lo, hi = (None if v is None else float(k * Fraction(v) + c) for v in (rep.min, rep.max))
             if k < 0:
                 lo, hi = hi, lo
-            pairs = ((param.min, lo), (param.max, hi))
-            if not all((got is None) == (want is None) for got, want in pairs):
-                exact = readable = False
-            else:
-                exact = all(got is None or _same(got, want) for got, want in pairs)
-                readable = all(got is None or abs(got - want) <= SPECIAL_POSITION_TOL for got, want in pairs)
-            decimal = all(_has_decimal_form(v) for v in group.relation(name))
-            if exact:
-                continue
-            if readable and not decimal:  # A120: e.g. y = x + 1/3, stated to 6 decimals
-                updates[name] = param.model_copy(update={"min": lo, "max": hi})
+            tol = family.member(name, max(abs(v) for v in (lo, hi, 0.0) if v is not None))
+            if all((got is None) == (want is None) and (got is None or _within(got, want, tol))
+                   for got, want in ((param.min, lo), (param.max, hi))):
+                bounds[name] = (lo, hi)
                 continue
             errors.append((name, f"{context}: the bounds of {name} must follow "
                                  f"{group.relation_text(name)} from the bounds of {group.members[0]} "
-                                 f"{_fmt_bounds(rep.min, rep.max)}: write {_fmt_bounds(lo, hi, decimal)}"
-                                 f"{'' if decimal else ' (to at least 6 decimals)'}, "
+                                 f"{_fmt_bounds(rep.min, rep.max)}: write {_fmt_bounds(lo, hi, tol)}, "
                                  f"not {_fmt_bounds(param.min, param.max)}"))
-    return errors, updates
+    return errors, bounds
 
 
 # --- top-level recipe frame (A1, A18, A21, A40) ------------------------------

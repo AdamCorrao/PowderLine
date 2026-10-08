@@ -1124,7 +1124,7 @@ def test_phase_special_position_with_a_decimal_form_must_be_exact():
         Phase[RefinableParameter].model_validate(d)
     assert _errs(exc_info) == [(("atoms", "A1"),
                                 "atom 'A1' (multiplicity 2 in 'P 63/m m c'): (0.333333, 0.666667, 0.2499999) is "
-                                "3.3e-07 from a special position, not on it (x = 1/3, y = 2/3, z = 1/4); write z = 0.25")]
+                                "1e-07 from a special position, not on it (x = 1/3, y = 2/3, z = 1/4); write z = 0.25")]
 
 
 _R3M_CELL = {"a": [4.0, False], "b": [4.0, False], "c": [20.0, False],
@@ -1152,7 +1152,9 @@ def test_tied_bounds_with_a_third_offset_read_from_6_decimals():
         return {"space_group": "R -3 m:H", "unit_cell": cell, "atoms": {"O1": atom}}
 
     y = Phase[BRP].model_validate(phase((0.383333, 0.483333))).atoms["O1"].y
-    assert y.model_dump() == [0.1 + 1 / 3, True, 0.05 + 1 / 3, 0.15 + 1 / 3]
+    third = Fraction(1, 3)  # the model holds the float nearest each exact value (A120, A121)
+    assert y.model_dump() == [float(Fraction(0.1) + third), True, float(Fraction(0.05) + third),
+                              float(Fraction(0.15) + third)]
     with pytest.raises(ValidationError) as exc_info:
         Phase[BRP].model_validate(phase((0.3833, 0.4833)))
     assert _errs(exc_info) == [(("atoms", "O1", "y"),
@@ -1203,10 +1205,8 @@ def test_phase_cell_cubic_b_neq_a_rejected():
     d["unit_cell"]["b"] = [4.2, False]
     with pytest.raises(ValidationError) as exc_info:
         Phase[RefinableParameter].model_validate(d)
-    msg = str(exc_info.value)
-    assert "b = 4.2 (symmetric value" in msg
-    assert "inconsistent" in msg
-    assert _errors(exc_info) == [(("unit_cell",), "value_error")]
+    assert _errs(exc_info) == [(("unit_cell",), "unit cell is inconsistent with 'P m -3 m' (cubic): stated b = 4.2, "
+                                                 "but by symmetry b = a; write b = 4.15692")]
 
 
 def test_phase_cell_cubic_gamma_91_rejected():
@@ -1254,18 +1254,22 @@ def test_phase_uaniso_cubic_m3m_isotropic_accepted():
 
 
 def test_phase_uaniso_cubic_m3m_anisotropic_rejected():
-    """Phase: La at (0,0,0) in P m -3 m with U11!=U22 rejected (breaks symmetry)."""
+    """Phase: La at (0,0,0) in P m -3 m with U11!=U22 rejected (breaks symmetry); the values to write
+    are derived from the first member (A121)."""
     d = _valid_pmm_lab6_phase_dict()
     d["atoms"]["La1"]["ADP"] = "Uaniso"
     d["atoms"]["La1"]["Uaniso"] = {"U11": [0.01, False], "U22": [0.02, False], "U33": [0.01, False], "U12": [0, False], "U13": [0, False], "U23": [0, False]}
     del d["atoms"]["La1"]["Uiso"]
-    with pytest.raises(ValidationError, match="break the site symmetry"):
+    with pytest.raises(ValidationError) as exc_info:
         Phase[RefinableParameter].model_validate(d)
+    assert _errs(exc_info) == [(("atoms", "La1", "Uaniso"),
+                                "atom 'La1' (multiplicity 1 in 'P m -3 m'): Uaniso is not site-symmetric "
+                                "(U12 = 0, U13 = 0, U23 = 0, U22 = U11, U33 = U11); write U22 = 0.01")]
 
 
-def test_phase_uaniso_hexagonal_6h_not_exact_rejected():
-    """A115: at 6h U12 = U22/2; a U12 within 1e-6 of it but not exact is an error giving the value
-    derived from the stated U22. Writing it validates."""
+def test_phase_uaniso_hexagonal_6h_coupled_member_read_within_1e_6():
+    """A121: at 6h U12 = U22/2 is derived from the stated U22. A U12 stated within 1e-6 A^2 (A78) is
+    read as the derived value (0.006174 -> 0.0061735); further off is an error giving it."""
     d = {
         "space_group": "P 63/m m c",
         "unit_cell": {"a": [3.2, False], "b": [3.2, False], "c": [5.2, False], "alpha": [90, False], "beta": [90, False], "gamma": [120, False]},
@@ -1278,13 +1282,35 @@ def test_phase_uaniso_hexagonal_6h_not_exact_rejected():
             }
         },
     }
+    assert Phase[RefinableParameter].model_validate(d).atoms["A1"].Uaniso.U12.value == 0.0061735
+    d["atoms"]["A1"]["Uaniso"]["U12"][0] = 0.006176
     with pytest.raises(ValidationError) as exc_info:
         Phase[RefinableParameter].model_validate(d)
     assert _errs(exc_info) == [(("atoms", "A1", "Uaniso"),
-                                "atom 'A1' (multiplicity 6 in 'P 63/m m c'): Uaniso is not exactly site-symmetric "
+                                "atom 'A1' (multiplicity 6 in 'P 63/m m c'): Uaniso is not site-symmetric "
                                 "(U13 = 0, U23 = 0, U12 = U22/2); write U12 = 0.0061735")]
-    d["atoms"]["A1"]["Uaniso"]["U12"][0] = 0.0061735
-    assert Phase[RefinableParameter].model_validate(d).model_dump() == d
+
+
+def test_phase_uaniso_fixed_component_must_be_exactly_zero():
+    """A121: a symmetry-fixed Uij is a constant of the site, 0, which has a decimal form: 1e-9 is an
+    error ("write U13 = 0.0"), never read as 0."""
+    d = {
+        "space_group": "P 63/m m c",
+        "unit_cell": {"a": [3.2, False], "b": [3.2, False], "c": [5.2, False], "alpha": [90, False], "beta": [90, False], "gamma": [120, False]},
+        "atoms": {
+            "A1": {
+                "element": "O", "x": [0.2, False], "y": [0.4, False], "z": [0.25, False],
+                "occupancy": [1.0, False], "ADP": "Uaniso",
+                "Uaniso": {"U11": [0.012, False], "U22": [0.012, False], "U33": [0.02, False],
+                           "U12": [0.006, False], "U13": [1e-9, False], "U23": [0.0, False]},
+            }
+        },
+    }
+    with pytest.raises(ValidationError) as exc_info:
+        Phase[RefinableParameter].model_validate(d)
+    assert _errs(exc_info) == [(("atoms", "A1", "Uaniso"),
+                                "atom 'A1' (multiplicity 6 in 'P 63/m m c'): Uaniso is not site-symmetric "
+                                "(U13 = 0, U23 = 0, U12 = U22/2); write U13 = 0.0")]
 
 
 def test_phase_multiple_atom_problems_all_reported():
@@ -2048,20 +2074,24 @@ def test_bounds_open_side_must_match():
     assert _errs(exc_info)[0][1].endswith("write [0.3, 0.5], not [null, 0.5]")
 
 
-def test_tied_coordinate_bounds_not_exact_rejected():
-    """A115 (replaces A108's snap): tied bounds must be the exact mapped values, to floating-point
-    precision; 4e-6 off is an error giving them."""
-    d = _bounded_phase("P -4 21 m", (5, 5, 4, 90, 90, 90), (0.1, 0.4, 0.3), (True, True, False),
-                       {"x": (0.0, 0.2), "y": (0.300004, 0.5)})
+def test_tied_coordinate_bounds_read_within_6_decimals():
+    """A121 (replaces A115's exact tied bounds): a tied member's bounds are derived from the first
+    member's like its value; 4e-6 off is read as [0.3, 0.5], 1e-5 off is an error giving them."""
+    def phase(y_bounds):
+        return _bounded_phase("P -4 21 m", (5, 5, 4, 90, 90, 90), (0.1, 0.4, 0.3), (True, True, False),
+                              {"x": (0.0, 0.2), "y": y_bounds})
+
+    assert Phase[BRP].model_validate(phase((0.300004, 0.5))).atoms["A"].y.model_dump() == [0.4, True, 0.3, 0.5]
     with pytest.raises(ValidationError) as exc_info:
-        Phase[BRP].model_validate(d)
+        Phase[BRP].model_validate(phase((0.30001, 0.5)))
     assert _errs(exc_info) == [(("atoms", "A", "y"),
                                 "atom 'A' (multiplicity 4 in 'P -4 21 m'): the bounds of y must follow "
-                                "y = -x + 1/2 from the bounds of x [0.0, 0.2]: write [0.3, 0.5], not [0.300004, 0.5]")]
+                                "y = -x + 1/2 from the bounds of x [0.0, 0.2]: write [0.3, 0.5], not [0.30001, 0.5]")]
 
 
 def test_tied_uij_bounds_factor_two():
-    """6h: U12 = U22/2, so U22 in [0, 0.02] gives U12 in [0, 0.01], exactly (A98, A115)."""
+    """6h: U12 = U22/2, so U22 in [0, 0.02] gives U12 in [0, 0.01]; within 1e-6 A^2 read as those (A98,
+    A121), further off an error giving them."""
     values = (0.01, 0.012, 0.009, 0.006, 0.0, 0.0)
     flags = (True, True, True, True, False, False)
 
@@ -2071,27 +2101,30 @@ def test_tied_uij_bounds_factor_two():
         return _phasep("P 63/m m c", _cellp(_HEX, bounds={}), {"C": a})
 
     assert Phase[BRP].model_validate(phase((0.0, 0.01))).atoms["C"].Uaniso.U12.model_dump() == [0.006, True, 0.0, 0.01]
+    assert Phase[BRP].model_validate(phase((0.0, 0.0100009))).atoms["C"].Uaniso.U12.model_dump() == [0.006, True, 0.0, 0.01]
     with pytest.raises(ValidationError) as exc_info:
-        Phase[BRP].model_validate(phase((0.0, 0.0100009)))
+        Phase[BRP].model_validate(phase((0.0, 0.010002)))
     assert _errs(exc_info) == [(("atoms", "C", "Uaniso", "U12"),
                                 "atom 'C' (multiplicity 6 in 'P 63/m m c'): the bounds of U12 must follow "
                                 "U12 = U22/2 from the bounds of U22 [0.0, 0.02]: write [0.0, 0.01], "
-                                "not [0.0, 0.0100009]")]
+                                "not [0.0, 0.010002]")]
 
 
-def test_tied_cell_bounds_equal_exactly():
-    """Cell ties are equalities; equal to floating-point precision (relative above 1; A115)."""
+def test_tied_cell_bounds_follow_the_first_member():
+    """Cell ties are equalities: a member's bounds are the first member's, within CELL_TOL (1e-9, relative
+    on lengths; A77, A123), and the model holds them exactly; further off is an error giving them."""
     def phase(b_max):
         cell = _cellp((4, 4, 4, 90, 90, 90), (True, True, True, False, False, False),
                       {"a": (3.9, 4.2), "b": (3.9, b_max), "c": (3.9, 4.2)})
         return _phasep("P m -3 m", cell, {"A": _atomp(_GENERAL, bounds={})})
 
-    assert Phase[BRP].model_validate(phase(4.2 + 1e-15)).unit_cell.b.model_dump() == [4.0, True, 3.9, 4.2 + 1e-15]
+    for b_max in (4.2 + 1e-15, 4.200000001):
+        assert Phase[BRP].model_validate(phase(b_max)).unit_cell.b.model_dump() == [4.0, True, 3.9, 4.2]
     with pytest.raises(ValidationError) as exc_info:
-        Phase[BRP].model_validate(phase(4.200000001))
+        Phase[BRP].model_validate(phase(4.20001))
     assert _errs(exc_info) == [(("unit_cell", "b"),
                                 "cubic cell ('P m -3 m'): the bounds of b must follow b = a from the bounds "
-                                "of a [3.9, 4.2]: write [3.9, 4.2], not [3.9, 4.200000001]")]
+                                "of a [3.9, 4.2]: write [3.9, 4.2], not [3.9, 4.20001]")]
 
 
 def test_symmetry_fixed_parameters_have_no_bounds_a106():
@@ -2226,12 +2259,13 @@ def _p1_uaniso_phase(u):
 
 def test_uaniso_not_positive_definite_warns_and_keeps_the_values():
     """A118: informative, never an error or a change; the same recipe gives the same warning again."""
-    d = _p1_uaniso_phase((0.01, 0.01, 0.01, 0.02, 0.0, 0.0))  # principal values -0.01, 0.01, 0.03
+    d = _p1_uaniso_phase((0.01, 0.01, 0.01, 0.02, 0.0, 0.0))  # Uij matrix eigenvalues -0.01, 0.01, 0.03
     phase = Phase[RP].model_validate(d)
     assert phase.model_dump() == d
     expected = [{"code": "uaniso_not_positive_definite",
                  "message": "atom 'O1' (multiplicity 1 in 'P 1'): Uaniso is not positive definite (principal "
-                            "values -0.01, 0.01, 0.03 A^2), so it describes no thermal ellipsoid; it is used as stated",
+                            "mean-square displacements -0.0112, 0.00981, 0.0288 A^2), so it describes no thermal "
+                            "ellipsoid; it is used as stated",
                  "field_path": "atoms.O1.Uaniso"}]
     assert phase.warnings() == expected
     assert Phase[RP].model_validate(phase.model_dump()).warnings() == expected
@@ -2240,3 +2274,269 @@ def test_uaniso_not_positive_definite_warns_and_keeps_the_values():
 def test_uaniso_positive_definite_gives_no_warning():
     phase = Phase[RP].model_validate(_p1_uaniso_phase((0.01, 0.012, 0.009, 0.002, -0.001, 0.0005)))
     assert phase.warnings() == []
+
+
+from powderline.schema_core import _principal_msd  # noqa: E402
+from powderline.symmetry import _metric, check_cell  # noqa: E402
+
+
+def _isotropic_uij(cell, u_iso):
+    """U^ij of an isotropic U in ``cell``: u_iso * G*^ij / (a*_i a*_j)."""
+    g = np.linalg.inv(_metric(cell))
+    rec = np.sqrt(np.diag(g))
+    u = u_iso * g / np.outer(rec, rec)
+    return (u[0, 0], u[1, 1], u[2, 2], u[0, 1], u[0, 2], u[1, 2])
+
+
+@pytest.mark.parametrize("cell", [(5.0, 6.0, 7.0, 80.0, 85.0, 95.0), (3.2, 3.2, 5.2, 90.0, 90.0, 120.0)])
+def test_principal_mean_square_displacements_are_cartesian(cell):
+    """A118 (re/03b PR review N4): the warning gives the Cartesian principal values; an isotropic U has
+    three equal ones in any cell, although its Uij matrix does not (hexagonal U12 = U11/2)."""
+    assert np.allclose(_principal_msd(cell, _isotropic_uij(cell, -0.01)), -0.01)
+
+
+def test_uaniso_not_positive_definite_isotropic_hexagonal_message():
+    """N4: a negative isotropic tensor on hexagonal axes reports -0.01 three times, not the Uij matrix's
+    -0.015, -0.01, -0.005."""
+    d = _p1_uaniso_phase(_isotropic_uij((3.2, 3.2, 5.2, 90.0, 90.0, 120.0), -0.01))
+    d["unit_cell"] = {k: [v, False] for k, v in zip(_CELL_NAMES, (3.2, 3.2, 5.2, 90.0, 90.0, 120.0))}
+    (warning,) = Phase[RP].model_validate(d).warnings()
+    assert "principal mean-square displacements -0.01, -0.01, -0.01 A^2" in warning["message"]
+
+
+def test_uaniso_semidefinite_always_warns():
+    """N4: a zero principal value is <= 0 whatever the floating-point noise (rank-1 tensor)."""
+    for v in (0.01, 0.03, 0.07, 0.11, 0.013):
+        (warning,) = Phase[RP].model_validate(_p1_uaniso_phase((v,) * 6)).warnings()
+        assert warning["code"] == "uaniso_not_positive_definite"
+
+
+
+# --- one rule for symmetry-determined values (A121; re/03b PR review S1, S3, Q1) ----------------
+
+_HEX_CELL = (3.2, 3.2, 5.2, 90.0, 90.0, 120.0)
+_SPECIAL_VALUE_CASES = [
+    # (case, space group, cell, stated xyz, model xyz or the error) -- the table in SCHEMA_HISTORY
+    ("fixed 1/2 written 0.4999999", "P m -3 m", (4.0, 4.0, 4.0, 90.0, 90.0, 90.0), (0.4999999, 0.0, 0.0),
+     "write x = 0.5"),
+    ("fixed 1/3 written 0.333333", "P 63/m m c", _HEX_CELL, (0.333333, 0.666667, 0.25), (1 / 3, 2 / 3, 0.25)),
+    ("fixed 1/3 written to 13 digits", "P 63/m m c", _HEX_CELL, (0.3333333333333, 0.6666666666667, 0.25),
+     (1 / 3, 2 / 3, 0.25)),
+    ("ideal C14 6h (x, 2x - 1, 1/4)", "P 63/m m c", _HEX_CELL, (0.833333, 0.666667, 0.25),
+     (0.833333, float(2 * Fraction(0.833333) - 1), 0.25)),
+    ("y = 2x written 0.2000001", "P 6/m m m", _HEX_CELL, (0.1, 0.2000001, 0.0), (0.1, 0.2, 0.0)),
+    ("y = x/2 of a 6-decimal x", "P 6/m m m", _HEX_CELL, (0.333333, 0.166667, 0.0),
+     (0.333333, float(Fraction(0.333333) / 2), 0.0)),
+    ("y = x + 1/3 written 0.4", "R -3 m:H", (4.0, 4.0, 20.0, 90.0, 90.0, 120.0), (0.066667, 0.4, 0.166667),
+     (0.066667, float(Fraction(0.066667) + Fraction(1, 3)), 1 / 6)),
+]
+
+
+@pytest.mark.parametrize("case, sg, cell, xyz, expected", _SPECIAL_VALUE_CASES, ids=[c[0] for c in _SPECIAL_VALUE_CASES])
+def test_symmetry_determined_values_follow_one_rule(case, sg, cell, xyz, expected):
+    """A121: a constant with a decimal form is exact; a third is read from 6 decimals; a value derived from
+    another stated value is read within 6 decimals; the model holds the derived value, and its dump
+    validates as itself."""
+    d = {"space_group": sg, "unit_cell": dict(zip(_CELL_NAMES, ([v, False] for v in cell))),
+         "atoms": {"A": {"element": "O", **{k: [v, False] for k, v in zip("xyz", xyz)},
+                         "occupancy": [1.0, False], "ADP": "Uiso", "Uiso": [0.01, False]}}}
+    if isinstance(expected, str):
+        with pytest.raises(ValidationError) as exc_info:
+            Phase[RP].model_validate(d)
+        assert exc_info.value.errors()[0]["msg"].endswith(expected)
+        return
+    phase = Phase[RP].model_validate(d)
+    assert tuple(getattr(phase.atoms["A"], k).value for k in "xyz") == expected
+    assert phase.warnings() == []
+    assert Phase[RP].model_validate(phase.model_dump()).model_dump() == phase.model_dump()
+
+
+def test_equal_ties_are_named_in_the_message():
+    """N3: an equal tie is a relation too (12j (1/2, y, y): z = y)."""
+    d = {"space_group": "P m -3 m", "unit_cell": dict(zip(_CELL_NAMES, ([v, False] for v in (4.0, 4.0, 4.0, 90, 90, 90)))),
+         "atoms": {"A": {"element": "O", "x": [0.4999999, False], "y": [0.2, False], "z": [0.2, False],
+                         "occupancy": [1.0, False], "ADP": "Uiso", "Uiso": [0.01, False]}}}
+    with pytest.raises(ValidationError) as exc_info:
+        Phase[RP].model_validate(d)
+    assert _errs(exc_info) == [(("atoms", "A"), "atom 'A' (multiplicity 12 in 'P m -3 m'): (0.4999999, 0.2, 0.2) is "
+                                                "1e-07 from a special position, not on it (x = 1/2, z = y); write x = 0.5")]
+
+
+def test_cell_holds_the_first_members_values():
+    """A123: tied cell values within CELL_TOL are the first member's in the model (b = a exactly), and fixed
+    angles are exact; the error states the stated values and gives the ones to write."""
+    d = _valid_pmm_lab6_phase_dict()
+    d["unit_cell"]["b"] = [4.15692 * (1 + 5e-10), False]
+    d["unit_cell"]["gamma"] = [90 + 5e-10, False]
+    cell = Phase[RP].model_validate(d).unit_cell
+    assert (cell.b.value, cell.gamma.value) == (4.15692, 90.0)
+    d["unit_cell"]["b"] = [4.15692 * (1 + 5e-9), False]
+    d["unit_cell"]["gamma"] = [90.1, False]
+    with pytest.raises(ValidationError) as exc_info:
+        Phase[RP].model_validate(d)
+    assert _errs(exc_info) == [(("unit_cell",), "unit cell is inconsistent with 'P m -3 m' (cubic): stated "
+                                                f"b = {4.15692 * (1 + 5e-9)!r}, gamma = 90.1, but by symmetry "
+                                                "gamma = 90, b = a; write b = 4.15692, gamma = 90.0")]
+
+
+def test_fixed_cell_angles_are_exact_in_every_setting():
+    """A123: every gemmi setting's fixed angles are 90, or 120 for gamma on hexagonal axes; a cell built
+    from them passes the metric check (A77)."""
+    import gemmi
+
+    from powderline.schema_core import _fixed_cell_angle
+    from powderline.symmetry import cell_tie_groups
+
+    for sg in gemmi.spacegroup_table():
+        ties = cell_tie_groups(sg.xhm())
+        cell = {"a": 5.1, "b": 6.2, "c": 7.3, "alpha": 81.0, "beta": 86.0, "gamma": 97.0}
+        for group in ties.groups:
+            for member in group.members[1:]:
+                cell[member] = cell[group.members[0]]
+        cell.update({name: float(_fixed_cell_angle(ties, name)) for name in ties.fixed})
+        check_cell(sg.xhm(), tuple(cell[k] for k in _CELL_NAMES))
+
+
+def test_tied_values_and_bounds_derived_together_stay_ordered():
+    """N1: a member's value and bounds are both derived from the first member's, so a value at its bound
+    stays within it, and the dump validates."""
+    cell = {k: [*v, None, None] for k, v in _R3M_CELL.items()}
+    atom = {"element": "O", "x": [0.2, False, 0.0, 0.2], "y": [0.5333333333333334, False, 0.333333, 0.533334],
+            "z": [0.166667, False, None, None], "occupancy": [1.0, False, None, None],
+            "ADP": "Uiso", "Uiso": [0.01, False, None, None]}
+    phase = Phase[BRP].model_validate({"space_group": "R -3 m:H", "unit_cell": cell, "atoms": {"O1": atom}})
+    y = phase.atoms["O1"].y
+    assert y.min <= y.value <= y.max
+    assert Phase[BRP].model_validate(phase.model_dump()).model_dump() == phase.model_dump()
+
+
+def test_uij_within_floating_point_precision_held_exactly():
+    """N2: no message without a value to write; the model holds the derived tensor."""
+    keys = ("U11", "U22", "U33", "U12", "U13", "U23")
+    values = (0.01, 0.01 + 9.5e-13, 0.02, 0.005 - 9.5e-13, 0.0, 0.0)
+    d = {"space_group": "P 6/m m m", "unit_cell": dict(zip(_CELL_NAMES, ([v, False] for v in _HEX_CELL))),
+         "atoms": {"A": {"element": "O", "x": [0.0, False], "y": [0.0, False], "z": [0.0, False],
+                         "occupancy": [1.0, False], "ADP": "Uaniso", "Uaniso": {k: [v, False] for k, v in zip(keys, values)}}}}
+    u = Phase[RP].model_validate(d).atoms["A"].Uaniso
+    assert (u.U22.value, u.U12.value) == (0.01, 0.005)
+
+
+# --- names (A112 amended: atom labels unique ignoring case; re/03b PR review N8) ----------------
+
+
+def test_atom_labels_unique_ignoring_case():
+    d = _valid_pmm_lab6_phase_dict()
+    d["atoms"]["la1"] = d["atoms"]["La1"]
+    with pytest.raises(ValidationError) as exc_info:
+        Phase[RP].model_validate(d)
+    assert _errs(exc_info) == [(("atoms", "la1"), "atom labels 'La1' and 'la1' differ only in case; rename one")]
+
+
+# --- engine subclass guard layers (A122; re/03b PR review S2, N5) -------------------------------
+
+
+def test_phase_parameter_type_must_be_a_core_parameter_type():
+    from typing import Generic
+
+    from powderline.schema_core import P
+
+    with pytest.raises(TypeError, match=r"the parameter type must be RefinableParameter or BoundedRefinableParameter, "
+                                        r"not <class 'float'>"):
+        Phase[float]
+
+    class EnginePhase(Phase[P], Generic[P]):
+        pass
+
+    with pytest.raises(TypeError, match="not <class 'int'>"):
+        EnginePhase[int]
+
+
+def test_phase_mixin_cannot_replace_a_core_validator():
+    """A mixin placed before Phase is collected first by pydantic; its same-named validator would win."""
+    from pydantic import BaseModel
+
+    class Mixin(BaseModel):
+        @field_validator("space_group", check_fields=False)
+        @classmethod
+        def _space_group(cls, v):
+            return v
+
+    class PlainMixin:
+        @model_validator(mode="after")
+        def _sites_check(self):
+            return self
+
+    for mixin, name in ((Mixin, "_space_group"), (PlainMixin, "_sites_check")):
+        with pytest.raises(TypeError, match=f"^{mixin.__name__} reuses the core phase name\\(s\\) {name};"):
+            type("EnginePhase", (mixin, Phase[RP]), {"__module__": __name__})
+
+
+def test_phase_mixin_cannot_redeclare_a_core_field():
+    from pydantic import BaseModel
+
+    class Mixin(BaseModel):
+        space_group: str = "P 1"
+
+    with pytest.raises(TypeError, match=r"^Mixin redeclares the core phase field\(s\) space_group;"):
+        class EnginePhase(Mixin, Phase[RP]):
+            pass
+
+
+@pytest.mark.parametrize("name, body", [
+    ("_engine_wrap", "@model_validator(mode='wrap')\n@classmethod\ndef _engine_wrap(cls, data, handler):\n    return handler(data)"),
+    ("_engine_before", "@model_validator(mode='before')\n@classmethod\ndef _engine_before(cls, data):\n    return data"),
+    ("_snap", "@field_validator('atoms', mode='before')\n@classmethod\ndef _snap(cls, v):\n    return v"),
+    ("_all", "@field_validator('*', mode='wrap')\n@classmethod\ndef _all(cls, v, handler):\n    return handler(v)"),
+    ("_sg", "@field_validator('space_group', mode='plain')\n@classmethod\ndef _sg(cls, v):\n    return v"),
+])
+def test_phase_validators_that_could_rewrite_the_recipe_rejected(name, body):
+    """A122: a 'before', 'wrap' or 'plain' validator could rewrite the recipe before core reads it (e.g.
+    round 0.4999999 to 0.5, A115) or skip core's validation."""
+    namespace = {"field_validator": field_validator, "model_validator": model_validator, "Phase": Phase, "RP": RP}
+    source = "class EnginePhase(Phase[RP]):\n    scale: RP\n" + "\n".join("    " + line for line in body.splitlines())
+    with pytest.raises(TypeError, match=f"^EnginePhase: validator\\(s\\) {name} must be 'after' validators"):
+        exec(source, namespace)
+
+
+def test_phase_engine_before_validator_on_its_own_field_allowed():
+    class EnginePhase(Phase[RP]):
+        scale: RP
+
+        @field_validator("scale", mode="before")
+        @classmethod
+        def _scale_shape(cls, v):
+            return v
+
+        @model_validator(mode="after")
+        def _engine_check(self):
+            return self
+
+    assert EnginePhase.model_validate({**_valid_pmm_lab6_phase_dict(), "scale": [1.0, True]}).scale.value == 1.0
+
+
+@pytest.mark.parametrize("name, body", [
+    ("__init__", "def __init__(self, **data):\n    super().__init__(**data)"),
+    ("model_post_init", "def model_post_init(self, context):\n    pass"),
+    ("model_validate", "@classmethod\ndef model_validate(cls, obj, **kw):\n    return cls.model_construct(**obj)"),
+    ("__get_pydantic_core_schema__", "@classmethod\ndef __get_pydantic_core_schema__(cls, source, handler):\n    return handler(source)"),
+    ("__pydantic_init_subclass__", "@classmethod\ndef __pydantic_init_subclass__(cls, **kw):\n    pass"),
+])
+def test_phase_entry_points_cannot_be_overridden(name, body):
+    """A122: an override could skip or replace core's validation without reusing a core name."""
+    namespace = {"Phase": Phase, "RP": RP}
+    source = "class EnginePhase(Phase[RP]):\n" + "\n".join("    " + line for line in body.splitlines())
+    with pytest.raises(TypeError, match=f"^EnginePhase defines {name}; a phase model may not override"):
+        exec(source, namespace)
+
+
+def test_phase_guard_sees_a_replaced_core_validator():
+    """A122 layer 2: whatever the route, every core validator must still be core's own function."""
+    import dataclasses
+
+    class EnginePhase(Phase[RP]):
+        pass
+
+    validators = EnginePhase.__pydantic_decorators__.field_validators
+    validators["_space_group"] = dataclasses.replace(validators["_space_group"], func=lambda cls, v: v)
+    with pytest.raises(TypeError, match=r"^EnginePhase replaces the core validator\(s\) _space_group"):
+        EnginePhase.__pydantic_init_subclass__()
