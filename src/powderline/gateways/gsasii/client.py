@@ -385,13 +385,13 @@ class GSASClient:
         """
         import time
         from powderline.kicker import run_refinement
-        from powderline.schema import RecipeModel
+        from powderline.gateways.gsasii.routing import model_from_request
         from pydantic import ValidationError
 
         output_dir.mkdir(parents=True, exist_ok=True)
 
         try:
-            recipe = RecipeModel.model_validate(recipe_dict)
+            recipe = model_from_request(recipe_dict)  # native gsasii.* or 0.26.0 (re/04)
         except ValidationError as e:
             error_lines = [
                 f"{' -> '.join(str(loc) for loc in err['loc'])}: {err['msg']}"

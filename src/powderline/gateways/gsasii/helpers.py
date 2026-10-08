@@ -51,14 +51,16 @@ DEFAULT_SPF_GAMMA_MIN = 0.0001 # Minimum gamma value for single peak fitting (ce
 
 def unpack_refinement_parameter(param: list | None, param_name: str = "parameter") -> tuple[Any, Any, Any, Any]:
     """
-    Unpack refinement parameter from [value, refine_flag, min, max] format.
+    Unpack a refinement parameter: [value, refine_flag, min, max] (schema 0.26.0) or
+    [value, refine_flag] (gsasii 1.0.0, no bounds: min and max are returned as None).
 
     This utility reduces boilerplate for the common pattern of unpacking refinement
     parameters throughout the codebase. Use only in straightforward cases - complex
     conditional logic should inline the unpacking for clarity.
 
     Args:
-        param: RefinementParameter list [value, refine_flag, min, max] or None
+        param: RefinementParameter list [value, refine_flag, min, max] or
+            [value, refine_flag], or None
         param_name: Name of parameter for error messages (optional)
 
     Returns:
@@ -75,10 +77,13 @@ def unpack_refinement_parameter(param: list | None, param_name: str = "parameter
     if param is None:
         return (None, None, None, None)
     elif isinstance(param, list):
+        if len(param) == 2:  # gsasii 1.0.0 RefinableParameter (A39, A84)
+            return (param[0], param[1], None, None)
         if len(param) != 4:
             raise ValueError(
                 f"{param_name} must be a list of exactly 4 elements "
-                f"[value, refine_flag, min, max], got {len(param)} elements"
+                f"[value, refine_flag, min, max] or 2 elements [value, refine_flag], "
+                f"got {len(param)} elements"
             )
         return tuple(param)
     else:
@@ -224,8 +229,8 @@ def has_active_refinement_parameter(atom_param: dict) -> bool:
             if any(v is not None and v != [None, False, None, None] for v in value.values()):
                 return True
 
-        elif isinstance(value, list) and len(value) == 4:
-            # Check RefinementParameter list [value, refine_flag, min, max]
+        elif isinstance(value, list) and len(value) in (2, 4):
+            # Check RefinementParameter list [value, refine_flag, min, max] or [value, refine_flag]
             if value != [None, False, None, None]:
                 return True
 

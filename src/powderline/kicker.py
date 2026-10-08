@@ -80,8 +80,9 @@ from powderline.gateways.gsasii.executors import (  # noqa: F401
     execute_rietveld_refinement,
     execute_spf_refinement,
     SCHEMA_EXECUTORS,
-    run_refinement,
 )
+# Native gsasii.* models -> executors.run_refinement; 0.26.0 RecipeModel -> the legacy copy (re/04)
+from powderline.gateways.gsasii.routing import run_refinement  # noqa: F401
 from powderline.gateways.gsasii.extractors import (  # noqa: F401
     calculate_cell_esds_from_A_matrix,
     extract_refined_params_from_project,

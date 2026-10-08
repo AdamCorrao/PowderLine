@@ -776,7 +776,7 @@ def _extract_spf_peak_report(
         ``(spf_peaks_data, spf_diagnostics_data)`` where each is a
         column-oriented dict, or ``({}, {})`` when single peaks are not used.
     """
-    if recipe.payload.single_peaks is None:
+    if getattr(recipe.payload, 'single_peaks', None) is None:  # gsasii.spf only
         return {}, {}
 
     peak_list = proj.data.get(hist.name, {}).get('Peak List', {}).get('peaks', [])
@@ -919,7 +919,7 @@ def _extract_phase_reports(
     unit_cell_data: dict = {}
     peak_list_data: dict = {}
 
-    if recipe.payload.phases is None or len(recipe.payload.phases) == 0:
+    if getattr(recipe.payload, 'phases', None) is None or len(recipe.payload.phases) == 0:  # gsasii.rietveld only
         return unit_cell_data, peak_list_data
 
     phase_names = [p.name for p in proj.phases() if p is not None]
