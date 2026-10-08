@@ -184,6 +184,8 @@ def execute_spf_refinement(
     try:
         peak_result = hist.refine_peaks(mode=spf_mode)
     except TypeError as exc:  # DoPeakFit failed and returned None; refine_peaks then indexes it (EB-38)
+        if "'NoneType' object is not subscriptable" not in str(exc):  # any other TypeError keeps its own traceback
+            raise
         raise EngineExecutionError(
             "GSAS-II's peak fit failed: DoPeakFit returned no result (GSAS-II prints the reason only in its "
             "debug mode; GSAS-II quirk EB-38). Check the peak positions, widths and fit range."
@@ -204,7 +206,8 @@ def execute_spf_refinement(
 
     return {
         'success': True,
-        'rwp': rwp_final
+        'rwp': rwp_final,
+        'engine_rvals': peak_result[3],  # DoPeakFit's own residuals, for engine_details (A23)
     }
 
 
@@ -511,7 +514,7 @@ def run_refinement(recipe: GsasiiRietveldRecipe | GsasiiSpfRecipe, output_dir: P
             'spf_convergence_diagnostics': spf_diagnostics_data,
             # Standard fit statistics from core fitstats; 'rwp' becomes the standard Rwp and
             # GSAS-II's own values go to engine_details (A23, A45, A125)
-            **fit_report(proj, hist, recipe, engine_rwp=rwp),
+            **fit_report(proj, hist, recipe, engine_rwp=rwp, engine_rvals=result.get('engine_rvals')),
         }
 
     except Exception as e:

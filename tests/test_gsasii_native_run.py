@@ -148,6 +148,7 @@ def test_spf_runs_with_standard_statistics(tmp_path):
     assert r["success"], r.get("error")
     assert r["engine_details"]["parameters_varied"] > 0 and isinstance(r["r_exp"], float)
     assert not r["spf_peaks"].empty
+    assert isinstance(r["engine_details"]["gof"], float)  # DoPeakFit's own reduced chi^2 (EB-52; ledger R16)
     assert r["simulation_mode"] is False
 
 
@@ -202,6 +203,16 @@ def test_simulation_reports_statistics_and_says_it_is_one(tmp_path):
     assert r["success"], r.get("error")
     assert r["simulation_mode"] is True and isinstance(r["rwp"], float)
     assert r["engine_details"]["parameters_varied"] == 0
+
+
+def test_other_type_error_in_peak_fit_keeps_its_traceback():
+    """Ledger R15: only DoPeakFit's None result becomes the EB-38 message."""
+    hist = MagicMock()
+    hist.refine_peaks.side_effect = TypeError("unsupported operand type(s) for +: 'int' and 'str'")
+    recipe = MagicMock()
+    recipe.payload.refinement_controls.single_peak_fitting_mode.use_instrument_profile = False
+    with pytest.raises(TypeError, match="unsupported operand"):
+        execute_spf_refinement(MagicMock(), hist, recipe, verbose=False)
 
 
 @pytest.mark.parametrize("given", ["dict", "model"])
