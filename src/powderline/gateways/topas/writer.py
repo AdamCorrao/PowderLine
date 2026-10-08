@@ -5,7 +5,7 @@ INP text + xye text out (no I/O), so golden-file tests can exercise it directly.
 ``write_topas_inp`` wraps it with deterministic file output.
 
 Every formula is implemented and cited in ``conversions.py`` (see
-``powderline.topas`` for the citation notation). The package imports zero
+``powderline.gateways.topas`` for the citation notation). The package imports zero
 GSAS-II code (D3).
 
 Fidelity contract (acceptance §1.3): every recipe parameter flagged

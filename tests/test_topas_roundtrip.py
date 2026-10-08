@@ -1,4 +1,4 @@
-"""Tests for powderline.topas.roundtrip (D10 round-trip parser)."""
+"""Tests for powderline.gateways.topas.roundtrip (D10 round-trip parser)."""
 
 from __future__ import annotations
 
@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from powderline.topas import conversions as cv
-from powderline.topas import roundtrip as rt
+from powderline.gateways.topas import conversions as cv
+from powderline.gateways.topas import roundtrip as rt
 
 REPO = Path(__file__).resolve().parent.parent
 EXAMPLES = REPO / "examples"

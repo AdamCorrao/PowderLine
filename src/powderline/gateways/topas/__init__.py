@@ -5,7 +5,7 @@ into a syntactically valid, semantically faithful TOPAS v7 ``.INP`` + ``.xye``
 pair. It imports **zero** GSAS-II code: TOPAS INP generation and the round-trip
 must run on Windows, where GSAS-II does not install cleanly.
 
-Public entry point: :func:`powderline.topas.writer.write_topas_inp`.
+Public entry point: :func:`powderline.gateways.topas.writer.write_topas_inp`.
 
 Citation notation used throughout this subpackage: ``findings §X`` / ``plan §Y``
 / ``D-numbers`` cite the internal TOPAS design record (empirical findings and

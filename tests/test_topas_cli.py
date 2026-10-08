@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from powderline.topas import kicker
-from powderline.topas import runner as tc_runner
+from powderline.gateways.topas import kicker
+from powderline.gateways.topas import runner as tc_runner
 
 REPO = Path(__file__).resolve().parent.parent
 EXAMPLES = REPO / "examples"

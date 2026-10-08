@@ -4,7 +4,7 @@
   then renders the INP in memory, exactly the check ``validate_only`` runs
   today (raises ``TopasTranslationError`` on untranslatable input).
 - **Runtime layer** — ``run``: a thin wrapper over
-  ``powderline.topas.engine.run_topas_recipe`` (behavior unchanged).
+  ``powderline.gateways.topas.engine.run_topas_recipe`` (behavior unchanged).
 
 TOPAS has no Python engine dependency, so ``EngineNotAvailableError`` never
 applies: without ``tc.exe`` the run degrades to generate-only, as today. TOPAS
@@ -36,7 +36,7 @@ def validate(recipe, *, verbose: bool = False):
     ``verbose`` is part of the uniform gateway contract; this gateway prints
     nothing extra today.
     """
-    from powderline.topas.writer import render_topas
+    from powderline.gateways.topas.writer import render_topas
 
     model = recipe if isinstance(recipe, RecipeModel) else RecipeModel.model_validate(recipe)
     render_topas(model.model_dump(), "topas")  # validates translatability; may raise
@@ -47,7 +47,7 @@ def configured_engine_version(topas_version=None):
     """The configured TOPAS version, or ``None`` when none is configured."""
     if topas_version is not None:
         return topas_version
-    from powderline.topas.runner import _read_topas_config
+    from powderline.gateways.topas.runner import _read_topas_config
 
     return _read_topas_config().get("version")
 
@@ -66,7 +66,7 @@ def run(recipe, output_dir, *, verbose: bool = False, validate_only: bool = Fals
             check_engine_version(gateway=NAME, engine="TOPAS", installed=version,
                                  spec=ENGINE_VERSION_SPEC,
                                  allow_unsupported=allow_unsupported_engine_version)
-    from powderline.topas.engine import run_topas_recipe
+    from powderline.gateways.topas.engine import run_topas_recipe
 
     return run_topas_recipe(recipe, output_dir, verbose=verbose, validate_only=validate_only,
                             topas_dir=topas_dir, topas_version=topas_version)

@@ -11,11 +11,11 @@ import pandas as pd
 import pytest
 
 import powderline
-from powderline.topas import conversions as cv
-from powderline.topas import engine as te
-from powderline.topas import render_topas, roundtrip as rt
-from powderline.topas import runner as tc_runner
-from powderline.topas.errors import TopasTranslationError
+from powderline.gateways.topas import conversions as cv
+from powderline.gateways.topas import engine as te
+from powderline.gateways.topas import render_topas, roundtrip as rt
+from powderline.gateways.topas import runner as tc_runner
+from powderline.gateways.topas.errors import TopasTranslationError
 
 REPO = Path(__file__).resolve().parent.parent
 EXAMPLES = REPO / "examples"

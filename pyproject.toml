@@ -61,7 +61,7 @@ dependencies = [
 # registry finds no gateways.
 [project.entry-points."powderline.gateways"]
 gsasii = "powderline.gateways.gsasii.gateway:get_gateway"
-topas = "powderline.topas.gateway:get_gateway"
+topas = "powderline.gateways.topas.gateway:get_gateway"
 easydiffraction = "powderline.easydiff.gateway:get_gateway"
 
 [project.urls]

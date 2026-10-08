@@ -6,7 +6,7 @@ __version__ = "0.1.1"
 # preserving the original behaviour exactly (including `powderline.kicker` being
 # registered as a submodule attribute). When GSAS-II is absent -- on Windows, or
 # on a TOPAS-only dev box -- these imports are skipped so that the GSAS-II-free
-# TOPAS path (`powderline.topas`) still imports cleanly. `powderline.schema` is
+# TOPAS path (`powderline.gateways.topas`) still imports cleanly. `powderline.schema` is
 # GSAS-II-free and always loaded, so `RecipeModel` is available either way.
 
 # `run` is the GSAS-II-free engine dispatcher (engine="gsasii"|"topas"); it loads
