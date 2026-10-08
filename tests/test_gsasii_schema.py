@@ -81,14 +81,16 @@ def _rietveld_recipe():
 
 
 def _spf_recipe():
-    """A minimal valid SPF recipe (deep-copy before editing)."""
+    """A minimal valid SPF recipe (deep-copy before editing): each peak's own widths, profile terms fixed (A127)."""
+    instrument = _instrument()
+    instrument["broadening"] = {k: p(v[0]) for k, v in instrument["broadening"].items()}
     return {
         "schema_name": "gsasii.spf",
         "core_schema_version": "1.0.0",
         "engine_schema_version": "1.0.0",
         "payload": {
             "xrd_data": _xrd(),
-            "instrument": _instrument(),
+            "instrument": instrument,
             "single_peaks": {
                 "positions": [p(2.29, True)],
                 "intensities": [p(100.0, True)],
@@ -135,8 +137,18 @@ def test_version_unknown_schema_name_rejected():
     recipe["schema_name"] = "gsasii.bogus"
     with pytest.raises(ValidationError) as exc:
         validate_recipe(recipe)
-    # The discriminator check rejects unknown schema_name
-    assert "gsasii.bogus" in str(exc.value) or "discriminator" in str(exc.value).lower()
+    assert _errors(exc) == [(("schema_name",), "schema_name")]
+    assert "'gsasii.bogus' is not a gsasii workflow; expected one of gsasii.rietveld, gsasii.spf" in str(exc.value)
+
+
+def test_mistyped_gsasii_name_reported_against_the_native_schema():
+    """A gsasii.* typo gets the native error at schema_name, not 0.26.0 errors (re/04 PR review)."""
+    recipe = copy.deepcopy(_rietveld_recipe())
+    recipe["schema_name"] = "gsasii.reitveld"
+    assert is_native_recipe(recipe)
+    with pytest.raises(ValidationError) as exc:
+        powderline.validate(recipe)
+    assert _errors(exc) == [(("schema_name",), "schema_name")]
 
 
 # --- 2. Space group validation ------------------------------------------------
@@ -1026,3 +1038,109 @@ def test_powderline_validate_returns_gsasii_rietveld_recipe():
     recipe = copy.deepcopy(_rietveld_recipe())
     model = powderline.validate(recipe)
     assert isinstance(model, GsasiiRietveldRecipe)
+
+
+# --- re/04 PR review: value rules (A126), SPF width source (A127), never-null blocks ---------------
+
+
+@pytest.mark.parametrize("value", [0.0, -0.1665])
+def test_wavelength_not_positive_rejected(value):
+    recipe = copy.deepcopy(_rietveld_recipe())
+    recipe["payload"]["instrument"]["radiation"]["wavelength"] = p(value)
+    with pytest.raises(ValidationError) as exc:
+        validate_recipe(recipe)
+    assert _errors(exc) == [(("payload", "instrument", "radiation", "wavelength"), "value_error")]
+    assert "wavelength must be > 0" in str(exc.value)
+
+
+@pytest.mark.parametrize("value", [0.0, -1.0])
+def test_crystallite_size_not_positive_rejected(value):
+    recipe = copy.deepcopy(_rietveld_recipe())
+    recipe["payload"]["phases"]["LaB6"]["peak_broadening"] = {"size_broadening": {
+        "model": "isotropic", "isotropic_size": p(value), "LG_eta": p(1.0)}}
+    with pytest.raises(ValidationError) as exc:
+        validate_recipe(recipe)
+    assert _errors(exc) == [(("payload", "phases", "LaB6", "peak_broadening", "size_broadening", "isotropic_size"),
+                             "value_error")]
+
+
+def test_lg_eta_and_polarization_have_no_limits():
+    """User decisions, not engine requirements (A126): GSAS-II runs LG_eta 2 and polarization 1.5."""
+    recipe = copy.deepcopy(_rietveld_recipe())
+    recipe["payload"]["instrument"]["corrections"]["polarization"] = p(1.5)
+    recipe["payload"]["phases"]["LaB6"]["peak_broadening"] = {"size_broadening": {
+        "model": "isotropic", "isotropic_size": p(1.0), "LG_eta": p(2.0)}}
+    validate_recipe(recipe)
+
+
+@pytest.mark.parametrize("path", [("peak_broadening",), ("peak_broadening", "size_broadening"),
+                                  ("peak_broadening", "strain_broadening")])
+def test_peak_broadening_null_rejected_with_leave_out_message(path):
+    recipe = copy.deepcopy(_rietveld_recipe())
+    phase = recipe["payload"]["phases"]["LaB6"]
+    if len(path) == 2:
+        phase["peak_broadening"] = {}
+        phase["peak_broadening"][path[1]] = None
+    else:
+        phase["peak_broadening"] = None
+    with pytest.raises(ValidationError) as exc:
+        validate_recipe(recipe)
+    assert _errors(exc) == [(("payload", "phases", "LaB6") + path, "value_error")]
+    assert "must not be null; leave it out instead" in str(exc.value)
+
+
+@pytest.mark.parametrize("model, pointer", [
+    (GsasiiRietveldRecipe, ("$defs", "Instrument", "properties", "description")),
+    (GsasiiRietveldRecipe, ("$defs", "Background", "properties", "single_peaks")),
+    (GsasiiRietveldRecipe, ("$defs", "RietveldPayload", "properties", "fit_range")),
+    (GsasiiSpfRecipe, ("$defs", "SpfPayload", "properties", "fit_range")),
+])
+def test_json_schema_shows_no_null_for_blocks_that_are_never_null(model, pointer):
+    node = model.model_json_schema()
+    for key in pointer:
+        node = node[key]
+    assert "null" not in json.dumps(node) and "default" not in node
+
+
+def test_spf_peak_position_outside_fit_window_rejected():
+    recipe = copy.deepcopy(_spf_recipe())
+    recipe["payload"]["fit_range"] = [3.0, 15.0]
+    with pytest.raises(ValidationError) as exc:
+        validate_recipe(recipe)
+    assert _errors(exc) == [(("payload", "single_peaks", "positions", 0), "outside_fit_window")]
+    assert "Peak List peak position 2.29 is outside the fit window [3.0, 15.0]" in str(exc.value)
+
+
+@pytest.mark.parametrize("term", list("UVWXYZ"))
+def test_spf_own_widths_reject_refined_profile_term(term):
+    """use_instrument_profile false: GSAS-II never varies U..Z (EB-53), so a refined one is an error (A127)."""
+    recipe = copy.deepcopy(_spf_recipe())
+    recipe["payload"]["instrument"]["broadening"][term][1] = True
+    with pytest.raises(ValidationError) as exc:
+        validate_recipe(recipe)
+    assert _errors(exc) == [(("payload", "instrument", "broadening", term), "spf_width_source")]
+
+
+@pytest.mark.parametrize("width", ["pv_gaussian_sigma_sq", "pv_lorentzian_gamma"])
+def test_spf_instrument_profile_rejects_refined_peak_width(width):
+    """use_instrument_profile true: a refined peak width would replace the profile for that peak (EB-53, A127)."""
+    recipe = copy.deepcopy(_spf_recipe())
+    payload = recipe["payload"]
+    payload["refinement_controls"]["single_peak_fitting_mode"]["use_instrument_profile"] = True
+    other = "pv_lorentzian_gamma" if width == "pv_gaussian_sigma_sq" else "pv_gaussian_sigma_sq"
+    payload["single_peaks"][other][0][1] = False
+    with pytest.raises(ValidationError) as exc:
+        validate_recipe(recipe)
+    assert _errors(exc) == [(("payload", "single_peaks", width, 0), "spf_width_source")]
+
+
+def test_spf_instrument_profile_with_refined_profile_terms_accepted():
+    recipe = copy.deepcopy(_spf_recipe())
+    payload = recipe["payload"]
+    payload["refinement_controls"]["single_peak_fitting_mode"]["use_instrument_profile"] = True
+    for name in ("pv_gaussian_sigma_sq", "pv_lorentzian_gamma"):
+        payload["single_peaks"][name][0][1] = False
+    for term in "UVWXY":
+        payload["instrument"]["broadening"][term][1] = True
+    validate_recipe(recipe)
+

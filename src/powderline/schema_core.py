@@ -600,7 +600,7 @@ def _absent_not_null(v: Any, info) -> Any:
     return v
 
 
-def _absent_not_null_schema(unit: Optional[str] = None):
+def absent_not_null_schema(unit: Optional[str] = None):
     """JSON Schema of a field that may be left out but is never null (A96).
 
     The field is ``Optional`` only so that "left out" can be held as ``None``;
@@ -698,13 +698,13 @@ class Atom(CoreModel, Generic[P]):
     y: P = Field(description="Fractional y coordinate")
     z: P = Field(description="Fractional z coordinate")
     occupancy: P = Field(description="Site occupancy, 0 to 1 inclusive (A76)")
-    Multiplicity: Optional[CoreInt] = Field(default=None, json_schema_extra=_absent_not_null_schema(),
+    Multiplicity: Optional[CoreInt] = Field(default=None, json_schema_extra=absent_not_null_schema(),
                                             description="Site multiplicity; optional, cross-checked when stated")
     ADP: Literal["Uiso", "Uaniso"] = Field(description="Displacement-parameter type")
-    Uiso: Optional[P] = Field(default=None, json_schema_extra=_absent_not_null_schema(UNIT_ANGSTROM2),
+    Uiso: Optional[P] = Field(default=None, json_schema_extra=absent_not_null_schema(UNIT_ANGSTROM2),
                               description="Isotropic ADP; required when ADP is 'Uiso', else left out")
     Uaniso: Optional[UanisoTensor[P]] = Field(
-        default=None, json_schema_extra=_absent_not_null_schema(),
+        default=None, json_schema_extra=absent_not_null_schema(),
         description="All six of U11, U22, U33, U12, U13, U23; required when ADP is 'Uaniso', else left out")
 
     _not_null = field_validator("Multiplicity", "Uiso", "Uaniso", mode="before")(_absent_not_null)
