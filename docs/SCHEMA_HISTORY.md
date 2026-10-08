@@ -216,29 +216,41 @@ core `==1.0.0`. A 0.26.0 `GSASII_*` recipe is converted with
     c-unique; all six for triclinic and rhombohedral axes). Refining part of
     such a group is an error.
   - **Size/strain left out**: 10 µm / 0 microstrain, isotropic, fixed, with a
-    structured warning, instead of GSAS-II's own 1 µm / 1000 microstrain.
+    structured warning, instead of GSAS-II's own 1 µm / 1000 microstrain. A
+    stated crystallite size must be > 0.
 - **Instrument** (single source; GSAS-II's instrument parameters are built from
   it): `description` (optional), `radiation {type: "PXC", wavelength}`,
   `geometry {bank, azimuth}` (plain values), `corrections {zero_shift,
   polarization, axial_divergence}`, `broadening {U, V, W, X, Y, Z}`. GSAS-II
   units: U, V, W centideg²; X, Y, Z and zero centideg; SH/L dimensionless.
-  SH/L below 0.002 is an error (GSAS-II computes with 0.002 anyway). Kα
-  doublets, TOF and neutron are not supported.
+  SH/L below 0.002 is an error (GSAS-II computes with 0.002 anyway). The
+  wavelength must be > 0. Kα doublets, TOF and neutron are not supported.
 - **Background**: `chebyshev` (left out: one fixed term 0.0, no background,
   instead of GSAS-II's constant 1.0) and optional `single_peaks` (positions,
   intensities, `pv_gaussian_sigma_sq` in centideg², `pv_lorentzian_gamma` in
   centideg; all four lists the same length; each position inside the fit
   window). Values below GSAS-II's silent floors (intensity 0.1, σ² 0.01, γ 0.1)
-  are errors. Peak List peaks (`gsasii.spf`): σ² and γ at least 0.001.
+  are errors. Peak List peaks (`gsasii.spf`): σ² and γ at least 0.001, each
+  position inside the fit window.
+- **Single peak fitting widths**: with `use_instrument_profile: true` the peak
+  widths come from the instrument profile (U..Z may be refined; a peak's own
+  σ²/γ may not); with `false` each peak has its own widths (they may be
+  refined; U..Z may not). GSAS-II silently ignores a refine flag on the side
+  not in use, so such a flag is an error.
 - **Simulation** (`refinement_cycles` 1): every refine flag must be false.
 - **At run time**, after phase setup: an atom GSAS-II reads with the wrong
   multiplicity (some 2-fold sites in R32, R-3m, R-3c), or whose site it cannot
   name while a coordinate or Uaniso is refined, is an error naming an
   equivalent position to state instead.
 - **Results**: `rwp`, `r_exp`, `gof`, `chi2_red` from PowderLine's uniform fit
-  statistics; GSAS-II's own values, `parameters_requested` and
-  `parameters_varied` under `engine_details`; structured `warnings` (defaults
-  applied, GSAS-II's refinement messages).
+  statistics over the stated fit window (`None` where undefined, e.g. no
+  degrees of freedom); `simulation_mode` (a simulation gets the same
+  statistics; against placeholder data they mean nothing); GSAS-II's own
+  values, `parameters_requested` and `parameters_varied` under
+  `engine_details`; structured `warnings` (defaults applied, GSAS-II's
+  refinement messages, fewer parameters varied than requested). A refinement
+  that diverges (a non-finite calculated pattern) is a failure with a clear
+  message; GSAS-II itself does not flag it.
 
 ## topas engine schema
 
