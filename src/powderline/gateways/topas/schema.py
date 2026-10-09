@@ -24,7 +24,11 @@ TOPAS rules checked here:
   every side the recipe leaves ``null``, since TOPAS moves it silently
   otherwise (A138; C20);
 - widths are positive (a negative FWHM stops TOPAS, C24); wavelength and
-  crystallite size are positive (A126);
+  crystallite size are positive (A126); ``la``, ``lh``, ``lg`` and the capillary
+  diameter are positive (a line with no area or width, or a capillary of no
+  diameter, does not exist: A111(a)). Fixed instrument peak-type terms are not
+  checked (a fixed TCHZ X < 0 can make the Lorentzian width negative; whether
+  TOPAS stops there is unverified; documented, A155);
 - peak positions lie inside the fit window (A126);
 - ``geometry`` holds exactly the radii the axial model reads (C26);
 - mutually exclusive corrections; ``LP_Factor_Synchrotron`` never refines

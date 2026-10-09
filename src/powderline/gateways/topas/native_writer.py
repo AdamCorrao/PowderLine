@@ -19,7 +19,12 @@ Emission rules:
   ``Simple_Axial_Model``, CS/Strain) are declared as ``prm`` with explicit
   limits, stated or TOPAS.INC's own expression per side, and passed to the
   macro by name (``CV(c, v)`` takes ``v`` when ``c`` is blank), so their
-  limits are exactly the stated or the default ones.
+  limits are exactly the stated or the default ones. The macro's ``del``
+  (derivative step) is kept even when a bound is stated, where TOPAS.INC's
+  3-argument ``If_Prm_Eqn_Rpt`` would drop it, and ZE's ``val_on_continue``
+  (used only with ``continue_after_convergence``) is not written.
+- **Numbers** are written with ``%.10g`` (``fmt``): recipe values beyond 10
+  significant digits are rounded in the INP, like the ``.xye``.
 - **Scope (A148):** geometry corrections at the xdd level (every peak);
   Lorentz-polarisation and the instrument peak type in each ``str``; the
   instrument peak type also in each SPF peak.

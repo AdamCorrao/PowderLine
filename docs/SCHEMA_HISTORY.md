@@ -238,10 +238,12 @@ core `==1.0.0`. A 0.26.0 `GSASII_*` recipe is converted with
   refined; U..Z may not). GSAS-II silently ignores a refine flag on the side
   not in use, so such a flag is an error.
 - **Simulation** (`refinement_cycles` 1): every refine flag must be false.
-- **Fit window** (re/05): GSAS-II gets the first and last data points inside
-  `fit_range` as its limits, so it fits exactly min ≤ 2θ ≤ max, the points
-  every engine fits (with a limit between data points GSAS-II would also fit
-  the next point above the maximum).
+- **Fit window** (re/05): GSAS-II gets the first and last weighted data
+  points inside `fit_range` as its limits (an open end, or no `fit_range`: the
+  data's first or last weighted point), so it fits exactly min ≤ 2θ ≤ max, the
+  points every engine fits, and its Chebyshev basis spans the same points (with
+  a limit between data points GSAS-II would also fit the next point above the
+  maximum; with no limit it would start at a zero-weight edge point).
 - **At run time**, after phase setup: an atom GSAS-II reads with the wrong
   multiplicity (some 2-fold sites in R32, R-3m, R-3c), or whose site it cannot
   name while a coordinate or Uaniso is refined, is an error naming an
@@ -281,12 +283,17 @@ unchanged).
   start outside a default limit on a `null` side is an error (TOPAS would move
   it silently).
 - **Instrument**: `radiation` (one `lam` line: `ymin_on_ymax`, `la`, `lo` in Å,
-  `lh` required, `lg` only with `lh`); `geometry` (`Rp`, `Rs` in mm, required
+  `lh` required, `lg` only with `lh`; `la`, `lo`, `lh`, `lg` > 0, since a line
+  with no area, wavelength or width does not exist); `geometry` (`Rp`, `Rs` in mm, required
   exactly where an axial model reads them); `corrections` keyed by macro
   (`Zero_Error`, `LP_Factor` or `LP_Factor_Synchrotron`, `Simple_Axial_Model`
-  or `Full_Axial_Model`, `capillary` with a `parallel` or `divergent` beam);
+  or `Full_Axial_Model`, `capillary` with a `parallel` or `divergent` beam and
+  a diameter > 0);
   `broadening` `{peak_type, parameters}` with `TCHZ_Peak_Type`, `PV_Peak_Type`
-  or `PVII_Peak_Type` (TOPAS's TCHZ U..Z are not GSAS-II's). Geometry
+  or `PVII_Peak_Type` (TOPAS's TCHZ U..Z are not GSAS-II's; a **fixed**
+  peak-type term is not checked, so fixed terms that make a width negative in
+  the window, e.g. TCHZ X < 0 with Y = 0, validate, while TOPAS 6 stops on a
+  negative FWHM: not yet verified for the peak types, documented only). Geometry
   corrections act on every peak, background and SPF peaks included;
   Lorentz-polarisation sits in each phase (Bragg peaks only); the peak type in
   each phase and each SPF peak.
@@ -304,9 +311,11 @@ unchanged).
   with its own `gauss_fwhm` / `lor_fwhm` (≥ 0).
 - **Refinement controls** (required): `iters` (0 = simulation, every refine
   flag false), `chi2_convergence_criteria`, `x_calculation_step`.
-- **Fit window**: TOPAS gets the first and last data points inside
-  `fit_range` as its limits, so it fits exactly min ≤ 2θ ≤ max (the same
-  points every engine fits); a window with no weighted point is an error.
+- **Fit window**: TOPAS gets the first and last weighted data points inside
+  `fit_range` as its limits (open ends: the data's first or last weighted
+  point), so it fits exactly min ≤ 2θ ≤ max (the same points every engine
+  fits); a window with no weighted point is an error. Numbers are written to
+  the INP to 10 significant digits (`%.10g`), as in the `.xye`.
 - **Results**: `rwp`, `r_exp`, `gof`, `chi2_red` from PowderLine's uniform fit
   statistics over the stated window (equal to TOPAS's own); TOPAS's values,
   `parameters_requested` and `parameters_varied` under `engine_details`. The
@@ -316,8 +325,10 @@ unchanged).
   or TOPAS's default), `topas_parameters_not_varied`,
   `topas_phase_contributes_nothing` (informative: a phase absent from the
   sample legitimately contributes nothing), `topas_background_not_calculated`.
-  Success is judged from fresh output files (TOPAS 6's exit code says nothing);
-  a non-finite value in them is a divergence error.
+  Success is judged from the output files the INP asks for, removed before
+  the run (TOPAS 6's exit code says nothing; timestamps are not used); any
+  non-finite number in them (`nan`, `1.#QNAN`, `-nan(ind)`, …) is a divergence
+  error, while an undetermined ESD is left empty.
 
 ## easydiffraction engine schema
 
