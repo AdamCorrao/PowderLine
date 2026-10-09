@@ -21,6 +21,8 @@ from powderline.schema_core import BoundedRefinableParameter, Phase, RefinablePa
 #: ``(module, class name, parameter type, engine fields of a valid phase)`` of every engine phase model.
 ENGINE_PHASES: list[tuple[str, str, type, dict]] = [
     ("powderline.gateways.gsasii.schema", "GsasiiPhase", RefinableParameter, {"scale": [1.0, False]}),
+    ("powderline.gateways.topas.schema", "TopasPhase", BoundedRefinableParameter,
+     {"scale": [1e-6, False, None, None]}),
 ]
 
 
