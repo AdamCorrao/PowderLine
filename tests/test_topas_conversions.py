@@ -1,4 +1,4 @@
-"""Unit tests for powderline.topas.conversions (plan §7).
+"""Unit tests for powderline.gateways.topas.conversions (plan §7).
 
 Every function is checked against hand-computed values, including the findings
 sanity checks (§C.1): microstrain=1000/eta=1 strain coefficient, sigma=10 cdeg
@@ -11,7 +11,7 @@ import math
 
 import pytest
 
-from powderline.topas import conversions as cv
+from powderline.gateways.topas import conversions as cv
 
 
 # --- constants --------------------------------------------------------------

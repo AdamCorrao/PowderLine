@@ -12,7 +12,7 @@ Linux dev box) it degrades to generate-only with a clear note (exit 0)::
     pixi run topas-kicker recipe.json --validate-only                 # translate + report, no files
     pixi run topas-kicker recipe.json --parse-results out_results.csv # round-trip an existing result
 
-Entry point: ``python -m powderline.topas.kicker`` (D9). Not part of the 6-name
+Entry point: ``python -m powderline.gateways.topas.kicker`` (D9). Not part of the 6-name
 public API and no ``run()`` dispatch yet -- both follow once the demo lands.
 """
 

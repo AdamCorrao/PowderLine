@@ -1,10 +1,10 @@
-"""Tests for powderline.topas.runner (tc.exe discovery + injected run)."""
+"""Tests for powderline.gateways.topas.runner (tc.exe discovery + injected run)."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from powderline.topas import runner
+from powderline.gateways.topas import runner
 
 
 def _make_tc(directory: Path) -> Path:

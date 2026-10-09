@@ -60,6 +60,28 @@ def test_standard_fit_statistics_and_engine_details(lab6_result):
     json.dumps(d)  # crosses the server boundary
 
 
+
+def test_gsasii_fits_exactly_the_stated_window(lab6_result):
+    """A149/R17: limits on data points, so GSAS-II's slice is min <= 2theta <= max (EB-54) and its Rwp is core's."""
+    d = lab6_result["engine_details"]
+    payload = _lab6()["payload"]
+    lo, hi = payload["fit_range"]
+    inside = [t for t, w in zip(payload["xrd_data"]["tth"], payload["xrd_data"]["Itth_weights"]) if w > 0 and lo <= t <= hi]
+    assert d["n_obs"] == len(inside) == 3767
+    assert lab6_result["rwp"] == pytest.approx(d["rwp"], rel=1e-9)
+
+def test_gsasii_open_ends_skip_zero_weight_edges(tmp_path):
+    """A154: without fit_range GSAS-II gets the first/last weighted points as limits, so zero-weight edge points
+    are outside its slice (it would count them in Nobs and map its Chebyshev over them)."""
+    recipe = _lab6()
+    recipe["payload"].pop("fit_range")
+    w = recipe["payload"]["xrd_data"]["Itth_weights"]
+    for i in list(range(20)) + list(range(len(w) - 20, len(w))):
+        w[i] = 0.0
+    r = powderline.run(recipe, tmp_path, execution_mode="subprocess")
+    assert r["success"], r.get("error")
+    assert r["engine_details"]["n_obs"] == sum(1 for v in w if v > 0) == len(w) - 40
+
 def test_warnings_carried_with_full_paths(lab6_result):
     codes = {w["code"]: w for w in lab6_result["warnings"]}
     assert lab6_result["warnings"][0]["field_path"] == "payload.phases.LaB6.peak_broadening.size_broadening"
@@ -149,6 +171,7 @@ def test_spf_runs_with_standard_statistics(tmp_path):
     assert r["engine_details"]["parameters_varied"] > 0 and isinstance(r["r_exp"], float)
     assert not r["spf_peaks"].empty
     assert isinstance(r["engine_details"]["gof"], float)  # DoPeakFit's own reduced chi^2 (EB-52; ledger R16)
+    assert r["rwp"] == pytest.approx(r["engine_details"]["rwp"], rel=1e-9)  # A149/R17: SPF fits the stated window too
     assert r["simulation_mode"] is False
 
 

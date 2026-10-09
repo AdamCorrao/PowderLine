@@ -537,7 +537,8 @@ class FitRange(BaseModel):
 
 
 def check_fit_range_within_data(fit_range: Optional[FitRange], xrd_data: XRDData) -> None:
-    """Raise ``ValueError`` unless both ``fit_range`` ends lie within the data's 2theta span.
+    """Raise ``ValueError`` unless both ``fit_range`` ends lie within the data's 2theta span
+    and the window holds at least one point with a positive weight.
 
     A payload-level check (it needs the pattern): engine payload models call it
     from a model validator (A68). ``None`` (or an open end) means "the data limit".
@@ -550,6 +551,31 @@ def check_fit_range_within_data(fit_range: Optional[FitRange], xrd_data: XRDData
             raise ValueError(
                 f"fit_range {name} ({end}) is outside the data's 2theta range [{lo}, {hi}]"
             )
+    fit_limits_on_data(fit_range, xrd_data)  # the window holds a weighted point
+
+
+def fit_limits_on_data(fit_range: Optional[FitRange], xrd_data: XRDData) -> tuple[float, float]:
+    """The limits a gateway hands its engine: the window's first and last weighted data points (A149, A154).
+
+    A stated ``min`` becomes the first weighted point with 2theta >= min, a
+    stated ``max`` the last weighted point with 2theta <= max; an open end (or
+    no ``fit_range``) becomes the first or last weighted point of the data, so
+    zero-weight points at the data's edges never stretch an engine's window.
+    With its limits on these points every engine fits exactly the points
+    min <= 2theta <= max that core scores (A131), and maps its Chebyshev basis
+    over the same first and last points: GSAS-II's slice ends one point past a
+    limit between points (EB-54) and starts at the first data point, weighted
+    or not, when no limit is set; TOPAS takes the point nearest each limit
+    (EB-59) of an ``.xye`` without zero-weight points. Raises ``ValueError``
+    when no weighted point lies in the window.
+    """
+    lo = None if fit_range is None else fit_range.min
+    hi = None if fit_range is None else fit_range.max
+    inside = [t for t, w in zip(xrd_data.tth, xrd_data.Itth_weights)
+              if w > 0 and (lo is None or t >= lo) and (hi is None or t <= hi)]
+    if not inside:
+        raise ValueError(f"fit_range [{lo}, {hi}] holds no data point with a positive weight")
+    return inside[0], inside[-1]
 
 
 # --- background -------------------------------------------------------------
@@ -1406,3 +1432,47 @@ def collect_warnings(model: BaseModel, path: str = "") -> list[StructuredWarning
 
     visit(model, path)
     return found
+
+
+# --- refined-parameter count (A41, A45, A94) ----------------------------------
+
+
+def parameters_requested(recipe) -> int:
+    """Independently refined parameters a validated recipe asks for (``engine_details``, A45).
+
+    One per refine flag, except that a refined symmetry tie group (cell, atom
+    coordinates, Uij) counts once: an engine emits one parameter per group
+    (A94). A refined core Chebyshev background counts its coefficients. Works for
+    both parameter shapes (``[value, flag]`` and ``[value, flag, min, max]``), so
+    every engine gateway reports it the same way (re/05 D12).
+    """
+    count = 0
+
+    def walk(obj) -> None:
+        nonlocal count
+        if isinstance(obj, (RefinableParameter, BoundedRefinableParameter)):
+            count += obj.refine_flag
+        elif isinstance(obj, ChebyshevBackground):
+            count += obj.num_coefficients if obj.refine_flag else 0
+        elif isinstance(obj, dict):
+            for v in obj.values():
+                walk(v)
+        elif isinstance(obj, list):
+            for v in obj:
+                walk(v)
+        elif isinstance(obj, BaseModel):
+            for name in type(obj).model_fields:
+                walk(getattr(obj, name))
+            if isinstance(obj, Phase):  # a refined tie group is one engine parameter
+                tied = [(obj.unit_cell, g.members) for g in cell_tie_groups(obj.space_group).groups]
+                for atom in obj.atoms.values():
+                    ties = coupling_groups(obj.space_group, (atom.x.value, atom.y.value, atom.z.value))
+                    tied += [(atom, g.members) for g in ties.xyz.groups]
+                    if atom.Uaniso is not None:
+                        tied += [(atom.Uaniso, g.members) for g in ties.uij.groups]
+                for holder, members in tied:
+                    refined = sum(getattr(holder, m).refine_flag for m in members)
+                    count -= max(refined - 1, 0)
+
+    walk(recipe.payload)
+    return count

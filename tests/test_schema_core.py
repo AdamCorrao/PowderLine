@@ -2540,3 +2540,29 @@ def test_phase_guard_sees_a_replaced_core_validator():
     validators["_space_group"] = dataclasses.replace(validators["_space_group"], func=lambda cls, v: v)
     with pytest.raises(TypeError, match=r"^EnginePhase replaces the core validator\(s\) _space_group"):
         EnginePhase.__pydantic_init_subclass__()
+
+
+def test_fit_limits_on_data_snap_to_weighted_points_inside():
+    """A149: each stated end moves onto the first/last weighted data point inside the window."""
+    from powderline.schema_core import FitRange, XRDData, fit_limits_on_data
+    xrd = XRDData(tth=[1.0, 1.5, 2.0, 2.5, 3.0, 3.5], Itth=[1.0] * 6, Itth_weights=[1, 0, 1, 1, 0, 1])
+    assert fit_limits_on_data(FitRange.model_validate([1.2, 3.2]), xrd) == (2.0, 2.5)  # zero-weight 1.5, 3.0 skipped
+    assert fit_limits_on_data(FitRange.model_validate([2.0, 3.5]), xrd) == (2.0, 3.5)  # ends on points stay
+    assert fit_limits_on_data(FitRange.model_validate([None, 3.2]), xrd) == (1.0, 2.5)  # open end: the data's first
+    assert fit_limits_on_data(None, xrd) == (1.0, 3.5)
+
+
+def test_fit_limits_on_data_open_ends_skip_zero_weight_edges():
+    """A154: an open end is the first/last weighted point, so zero-weight edge points never widen an engine's window."""
+    from powderline.schema_core import FitRange, XRDData, fit_limits_on_data
+    xrd = XRDData(tth=[1.0, 1.5, 2.0, 2.5, 3.0, 3.5], Itth=[1.0] * 6, Itth_weights=[0, 0, 1, 1, 1, 0])
+    assert fit_limits_on_data(None, xrd) == (2.0, 3.0)
+    assert fit_limits_on_data(FitRange.model_validate([None, None]), xrd) == (2.0, 3.0)
+    assert fit_limits_on_data(FitRange.model_validate([1.2, None]), xrd) == (2.0, 3.0)
+
+
+def test_fit_range_without_a_weighted_point_rejected():
+    from powderline.schema_core import FitRange, XRDData, check_fit_range_within_data
+    xrd = XRDData(tth=[1.0, 1.5, 2.0], Itth=[1.0] * 3, Itth_weights=[1, 0, 1])
+    with pytest.raises(ValueError, match="no data point with a positive weight"):
+        check_fit_range_within_data(FitRange.model_validate([1.2, 1.8]), xrd)

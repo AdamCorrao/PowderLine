@@ -29,6 +29,7 @@ from powderline.gateways.gsasii.schema import GsasiiRietveldRecipe, GsasiiSpfRec
 from powderline.gateways.gsasii.fit_report import fit_report
 from powderline.gateways.gsasii.sites import check_sites
 from powderline.exceptions import EngineExecutionError
+from powderline.schema_core import fit_limits_on_data
 
 from powderline.gateways.gsasii.helpers import (
     DEFAULT_HIST_SCALE_REFINE_FLAG,
@@ -328,7 +329,7 @@ def run_refinement(recipe: GsasiiRietveldRecipe | GsasiiSpfRecipe, output_dir: P
         set_hist_scale(proj, hist, hist_scale_val=DEFAULT_HIST_SCALE_VAL, hist_scale_refine_flag=DEFAULT_HIST_SCALE_REFINE_FLAG, print_info=verbose)
 
         # 5. Set fit range
-        fit_range = (recipe.payload.fit_range.min, recipe.payload.fit_range.max) if recipe.payload.fit_range else (None, None)
+        fit_range = fit_limits_on_data(recipe.payload.fit_range, recipe.payload.xrd_data)  # on data points (A149, R17)
         if fit_range != (None, None):
             set_fit_range_hist(hist, fit_range, print_info=verbose)
 

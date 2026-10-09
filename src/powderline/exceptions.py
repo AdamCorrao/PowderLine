@@ -70,9 +70,10 @@ class EngineNotAvailableError(PowderLineError, ImportError):
 class EngineVersionError(PowderLineError):
     """The installed engine version is outside the gateway's supported range."""
 
-    def __init__(self, *, gateway: str, engine: str, installed: str, supported: str) -> None:
+    def __init__(self, *, gateway: str, engine: str, installed: str, supported: str,
+                 message: Optional[str] = None) -> None:
         super().__init__(
-            f"the {gateway!r} gateway supports {engine} {supported}, but {installed} "
+            message or f"the {gateway!r} gateway supports {engine} {supported}, but {installed} "
             "is installed; install a supported version"
         )
         self.gateway = gateway

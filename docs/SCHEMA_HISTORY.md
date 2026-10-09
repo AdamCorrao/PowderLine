@@ -42,7 +42,7 @@ engine schemas adopt it in re/04–06.
   `value` is always a number and `refine_flag` a JSON boolean; neither is ever
   `null`.
 - **Data and ranges**: `xrd_data` (2θ in degrees, weights 1/σ², validated as in
-  0.26.0); `fit_range` `[min, max]`, with `max > min`, inside the data's 2θ range.
+  0.26.0); `fit_range` `[min, max]`, with `max > min`, inside the data's 2θ range, holding at least one point with a positive weight (re/05).
 - **Background**: Chebyshev (`num_coefficients`, `coefficients`, `refine_flag`).
   Coefficient semantics are documented per engine.
 - **Units** are fixed per field in the schema, never written in a recipe.
@@ -238,6 +238,12 @@ core `==1.0.0`. A 0.26.0 `GSASII_*` recipe is converted with
   refined; U..Z may not). GSAS-II silently ignores a refine flag on the side
   not in use, so such a flag is an error.
 - **Simulation** (`refinement_cycles` 1): every refine flag must be false.
+- **Fit window** (re/05): GSAS-II gets the first and last weighted data
+  points inside `fit_range` as its limits (an open end, or no `fit_range`: the
+  data's first or last weighted point), so it fits exactly min ≤ 2θ ≤ max, the
+  points every engine fits, and its Chebyshev basis spans the same points (with
+  a limit between data points GSAS-II would also fit the next point above the
+  maximum; with no limit it would start at a zero-weight edge point).
 - **At run time**, after phase setup: an atom GSAS-II reads with the wrong
   multiplicity (some 2-fold sites in R32, R-3m, R-3c), or whose site it cannot
   name while a coordinate or Uaniso is refined, is an error naming an
@@ -254,9 +260,75 @@ core `==1.0.0`. A 0.26.0 `GSASII_*` recipe is converted with
 
 ## topas engine schema
 
-### 1.0.0 — introduced in PowderLine 0.2.0
+### 1.0.0 — introduced in PowderLine 0.2.0 (in development)
 
-Entries added by re/05 (`topas.rietveld`, `topas.spf`).
+Defined in `src/powderline/gateways/topas/schema.py` (engine-free), on core
+1.0.0. Accepted versions are declared: engine schema `==1.0.0`, requiring core
+`==1.0.0`. Native recipes state TOPAS's own keywords, macro parameters and
+units: the numbers in the recipe are the numbers in the INP. There is no
+converter from 0.26.0 recipes (the 0.26.0 `GSASII_*` → TOPAS path is
+unchanged).
+
+- **Workflows**: `topas.rietveld` (`phases`) and `topas.spf` (`single_peaks`).
+- **TOPAS version**: required `engine_version`, the TOPAS major version the
+  recipe is written for; 1.0.0 supports `"6"` only (declared,
+  `supported_engine_versions == "==6"`). A run needs the installed version
+  declared (`topas_version` or `.powderline_config.yaml` `topas.version`) and
+  equal to it; `tc.exe` carries no version PowderLine could read.
+- **No defaults**: a block left out means the feature is not modelled; every
+  value PowderLine would otherwise choose is a required field.
+- **Parameters**: `[value, refine_flag, min, max]`. A stated bound replaces
+  TOPAS's default limit on that side; `null` keeps TOPAS's default (keyword
+  limits of the TOPAS Technical Reference, TOPAS.INC macro limits). A refined
+  start outside a default limit on a `null` side is an error (TOPAS would move
+  it silently).
+- **Instrument**: `radiation` (one `lam` line: `ymin_on_ymax`, `la`, `lo` in Å,
+  `lh` required, `lg` only with `lh`; `la`, `lo`, `lh`, `lg` > 0, since a line
+  with no area, wavelength or width does not exist); `geometry` (`Rp`, `Rs` in mm, required
+  exactly where an axial model reads them); `corrections` keyed by macro
+  (`Zero_Error`, `LP_Factor` or `LP_Factor_Synchrotron`, `Simple_Axial_Model`
+  or `Full_Axial_Model`, `capillary` with a `parallel` or `divergent` beam and
+  a diameter > 0);
+  `broadening` `{peak_type, parameters}` with `TCHZ_Peak_Type`, `PV_Peak_Type`
+  or `PVII_Peak_Type` (TOPAS's TCHZ U..Z are not GSAS-II's; a **fixed**
+  peak-type term is not checked, so fixed terms that make a width negative in
+  the window, e.g. TCHZ X < 0 with Y = 0, validate, while TOPAS 6 stops on a
+  negative FWHM: not yet verified for the peak types, documented only). Geometry
+  corrections act on every peak, background and SPF peaks included;
+  Lorentz-polarisation sits in each phase (Bragg peaks only); the peak type in
+  each phase and each SPF peak.
+- **Background**: `chebyshev` (TOPAS's basis over the fitted points),
+  `One_on_X`, and `peaks` (`xo`, `I`, a `pv`/`spv`/`spvii` shape).
+- **Phase block**: core's `space_group`, `unit_cell`, `atoms`, plus `scale`
+  (> 0) and `peak_broadening` (`size_broadening` `CS_L`/`CS_G` in nm,
+  `strain_broadening` `Strain_L`/`Strain_G`; these are not interpretable
+  sizes or strains: LVol-IB and e0 are reported as TOPAS computes them). `Uiso`
+  is written as `beq = 8π²·Uiso` (with a warning), `Uaniso` as `u11..u23`.
+  Symmetry ties become one TOPAS parameter per tie group with exact equations.
+- **Space groups**: the canonical name in TOPAS spelling; 541 settings
+  accepted, 23 refused (20 TOPAS cannot name, 3 it reads as another setting).
+- **Single peak fitting**: each peak is the instrument peak type convolved
+  with its own `gauss_fwhm` / `lor_fwhm` (≥ 0).
+- **Refinement controls** (required): `iters` (0 = simulation, every refine
+  flag false), `chi2_convergence_criteria`, `x_calculation_step`.
+- **Fit window**: TOPAS gets the first and last weighted data points inside
+  `fit_range` as its limits (open ends: the data's first or last weighted
+  point), so it fits exactly min ≤ 2θ ≤ max (the same points every engine
+  fits); a window with no weighted point is an error. Numbers are written to
+  the INP to 10 significant digits (`%.10g`), as in the `.xye`.
+- **Results**: `rwp`, `r_exp`, `gof`, `chi2_red` from PowderLine's uniform fit
+  statistics over the stated window (equal to TOPAS's own); TOPAS's values,
+  `parameters_requested` and `parameters_varied` under `engine_details`. The
+  background column comes from a second, background-only TOPAS run at the
+  refined values (TOPAS 6 cannot output the background of the fit). Warnings:
+  `topas_adp_converted`, `topas_parameter_at_limit` (naming the stated bound
+  or TOPAS's default), `topas_parameters_not_varied`,
+  `topas_phase_contributes_nothing` (informative: a phase absent from the
+  sample legitimately contributes nothing), `topas_background_not_calculated`.
+  Success is judged from the output files the INP asks for, removed before
+  the run (TOPAS 6's exit code says nothing; timestamps are not used); any
+  non-finite number in them (`nan`, `1.#QNAN`, `-nan(ind)`, …) is a divergence
+  error, while an undetermined ESD is left empty.
 
 ## easydiffraction engine schema
 

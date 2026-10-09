@@ -23,7 +23,7 @@ from pydantic import ValidationError
 from powderline import registry, schema
 from powderline.exceptions import EngineNotAvailableError, EngineVersionError
 from powderline.gateways.gsasii import gateway as gsasii_gateway
-from powderline.topas import gateway as topas_gateway
+from powderline.gateways.topas import gateway as topas_gateway
 from powderline.easydiff import gateway as easydiff_gateway
 from subprocess_utils import run_subprocess_utf8
 
@@ -212,7 +212,7 @@ def test_gsasii_validate_only_skips_version_check(tmp_path, monkeypatch):
 
 def test_topas_no_version_configured_skips_check(tmp_path, monkeypatch):
     """When no version is configured, the version check is skipped."""
-    from powderline.topas import runner, engine
+    from powderline.gateways.topas import runner, engine
 
     monkeypatch.setattr(runner, "_read_topas_config", lambda: {})
     fake_run = Mock(return_value={})
@@ -224,7 +224,7 @@ def test_topas_no_version_configured_skips_check(tmp_path, monkeypatch):
 
 def test_topas_version_kwarg_out_of_range_raises(tmp_path, monkeypatch):
     """topas_version=6 (out of range) raises EngineVersionError."""
-    from powderline.topas import engine
+    from powderline.gateways.topas import engine
 
     fake_run = Mock()
     monkeypatch.setattr(engine, "run_topas_recipe", fake_run)
@@ -236,7 +236,7 @@ def test_topas_version_kwarg_out_of_range_raises(tmp_path, monkeypatch):
 
 def test_topas_version_kwarg_in_range_calls_engine(tmp_path, monkeypatch):
     """topas_version=7 (in range) calls run_topas_recipe."""
-    from powderline.topas import engine
+    from powderline.gateways.topas import engine
 
     fake_run = Mock(return_value={})
     monkeypatch.setattr(engine, "run_topas_recipe", fake_run)
@@ -247,7 +247,7 @@ def test_topas_version_kwarg_in_range_calls_engine(tmp_path, monkeypatch):
 
 def test_topas_config_version_out_of_range_raises(tmp_path, monkeypatch):
     """Config {"version": 6} with topas_version=None raises EngineVersionError."""
-    from powderline.topas import runner, engine
+    from powderline.gateways.topas import runner, engine
 
     monkeypatch.setattr(runner, "_read_topas_config", lambda: {"version": 6})
     fake_run = Mock()
@@ -260,7 +260,7 @@ def test_topas_config_version_out_of_range_raises(tmp_path, monkeypatch):
 
 def test_topas_allow_unsupported_bypasses_version_check(tmp_path, monkeypatch):
     """allow_unsupported_engine_version=True bypasses the version check."""
-    from powderline.topas import engine
+    from powderline.gateways.topas import engine
 
     fake_run = Mock(return_value={})
     monkeypatch.setattr(engine, "run_topas_recipe", fake_run)
@@ -277,7 +277,7 @@ def test_topas_allow_unsupported_bypasses_version_check(tmp_path, monkeypatch):
 
 def test_topas_validate_only_skips_version_check(tmp_path, monkeypatch):
     """With validate_only=True, the version check is skipped even with topas_version=6."""
-    from powderline.topas import engine
+    from powderline.gateways.topas import engine
 
     fake_run = Mock(return_value={})
     monkeypatch.setattr(engine, "run_topas_recipe", fake_run)
@@ -445,6 +445,7 @@ def test_import_block_schema_layer_and_validate():
     """Schema-layer imports (registry, gateways, capabilities, validate) work with engines blocked."""
     recipe_path = str(EXAMPLES / "example_LaB6" / "input.json")
     easydiff_recipe_path = str(EXAMPLES / "example_LaB6_easydiff" / "input.json")
+    topas_native_path = str(REPO / "tests" / "data" / "topas" / "native" / "lab6_rietveld.json")
     script = f"""
 import sys, importlib.abc, json
 from pathlib import Path
@@ -471,7 +472,10 @@ import powderline.gateways.gsasii
 import powderline.gateways.gsasii.gateway
 import powderline.gateways.gsasii.schema
 import powderline.gateways.gsasii.validation
-import powderline.topas.gateway
+import powderline.gateways.topas.gateway
+import powderline.gateways.topas.schema
+import powderline.gateways.topas.native_writer
+import powderline.gateways.topas.native_run
 import powderline.easydiff.gateway
 from powderline import registry
 
@@ -506,6 +510,12 @@ native = {{
     }},
 }}
 assert type(registry.get("gsasii").validate(native)).__name__ == "GsasiiRietveldRecipe"
+
+# The native topas schema validates and the native writer renders engine-free (re/05)
+from powderline.gateways.topas.native_writer import render_native
+topas_native = registry.get("topas").validate(json.loads(Path(r'{topas_native_path}').read_text(encoding="utf-8")))
+assert type(topas_native).__name__ == "TopasRietveldRecipe"
+assert "TCHZ_Peak_Type" in render_native(topas_native, "lab6").inp_text
 
 recipes = {{
     "gsasii": json.loads(Path(r'{recipe_path}').read_text(encoding="utf-8")),

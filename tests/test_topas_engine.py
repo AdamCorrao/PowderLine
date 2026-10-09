@@ -12,9 +12,9 @@ import pytest
 
 import powderline
 from powderline import engine as dispatcher
-from powderline.topas import engine as te
-from powderline.topas import runner as tc_runner
-from powderline.topas.errors import TopasTranslationError
+from powderline.gateways.topas import engine as te
+from powderline.gateways.topas import runner as tc_runner
+from powderline.gateways.topas.errors import TopasTranslationError
 from subprocess_utils import run_subprocess_utf8
 
 REPO = Path(__file__).resolve().parent.parent

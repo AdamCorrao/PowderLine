@@ -1,4 +1,4 @@
-"""Tests for powderline.topas.writer (plan §7).
+"""Tests for powderline.gateways.topas.writer (plan §7).
 
 Covers: golden-file INP comparison for both examples, the refined-set invariant,
 validation errors, the LaB6-Bz refined-coordinate variant, .xye round-trip,
@@ -16,8 +16,8 @@ from pathlib import Path
 
 import pytest
 
-from powderline.topas import render_topas, write_topas_inp
-from powderline.topas.errors import TopasTranslationError
+from powderline.gateways.topas import render_topas, write_topas_inp
+from powderline.gateways.topas.errors import TopasTranslationError
 from subprocess_utils import run_subprocess_utf8
 
 REPO = Path(__file__).resolve().parent.parent
@@ -488,7 +488,7 @@ def test_write_topas_inp_roundtrip(tmp_path):
 
 
 def test_topas_package_has_no_gsasii_imports():
-    import powderline.topas as topas_pkg
+    import powderline.gateways.topas as topas_pkg
 
     pkg_dir = Path(topas_pkg.__file__).parent
     offenders = []
@@ -517,8 +517,8 @@ def test_topas_import_does_not_load_gsasii():
 
         sys.meta_path.insert(0, _Block())
         import powderline               # degrades gracefully when GSAS-II is absent
-        import powderline.topas
-        import powderline.topas.writer
+        import powderline.gateways.topas
+        import powderline.gateways.topas.writer
         assert "GSASII" not in sys.modules, "TOPAS path pulled GSAS-II into sys.modules"
         print("OK")
         """
