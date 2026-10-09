@@ -424,3 +424,12 @@ def test_recipe_dump_is_valid_json_round_trip():
     text = json.dumps(m.model_dump(mode="json"))
     assert validate_recipe(json.loads(text)) == m
     assert copy.deepcopy(m) == m
+
+
+def test_limit_message_prints_an_allowed_value():
+    """The message's limit, written back, validates (re/05 PR review N1): Uiso max 20/8 pi^2."""
+    from powderline.gateways.topas.schema import _limit_text
+    hi = 20 / (8 * 3.141592653589793 ** 2)
+    assert float(_limit_text(hi, "max")) <= hi and float(_limit_text(-10 / (8 * 3.141592653589793 ** 2), "min")) >= \
+        -10 / (8 * 3.141592653589793 ** 2)
+    assert _limit_text(2.0, "max") == "2" and _limit_text(1e-4, "min") == "0.0001"

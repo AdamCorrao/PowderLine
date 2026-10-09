@@ -618,14 +618,25 @@ def _number(expr: Optional[str]) -> Optional[float]:
     except ValueError:
         if "Val" in expr:
             text = expr.strip("= ;")
-            for fn in ("Max", "Min"):  # Max(-1, Val-.1) -> -1 is the fixed part
-                if text.startswith(fn + "("):
-                    head = text[len(fn) + 1:].split(",")[0].strip()
-                    try:
-                        return float(head)
-                    except ValueError:
-                        return None
+            for fn in ("Max", "Min"):  # Max(-1, Val-.1) -> -1, Min(Val 2 + .3, 10000) -> 10000: the fixed part
+                if text.startswith(fn + "(") and text.endswith(")"):
+                    for arg in _top_level_args(text[len(fn) + 1:-1]):
+                        try:
+                            return float(arg)
+                        except ValueError:
+                            continue
         return None
+
+
+def _top_level_args(text: str) -> list[str]:
+    """Split ``a, f(b, c)`` at the commas outside parentheses."""
+    args, depth, start = [], 0, 0
+    for i, ch in enumerate(text):
+        depth += (ch == "(") - (ch == ")")
+        if ch == "," and depth == 0:
+            args.append(text[start:i].strip())
+            start = i + 1
+    return args + [text[start:].strip()]
 
 
 def render_xye(xrd) -> tuple[str, int]:

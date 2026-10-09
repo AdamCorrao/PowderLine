@@ -159,6 +159,7 @@ def test_spf_runs_with_standard_statistics(tmp_path):
     assert r["engine_details"]["parameters_varied"] > 0 and isinstance(r["r_exp"], float)
     assert not r["spf_peaks"].empty
     assert isinstance(r["engine_details"]["gof"], float)  # DoPeakFit's own reduced chi^2 (EB-52; ledger R16)
+    assert r["rwp"] == pytest.approx(r["engine_details"]["rwp"], rel=1e-9)  # A149/R17: SPF fits the stated window too
     assert r["simulation_mode"] is False
 
 

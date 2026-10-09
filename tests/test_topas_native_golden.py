@@ -178,3 +178,27 @@ def test_unreadable_topas_number_is_an_engine_error(tmp_path):
     _replace_token(tmp_path / f"{_base('lab6_rietveld')}_profile.txt", 5, 2, "1.23.4")
     with pytest.raises(native_run.EngineExecutionError, match="not a number"):
         native_run.build_result(model, native, tmp_path, [], elapsed=0.0)
+
+
+def test_limit_hit_message_in_recipe_units(tmp_path):
+    """A refined Uiso stopped at TOPAS's beq maximum 20 is reported as Uiso 20/8 pi^2 (re/05 PR review N2)."""
+    recipe = json.loads((NATIVE / "lab6_rietveld.json").read_text(encoding="utf-8"))
+    recipe["payload"]["phases"]["LaB6"]["atoms"]["La"]["Uiso"][1] = True
+    model = schema.validate_recipe(recipe)
+    for f in GOLDEN.glob(f"{_base('lab6_rietveld')}*"):
+        if not f.name.endswith(".inp"):
+            shutil.copy(f, tmp_path / f.name)
+    with open(tmp_path / f"{_base('lab6_rietveld')}_results.csv", "a", encoding="utf-8") as fh:
+        fh.write("p1_a1_beq,20,0.1\n")
+    r = native_run.build_result(model, native_writer.render_native(model, _base("lab6_rietveld")), tmp_path, [],
+                                elapsed=0.0)
+    (hit,) = [w for w in r["warnings"] if w["field_path"] == "payload.phases.LaB6.atoms.La.Uiso"]
+    assert "max limit 0.253303 (TOPAS's default limit, TOPAS value 20)" in hit["message"]
+
+
+def test_cs_ceiling_is_a_recorded_limit():
+    """TOPAS.INC's CS maximum Min(Val 2 + .3, 10000) has the fixed part 10000 (re/05 PR review N7)."""
+    native = native_writer.render_native(_model("lab6_corrections"), "x")
+    assert native.params["p1_cs_l"].limits == (0.3, 10000.0)
+    assert native.params["inst_U"].limits == (-1.0, 2.0)
+    assert native.params["ze_th2_offset"].limits == (None, None)  # data-step expressions: no fixed part

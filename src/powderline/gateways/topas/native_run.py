@@ -371,10 +371,11 @@ def _limit_hits(native: NativeInput, values: dict) -> list:
             tol = LIMIT_HIT_RTOL * abs(lim) if lim != 0 else 1e-12
             if abs(v - lim) <= tol:
                 whose = "the recipe's stated bound" if source == "stated" else "TOPAS's default limit"
+                topas = f", TOPAS value {lim:g}" if info.scale != 1.0 else ""  # e.g. Uiso written as beq
                 found.append(StructuredWarning(
                     code="topas_parameter_at_limit",
-                    message=(f"{info.descriptive} ended at its {side} limit {lim:g} ({whose}): the refinement "
-                             "may have been stopped by the limit"),
+                    message=(f"{info.descriptive} ended at its {side} limit {lim / info.scale:g} ({whose}{topas}): "
+                             "the refinement may have been stopped by the limit"),
                     field_path=info.path))
     return found
 

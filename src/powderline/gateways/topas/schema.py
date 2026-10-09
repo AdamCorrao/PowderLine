@@ -127,6 +127,13 @@ def _omit_none(data: dict, model: CoreModel, names: tuple[str, ...]) -> dict:
 
 # --- TOPAS's fixed default limits (A138; TR Table 3.1, TOPAS.INC; EB-58) ------
 
+def _limit_text(limit: float, side: str) -> str:
+    """A limit as the message prints it: 6 significant digits when that value is itself allowed, else exact."""
+    text = f"{limit:.6g}"
+    outside = float(text) < limit if side == "min" else float(text) > limit
+    return repr(float(limit)) if outside else text
+
+
 def limit_problems(p: Optional[P], lo: Optional[float], hi: Optional[float], loc: tuple,
                    what: str) -> list[InitErrorDetails]:
     """A refined start outside TOPAS's fixed default limit, on a side the recipe leaves ``null`` (A138 rule 1).
@@ -143,13 +150,13 @@ def limit_problems(p: Optional[P], lo: Optional[float], hi: Optional[float], loc
             "topas_default_limit",
             "{what} is refined from {value}, below TOPAS's default minimum {limit}: TOPAS would move it to the "
             "limit without saying so; start at or above {limit}, or state min to replace TOPAS's limit (A138)",
-            loc, p.model_dump(), what=what, value=p.value, limit=f"{lo:.6g}"))
+            loc, p.model_dump(), what=what, value=p.value, limit=_limit_text(lo, "min")))
     if hi is not None and p.max is None and p.value > hi:
         problems.append(_error(
             "topas_default_limit",
             "{what} is refined from {value}, above TOPAS's default maximum {limit}: TOPAS would move it to the "
             "limit without saying so; start at or below {limit}, or state max to replace TOPAS's limit (A138)",
-            loc, p.model_dump(), what=what, value=p.value, limit=f"{hi:.6g}"))
+            loc, p.model_dump(), what=what, value=p.value, limit=_limit_text(hi, "max")))
     return problems
 
 
