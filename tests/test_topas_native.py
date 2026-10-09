@@ -852,3 +852,35 @@ def test_runner_stated_limit_hit_named_stated(tmp_path, monkeypatch):
     hits = [w for w in result["warnings"] if w["code"] == "topas_parameter_at_limit"]
     assert [w["field_path"] for w in hits] == ["payload.phases.LaB6.atoms.B1.x"]
     assert "the recipe's stated bound" in hits[0]["message"]
+
+
+def test_writer_exports_cell_volume():
+    """The cell volume is written out although it is not refined (pack 2: the volume was missing)."""
+    native = native_writer.render_native(schema.validate_recipe(_rietveld()), "test")
+    assert "prm p1_volume = Get(cell_volume); : 0" in native.inp_text
+    assert 'out_record out_eqn = p1_volume; out_fmt "p1_volume,%.12g,' in native.inp_text
+
+
+def test_runner_profile_x_rounded_above_the_recipe_value(tmp_path, monkeypatch):
+    """TOPAS prints X to 10 significant digits; a value rounded up still matches its own point (pack 2)."""
+    model = schema.validate_recipe(_rietveld())
+    results_csv = _make_results_csv({"p1_cell_a": (4.1580, 0.0002), "p1_volume": (71.85, 0.01)},
+                                    {"r_wp": 8.5, "r_exp": 5.2, "gof": 1.6, "number_independent_parameters": 1})
+    lo, hi = model.payload.window()
+    tth = np.asarray(model.payload.xrd_data.tth, dtype=float)
+    w = np.asarray(model.payload.xrd_data.Itth_weights, dtype=float)
+    inside = tth[(tth >= lo) & (tth <= hi)]
+    printed = inside * (1 + 3e-10)  # every X above its recipe value
+    yobs = [100.0] * len(printed)
+    ycalc = [100.0 + i % 7 for i in range(len(printed))]
+    runner = _fake_topas_runner(results_csv, _make_profile(printed, yobs, ycalc),
+                                {"LaB6": _make_peak_list()})
+    monkeypatch.setattr("powderline.gateways.topas.native_run.discover_tc_exe",
+                        lambda *a, **kw: tmp_path / "TOPAS6" / "tc.exe")
+    result = native_run.run_native(model, tmp_path, runner=runner)
+
+    yo = np.asarray(model.payload.xrd_data.Itth, dtype=float)
+    m = (tth >= lo) & (tth <= hi)
+    expected = 100 * math.sqrt(np.sum(w[m] * (yo[m] - np.array(ycalc)) ** 2) / np.sum(w[m] * yo[m] ** 2))
+    assert result["rwp"] == pytest.approx(expected, rel=1e-12)
+    assert result["fit_profile"]["y_weights"].tolist() == w[m].tolist()

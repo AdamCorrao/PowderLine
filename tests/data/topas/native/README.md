@@ -7,7 +7,7 @@ the committed examples' data; the starting values are worked out as below.
 | Fixture | What it is |
 |---|---|
 | `lab6_rietveld.json` | LaB6 calibrant: TCHZ instrument refined (Z fixed), Chebyshev + one pv background peak, scale refined, cell and ADPs fixed |
-| `lab6_spf.json` | LaB6 single peak fitting: 38 peaks; the LaB6 TCHZ instrument fixed; each peak refines position, intensity and its sample `gauss_fwhm`/`lor_fwhm` |
+| `lab6_spf.json` | LaB6 single peak fitting: 36 peaks; the LaB6 TCHZ instrument fixed; each peak refines position, intensity and its sample `gauss_fwhm`/`lor_fwhm` |
 | `drx33_rietveld.json` | DRX_33 + Li4MgWO6 (C 1 2/m 1): cells, scales, Chebyshev and isotropic microstrain refined |
 | `ties_simulation.json` | `iters 0`: 1/3 constants, `y = 2x`, `y = x + 1/2`, coupled Uij, `b = a` |
 | `lab6_corrections.json` | LaB6 plus Zero_Error, Simple_Axial_Model (`Rs`), capillary, LP_Factor_Synchrotron, One_on_X, an spvii background peak, CS_L + CS_G (exercises the writer; not a physical model) |

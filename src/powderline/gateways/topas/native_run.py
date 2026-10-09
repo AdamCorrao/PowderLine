@@ -121,6 +121,13 @@ def _read_profile(path: Path) -> np.ndarray:
     return arr
 
 
+def _nearest(grid: np.ndarray, x: np.ndarray) -> np.ndarray:
+    """Index of the grid point nearest each x (grid strictly increasing)."""
+    hi = np.clip(np.searchsorted(grid, x), 1, len(grid) - 1)
+    lo = hi - 1
+    return np.where(np.abs(grid[lo] - x) <= np.abs(grid[hi] - x), lo, hi)
+
+
 def _diverged(what: str) -> EngineExecutionError:
     return EngineExecutionError(f"the refinement diverged: {what} is not finite (A130)")
 
@@ -143,8 +150,7 @@ def build_result(model, native: NativeInput, out: Path, validated_warnings: list
     lo, hi = p.window()
     mask = (tth >= lo) & (tth <= hi)
     ycalc = np.full_like(tth, np.nan)
-    idx = np.searchsorted(tth, profile[:, 0])
-    idx = np.clip(idx, 0, len(tth) - 1)
+    idx = _nearest(tth, profile[:, 0])  # TOPAS prints X to 10 significant digits
     near = np.abs(tth[idx] - profile[:, 0]) <= 1e-6 * np.maximum(np.abs(tth[idx]), 1.0)
     ycalc[idx[near]] = profile[near, 2]
     lacking = mask & (w > 0) & ~np.isfinite(ycalc)
@@ -184,9 +190,8 @@ def build_result(model, native: NativeInput, out: Path, validated_warnings: list
     wavelength = _final(native, values, "lam_lo", p.instrument.radiation.lo.value)
     bkg = _background(model, native, values, profile[:, 0])
     profile_rows = []
-    for x, yo, yc, yb in zip(profile[:, 0], profile[:, 1], profile[:, 2], bkg):
-        i = int(np.searchsorted(tth, x))
-        weight = w[min(i, len(w) - 1)]
+    for i, x, yo, yc, yb in zip(_nearest(tth, profile[:, 0]), profile[:, 0], profile[:, 1], profile[:, 2], bkg):
+        weight = w[i]
         s = math.sin(math.radians(x / 2))
         profile_rows.append({"two_theta": x, "y_obs": yo, "y_weights": weight, "y_calc": yc, "y_diff": yo - yc,
                              "y_bkg": yb, "q_values": 4 * math.pi * s / wavelength,

@@ -560,7 +560,7 @@ class _Writer:
         err = "" if self.out.simulation else ' out_fmt_err "%.12g\\n"'
         end = '\\n"' if self.out.simulation else '"'
         for name, info in list(self.out.params.items()) + list(self.out.derived.items()):
-            if info.category != "derived" and not info.refined:
+            if info.category not in ("derived", "cell_volume") and not info.refined:
                 continue
             self.lines.append(f'   out_record out_eqn = {name}; out_fmt "{name},%.12g,{end}{err}')
 
