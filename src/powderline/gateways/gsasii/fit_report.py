@@ -34,46 +34,10 @@ from __future__ import annotations
 import re
 
 import numpy as np
-from pydantic import BaseModel
 
 from powderline.exceptions import EngineExecutionError, StructuredWarning
 from powderline.fitstats import compute_fit_statistics
-from powderline.schema_core import ChebyshevBackground, Phase, RefinableParameter
-from powderline.symmetry import cell_tie_groups, coupling_groups
-
-
-def parameters_requested(recipe) -> int:
-    """Independently refined parameters the recipe asks for: one per symmetry tie group (A94), per flag otherwise."""
-    count = 0
-
-    def walk(obj) -> None:
-        nonlocal count
-        if isinstance(obj, RefinableParameter):
-            count += obj.refine_flag
-        elif isinstance(obj, ChebyshevBackground):
-            count += obj.num_coefficients if obj.refine_flag else 0
-        elif isinstance(obj, dict):
-            for v in obj.values():
-                walk(v)
-        elif isinstance(obj, list):
-            for v in obj:
-                walk(v)
-        elif isinstance(obj, BaseModel):
-            for name in type(obj).model_fields:
-                walk(getattr(obj, name))
-            if isinstance(obj, Phase):  # a refined tie group is one engine parameter
-                tied = [(obj.unit_cell, g.members) for g in cell_tie_groups(obj.space_group).groups]
-                for atom in obj.atoms.values():
-                    ties = coupling_groups(obj.space_group, (atom.x.value, atom.y.value, atom.z.value))
-                    tied += [(atom, g.members) for g in ties.xyz.groups]
-                    if atom.Uaniso is not None:
-                        tied += [(atom.Uaniso, g.members) for g in ties.uij.groups]
-                for holder, members in tied:
-                    refined = sum(getattr(holder, m).refine_flag for m in members)
-                    count -= max(refined - 1, 0)
-
-    walk(recipe.payload)
-    return count
+from powderline.schema_core import parameters_requested  # noqa: F401  (moved to core, re/05 D12; re-exported)
 
 
 def _dropped(msg: str) -> int | None:

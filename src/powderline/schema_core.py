@@ -1406,3 +1406,47 @@ def collect_warnings(model: BaseModel, path: str = "") -> list[StructuredWarning
 
     visit(model, path)
     return found
+
+
+# --- refined-parameter count (A41, A45, A94) ----------------------------------
+
+
+def parameters_requested(recipe) -> int:
+    """Independently refined parameters a validated recipe asks for (``engine_details``, A45).
+
+    One per refine flag, except that a refined symmetry tie group (cell, atom
+    coordinates, Uij) counts once: an engine emits one parameter per group
+    (A94). A refined core Chebyshev background counts its coefficients. Works for
+    both parameter shapes (``[value, flag]`` and ``[value, flag, min, max]``), so
+    every engine gateway reports it the same way (re/05 D12).
+    """
+    count = 0
+
+    def walk(obj) -> None:
+        nonlocal count
+        if isinstance(obj, (RefinableParameter, BoundedRefinableParameter)):
+            count += obj.refine_flag
+        elif isinstance(obj, ChebyshevBackground):
+            count += obj.num_coefficients if obj.refine_flag else 0
+        elif isinstance(obj, dict):
+            for v in obj.values():
+                walk(v)
+        elif isinstance(obj, list):
+            for v in obj:
+                walk(v)
+        elif isinstance(obj, BaseModel):
+            for name in type(obj).model_fields:
+                walk(getattr(obj, name))
+            if isinstance(obj, Phase):  # a refined tie group is one engine parameter
+                tied = [(obj.unit_cell, g.members) for g in cell_tie_groups(obj.space_group).groups]
+                for atom in obj.atoms.values():
+                    ties = coupling_groups(obj.space_group, (atom.x.value, atom.y.value, atom.z.value))
+                    tied += [(atom, g.members) for g in ties.xyz.groups]
+                    if atom.Uaniso is not None:
+                        tied += [(atom.Uaniso, g.members) for g in ties.uij.groups]
+                for holder, members in tied:
+                    refined = sum(getattr(holder, m).refine_flag for m in members)
+                    count -= max(refined - 1, 0)
+
+    walk(recipe.payload)
+    return count
