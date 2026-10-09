@@ -445,6 +445,7 @@ def test_import_block_schema_layer_and_validate():
     """Schema-layer imports (registry, gateways, capabilities, validate) work with engines blocked."""
     recipe_path = str(EXAMPLES / "example_LaB6" / "input.json")
     easydiff_recipe_path = str(EXAMPLES / "example_LaB6_easydiff" / "input.json")
+    topas_native_path = str(REPO / "tests" / "data" / "topas" / "native" / "lab6_rietveld.json")
     script = f"""
 import sys, importlib.abc, json
 from pathlib import Path
@@ -472,6 +473,9 @@ import powderline.gateways.gsasii.gateway
 import powderline.gateways.gsasii.schema
 import powderline.gateways.gsasii.validation
 import powderline.gateways.topas.gateway
+import powderline.gateways.topas.schema
+import powderline.gateways.topas.native_writer
+import powderline.gateways.topas.native_run
 import powderline.easydiff.gateway
 from powderline import registry
 
@@ -506,6 +510,12 @@ native = {{
     }},
 }}
 assert type(registry.get("gsasii").validate(native)).__name__ == "GsasiiRietveldRecipe"
+
+# The native topas schema validates and the native writer renders engine-free (re/05)
+from powderline.gateways.topas.native_writer import render_native
+topas_native = registry.get("topas").validate(json.loads(Path(r'{topas_native_path}').read_text(encoding="utf-8")))
+assert type(topas_native).__name__ == "TopasRietveldRecipe"
+assert "TCHZ_Peak_Type" in render_native(topas_native, "lab6").inp_text
 
 recipes = {{
     "gsasii": json.loads(Path(r'{recipe_path}').read_text(encoding="utf-8")),
