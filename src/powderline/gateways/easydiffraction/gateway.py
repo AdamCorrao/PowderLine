@@ -1,9 +1,11 @@
 """Engine-free factory for the easydiffraction gateway (entry point
 ``powderline.gateways:easydiffraction``).
 
-- **Schema layer** — ``validate`` / ``capabilities``: builds the ``RecipeModel``
-  then runs the policy pre-flight, exactly the check ``validate_only`` runs today
-  (raises ``EasyDiffractionTranslationError``; no easydiffraction import).
+- **Schema layer** — ``validate`` / ``capabilities``: an ``easydiffraction.*``
+  recipe validates against the native schema (:mod:`.schema`, re/06); a 0.26.0
+  ``GSASII_*`` recipe builds the ``RecipeModel`` then runs the policy pre-flight,
+  exactly the check ``validate_only`` runs today (raises
+  ``EasyDiffractionTranslationError``), until re/07. No easydiffraction import.
 - **Runtime layer** — ``run``: a thin wrapper over
   ``powderline.gateways.easydiffraction.engine.run_easydiffraction_recipe`` (behavior unchanged).
   On a real run it first reads the installed easydiffraction version: missing ⇒
@@ -14,29 +16,34 @@
 from __future__ import annotations
 
 from powderline.exceptions import EngineNotAvailableError
+from powderline.gateways.easydiffraction import schema
 from powderline.registry import Gateway, check_engine_version
 from powderline.schema import RecipeModel
 
 NAME = "easydiffraction"
 #: Supported easydiffraction versions (A41/A44); mirrors the pixi pin.
 ENGINE_VERSION_SPEC = ">=0.20.1,<0.21"
-#: Workflows served (0.26.0 schema name until re/06; no SPF — A13.3).
-WORKFLOWS = ("GSASII_Rietveld",)
+#: Workflows served: the native schema, and the 0.26.0 name until re/07 removes it (no SPF, A13.3).
+WORKFLOWS = (*schema.SCHEMA_NAMES, "GSASII_Rietveld")
 #: pixi environment providing easydiffraction + how to install it (renamed in re/08, A42).
 ENV = "easydiff"
 INSTALL_COMMAND = "pixi install -e easydiff"
 
 
 def capabilities() -> dict:
-    return {"name": NAME, "workflows": WORKFLOWS, "engine_version_spec": ENGINE_VERSION_SPEC}
+    return {"name": NAME, "workflows": WORKFLOWS, "engine_version_spec": ENGINE_VERSION_SPEC, **schema.DECLARATIONS}
 
 
 def validate(recipe, *, verbose: bool = False):
-    """Validate a recipe (dict or ``RecipeModel``); return the ``RecipeModel`` (A50, A59).
+    """Validate a recipe (dict or model); return the validated model (A50, A59).
 
+    An ``easydiffraction.*`` recipe gives its native model
+    (``EasydiffractionRietveldRecipe``); a 0.26.0 one the legacy ``RecipeModel``.
     ``verbose`` is part of the uniform gateway contract; this gateway prints
-    nothing extra today.
+    nothing extra.
     """
+    if schema.is_native_recipe(recipe):
+        return schema.validate_recipe(recipe)
     from powderline.gateways.easydiffraction.policy import check_unsupported
 
     model = recipe if isinstance(recipe, RecipeModel) else RecipeModel.model_validate(recipe)
