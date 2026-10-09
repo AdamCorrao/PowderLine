@@ -893,3 +893,29 @@ def test_writer_fit_limits_on_data_points():
     assert "   start_X 1.000355998\n   finish_X 14.99760389\n" in native.inp_text
     xs = [line.split()[0] for line in native.xye_text.splitlines()]
     assert "1.000355998" in xs and "14.99760389" in xs
+
+
+def test_render_background_run():
+    """A152: same data/window/corrections/background, refined values fixed, no phases or SPF peaks, iters 0."""
+    recipe = json.loads((Path(__file__).parent / "data" / "topas" / "native" / "lab6_corrections.json").read_text())
+    model = schema.validate_recipe(recipe)
+    main = native_writer.render_native(model, "run")
+    values = {"bkg_bkg0__": -746.49, "oox": 0.000161, "bkpk1_h1": 211.48, "ze_th2_offset": 0.0025,
+              "p1_scale": 1.8e-8}
+    bkg = native_writer.render_background(model, "run", values)
+    text = bkg.inp_text
+    assert 'xdd "run.xye" xye_format' in text and bkg.profile_file == "run_bkg_profile.txt"
+    assert "iters 0" in text and "do_errors" not in text
+    assert "str" not in text.split() and "phase_name" not in text and '\nout "' not in text
+    assert "   bkg !bkg -746.49 " in text  # refined value fixed; the rest as stated
+    assert "prm !oox 0.000161" in text and "prm !ze_th2_offset 0.0025" in text
+    assert "h1 !bkpk1_h1 211.48" in text and "ZE(, ze_th2_offset)" in text and "Simple_Axial_Model(" in text
+    for line in ("   start_X 1.000355998", "   finish_X 14.99760389", "   Rs 217.5", "      capillary_parallel_beam"):
+        assert line in main.inp_text.splitlines() and line in text.splitlines()
+    assert native_writer.has_background(model)
+
+
+def test_render_background_spf_has_no_peaks():
+    recipe = json.loads((Path(__file__).parent / "data" / "topas" / "native" / "lab6_spf.json").read_text())
+    text = native_writer.render_background(schema.validate_recipe(recipe), "s", {}).inp_text
+    assert "xo_Is" not in text and "spf1_" not in text and "bkg !bkg" in text
