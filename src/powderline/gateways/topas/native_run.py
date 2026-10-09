@@ -18,13 +18,17 @@ TOPAS 6 facts this module is built on (devkit ``re05-topas6-compat.md``):
   against the fixed limits the writer recorded (A147 Q-L4);
 - a non-finite term silently zeroes a phase (C23): a phase whose calculated
   intensities are all zero gets an informative warning, never an error
-  (A147 Q-Z1).
+  (A147 Q-Z1);
+- any non-finite number TOPAS writes (Python or MSVC spelling: ``nan``,
+  ``1.#QNAN``, ``-nan(ind)``) is a divergence (A130, A154). The files are read
+  strictly here; the 0.26.0 round-trip parser stays as it is (A146).
 """
 
 from __future__ import annotations
 
 import csv
 import math
+import re
 import subprocess
 import time
 import uuid
@@ -44,7 +48,7 @@ from powderline.gateways.topas.native_writer import (
     render_background,
     render_native,
 )
-from powderline.gateways.topas.roundtrip import PEAK_LIST_COLUMNS, parse_peak_list, parse_results_csv
+from powderline.gateways.topas.roundtrip import PEAK_LIST_COLUMNS, parse_peak_list
 from powderline.gateways.topas.runner import discover_tc_exe
 from powderline.gateways.topas.schema import TopasRietveldRecipe
 from powderline.schema_core import collect_warnings, parameters_requested
@@ -57,6 +61,10 @@ SPF_DIAG_COLUMNS = ("peak_index", "position_2theta", "status", "notes")
 SPF_REPORT = "single_peaks_report.csv"
 #: A final value within this relative distance of a fixed limit is a limit hit (A147 Q-L4).
 LIMIT_HIT_RTOL = 1e-6
+#: Rows of the results CSV that are TOPAS's own fit statistics.
+FIT_STATS = ("r_wp", "r_exp", "gof")
+#: Non-finite numbers as Python or MSVC print them: ``nan``, ``-inf``, ``1.#QNAN``, ``-1.#IND``, ``-nan(ind)``.
+_NON_FINITE = re.compile(r"[+-]?(?:nan(?:\(\w*\))?|inf(?:inity)?|1\.#(?:qnan|snan|ind|inf)\d*)", re.IGNORECASE)
 
 
 def default_base_name(output_dir) -> str:
@@ -133,8 +141,8 @@ def _run_background(model, native: NativeInput, out: Path, tc: Path, runner) -> 
     (out / f"{bkg_base}{PROFILE_SUFFIX}").unlink(missing_ok=True)
     if not has_background(model):
         return
-    _, values = parse_results_csv((out / native.results_file).read_text(encoding="utf-8"))
-    if any(v is None for v, _ in values.values()):
+    stats, values = _read_results(out / native.results_file)
+    if not all(math.isfinite(v) for v in [*stats.values(), *(v for v, _ in values.values())]):
         return
     bkg = render_background(model, base, {name: v for name, (v, _) in values.items()})
     (out / f"{bkg_base}.inp").write_text(bkg.inp_text, encoding="utf-8", newline="\n")
@@ -144,11 +152,53 @@ def _run_background(model, native: NativeInput, out: Path, tc: Path, runner) -> 
 # --- reading TOPAS's files --------------------------------------------------------------
 
 
+def _topas_float(token: str, where: str) -> float:
+    """A number TOPAS wrote; a non-finite one (any spelling) is NaN, anything else unreadable an error."""
+    try:
+        return float(token)
+    except ValueError:
+        if _NON_FINITE.fullmatch(token):
+            return math.nan
+        raise EngineExecutionError(f"TOPAS wrote {token!r} in {where}, which is not a number") from None
+
+
+def _read_results(path: Path) -> tuple[dict, dict]:
+    """``parameter,value,esd`` rows: (TOPAS's fit statistics, {name: (value, esd)}).
+
+    Strict (A130, A154): every row is kept, a non-finite value as NaN, so the
+    caller sees the divergence. A non-finite ESD is ``None`` (TOPAS cannot
+    determine the ESD of a degenerate parameter; not a divergence).
+    """
+    fit, values = {}, {}
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("parameter,"):
+            continue
+        parts = [p.strip() for p in line.split(",")]
+        value = _topas_float(parts[1] if len(parts) > 1 else "", path.name)
+        esd = _topas_float(parts[2], path.name) if len(parts) > 2 and parts[2] else None
+        if esd is not None and not math.isfinite(esd):
+            esd = None
+        if parts[0] in FIT_STATS:
+            fit[parts[0]] = value
+        else:
+            values[parts[0]] = (value, esd)
+    return fit, values
+
+
 def _read_profile(path: Path) -> np.ndarray:
-    rows = [[float(tok) for tok in line.split()] for line in path.read_text(encoding="utf-8").splitlines()
-            if line.strip()]
+    rows = [[_topas_float(tok, path.name) for tok in line.split()]
+            for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
     arr = np.array(rows, dtype=float).reshape(-1, 3)
     return arr
+
+
+def _read_peak_list(path: Path, phase: str) -> list[dict]:
+    """A phase's reflection list; a non-finite number in it is a divergence (A130, A154)."""
+    text = path.read_text(encoding="utf-8")
+    if not all(math.isfinite(_topas_float(tok, path.name)) for tok in text.split()):
+        raise _diverged(f"a value in {path.name}")
+    return parse_peak_list(text, phase)
 
 
 def _nearest(grid: np.ndarray, x: np.ndarray) -> np.ndarray:
@@ -165,10 +215,11 @@ def _diverged(what: str) -> EngineExecutionError:
 def build_result(model, native: NativeInput, out: Path, validated_warnings: list, *, elapsed: float) -> dict:
     """The result dict from the files TOPAS wrote (tested without TOPAS from recorded files)."""
     p = model.payload
-    stats, values = parse_results_csv((out / native.results_file).read_text(encoding="utf-8"))
-    for name, (v, e) in values.items():
-        if v is None:
-            raise _diverged(f"{name} in {native.results_file}")
+    stats, values = _read_results(out / native.results_file)
+    bad = [name for name, v in stats.items() if not math.isfinite(v)]
+    bad += [name for name, (v, _) in values.items() if not math.isfinite(v)]
+    if bad:
+        raise _diverged(f"{', '.join(bad)} in {native.results_file}")
     profile = _read_profile(out / native.profile_file)
     if not np.isfinite(profile).all():
         raise _diverged(f"the calculated pattern in {native.profile_file}")
@@ -207,7 +258,7 @@ def build_result(model, native: NativeInput, out: Path, validated_warnings: list
     if isinstance(model, TopasRietveldRecipe):
         for i, name in enumerate(p.phases, start=1):
             unit_cells[name] = _cell_rows(model, i, name, values)
-            peak_lists[name] = parse_peak_list((out / native.phase_files[name]).read_text(encoding="utf-8"), name)
+            peak_lists[name] = _read_peak_list(out / native.phase_files[name], name)
             if not any(r["I_after_scale_pks"] != 0 for r in peak_lists[name]):
                 warnings.append(StructuredWarning(
                     code="topas_phase_contributes_nothing",

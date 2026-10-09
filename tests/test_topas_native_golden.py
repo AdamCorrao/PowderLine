@@ -122,3 +122,59 @@ def test_drx33_cells(golden_result):
         assert c2[axis] == pytest.approx(values[f"p2_cell_{axis}"][0], rel=1e-12)
     assert c2["beta"] == pytest.approx(values["p2_cell_beta"][0], rel=1e-12)
     assert c1["volume"] == pytest.approx(values["p1_volume"][0], rel=1e-12)
+
+
+# --- A130 / A154: any non-finite number TOPAS writes is a divergence (re/05 PR review S1) ---------------
+
+def _golden_copy(tmp_path, fixture="lab6_rietveld"):
+    for f in GOLDEN.glob(f"{_base(fixture)}*"):
+        if not f.name.endswith(".inp"):
+            shutil.copy(f, tmp_path / f.name)
+    model = _model(fixture)
+    return model, native_writer.render_native(model, _base(fixture))
+
+
+def _replace_token(path, line_no, column, token):
+    lines = path.read_text(encoding="utf-8").splitlines()
+    sep = "," if path.suffix == ".csv" else None
+    parts = lines[line_no].split(sep)
+    parts[column] = token
+    lines[line_no] = ("," if sep else " ").join(parts)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _row(path, name):
+    return next(i for i, ln in enumerate(path.read_text(encoding="utf-8").splitlines()) if ln.startswith(name + ","))
+
+
+@pytest.mark.parametrize("token", ["nan", "-inf", "1.#QNAN", "-1.#IND", "1.#INF", "-nan(ind)"])
+@pytest.mark.parametrize("where", ["value", "statistic", "profile", "peaks"])
+def test_non_finite_topas_output_is_a_divergence(tmp_path, token, where):
+    """Python and MSVC spellings alike, in the results CSV, the profile and a reflection list."""
+    model, native = _golden_copy(tmp_path)
+    base = _base("lab6_rietveld")
+    if where in ("value", "statistic"):
+        f = tmp_path / f"{base}_results.csv"
+        _replace_token(f, _row(f, "p1_scale" if where == "value" else "r_wp"), 1, token)
+    elif where == "profile":
+        _replace_token(tmp_path / f"{base}_profile.txt", 100, 2, token)
+    else:
+        _replace_token(tmp_path / f"{base}_p1_peaks.txt", 0, 7, token)
+    with pytest.raises(native_run.EngineExecutionError, match="diverged"):
+        native_run.build_result(model, native, tmp_path, [], elapsed=0.0)
+
+
+def test_non_finite_esd_is_not_a_divergence(tmp_path):
+    """TOPAS cannot give the ESD of a degenerate parameter: the ESD is empty, the run stands."""
+    model, native = _golden_copy(tmp_path)
+    f = tmp_path / f"{_base('lab6_rietveld')}_results.csv"
+    _replace_token(f, _row(f, "p1_scale"), 2, "1.#QNAN")
+    rows = native_run.build_result(model, native, tmp_path, [], elapsed=0.0)["refined_parameters"]
+    assert np.isnan(rows.set_index("parameter_name").loc["p1_scale", "esd"])
+
+
+def test_unreadable_topas_number_is_an_engine_error(tmp_path):
+    model, native = _golden_copy(tmp_path)
+    _replace_token(tmp_path / f"{_base('lab6_rietveld')}_profile.txt", 5, 2, "1.23.4")
+    with pytest.raises(native_run.EngineExecutionError, match="not a number"):
+        native_run.build_result(model, native, tmp_path, [], elapsed=0.0)
