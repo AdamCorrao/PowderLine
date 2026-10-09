@@ -39,3 +39,13 @@ the committed examples' data; the starting values are worked out as below.
 
 The generator that wrote these files (with the numbers above) is in the devkit:
 `dossiers/multi-engine/probes/re05_topas/make_native_fixtures.py`.
+
+## TOPAS 6 goldens (`golden/`)
+
+What TOPAS-64 Version 6 wrote for each fixture (devkit probe packs 3 and 5,
+2026-10-09; base name `<fixture>__snapped`): the INP the writer produced (fit
+limits on data points, A149), `_results.csv`, `_profile.txt`, the reflection
+lists, and the background run (A152: `_bkg.inp`, `_bkg_profile.txt`).
+`tests/test_topas_native_golden.py` checks that the writer still emits those
+INPs and builds the result from TOPAS's files. Regenerate them on a TOPAS
+machine whenever the writer's output changes.
