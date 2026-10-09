@@ -230,11 +230,8 @@ class _Writer:
             self._instrument_prms()
         self.lines.append(f'xdd "{self.data_base}.xye" xye_format')
         self.lines.append(f"   x_calculation_step {fmt(c.x_calculation_step)}")
-        start, finish = fit_limits_on_data(p.fit_range, p.xrd_data)  # on data points (A149, EB-59)
-        if start is not None:
-            self.lines.append(f"   start_X {fmt(start)}")
-        if finish is not None:
-            self.lines.append(f"   finish_X {fmt(finish)}")
+        start, finish = fit_limits_on_data(p.fit_range, p.xrd_data)  # on weighted data points (A149, A154, EB-59)
+        self.lines += [f"   start_X {fmt(start)}", f"   finish_X {fmt(finish)}"]
         self._geometry_and_corrections()
         self._emission()
         self._background()

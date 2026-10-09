@@ -70,6 +70,18 @@ def test_gsasii_fits_exactly_the_stated_window(lab6_result):
     assert d["n_obs"] == len(inside) == 3767
     assert lab6_result["rwp"] == pytest.approx(d["rwp"], rel=1e-9)
 
+def test_gsasii_open_ends_skip_zero_weight_edges(tmp_path):
+    """A154: without fit_range GSAS-II gets the first/last weighted points as limits, so zero-weight edge points
+    are outside its slice (it would count them in Nobs and map its Chebyshev over them)."""
+    recipe = _lab6()
+    recipe["payload"].pop("fit_range")
+    w = recipe["payload"]["xrd_data"]["Itth_weights"]
+    for i in list(range(20)) + list(range(len(w) - 20, len(w))):
+        w[i] = 0.0
+    r = powderline.run(recipe, tmp_path, execution_mode="subprocess")
+    assert r["success"], r.get("error")
+    assert r["engine_details"]["n_obs"] == sum(1 for v in w if v > 0) == len(w) - 40
+
 def test_warnings_carried_with_full_paths(lab6_result):
     codes = {w["code"]: w for w in lab6_result["warnings"]}
     assert lab6_result["warnings"][0]["field_path"] == "payload.phases.LaB6.peak_broadening.size_broadening"

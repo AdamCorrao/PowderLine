@@ -554,24 +554,28 @@ def check_fit_range_within_data(fit_range: Optional[FitRange], xrd_data: XRDData
     fit_limits_on_data(fit_range, xrd_data)  # the window holds a weighted point
 
 
-def fit_limits_on_data(fit_range: Optional[FitRange], xrd_data: XRDData) -> tuple[Optional[float], Optional[float]]:
-    """The limits a gateway hands its engine: each stated end moved onto a data point (A149).
+def fit_limits_on_data(fit_range: Optional[FitRange], xrd_data: XRDData) -> tuple[float, float]:
+    """The limits a gateway hands its engine: the window's first and last weighted data points (A149, A154).
 
     A stated ``min`` becomes the first weighted point with 2theta >= min, a
-    stated ``max`` the last weighted point with 2theta <= max; an open end stays
-    ``None``. With its limits on data points every engine fits exactly the
-    points min <= 2theta <= max that core scores (A131): GSAS-II's slice ends one
-    point past a limit between points (EB-54), TOPAS takes the point nearest each
-    limit (EB-59). Raises ``ValueError`` when no weighted point lies in the window.
+    stated ``max`` the last weighted point with 2theta <= max; an open end (or
+    no ``fit_range``) becomes the first or last weighted point of the data, so
+    zero-weight points at the data's edges never stretch an engine's window.
+    With its limits on these points every engine fits exactly the points
+    min <= 2theta <= max that core scores (A131), and maps its Chebyshev basis
+    over the same first and last points: GSAS-II's slice ends one point past a
+    limit between points (EB-54) and starts at the first data point, weighted
+    or not, when no limit is set; TOPAS takes the point nearest each limit
+    (EB-59) of an ``.xye`` without zero-weight points. Raises ``ValueError``
+    when no weighted point lies in the window.
     """
-    if fit_range is None or (fit_range.min is None and fit_range.max is None):
-        return None, None
+    lo = None if fit_range is None else fit_range.min
+    hi = None if fit_range is None else fit_range.max
     inside = [t for t, w in zip(xrd_data.tth, xrd_data.Itth_weights)
-              if w > 0 and (fit_range.min is None or t >= fit_range.min)
-              and (fit_range.max is None or t <= fit_range.max)]
+              if w > 0 and (lo is None or t >= lo) and (hi is None or t <= hi)]
     if not inside:
-        raise ValueError(f"fit_range [{fit_range.min}, {fit_range.max}] holds no data point with a positive weight")
-    return (None if fit_range.min is None else inside[0]), (None if fit_range.max is None else inside[-1])
+        raise ValueError(f"fit_range [{lo}, {hi}] holds no data point with a positive weight")
+    return inside[0], inside[-1]
 
 
 # --- background -------------------------------------------------------------

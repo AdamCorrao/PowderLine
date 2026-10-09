@@ -918,3 +918,20 @@ def test_render_background_spf_has_no_peaks():
     recipe = json.loads((Path(__file__).parent / "data" / "topas" / "native" / "lab6_spf.json").read_text())
     text = native_writer.render_background(schema.validate_recipe(recipe), "s", {}).inp_text
     assert "xo_Is" not in text and "spf1_" not in text and "bkg !bkg" in text
+
+
+def test_writer_open_ends_are_the_weighted_data_limits():
+    """A154: without fit_range the INP still states start_X/finish_X, the first/last weighted points (zero-weight
+    edge points are not in the .xye), so TOPAS's Chebyshev basis spans the same points as GSAS-II's."""
+    from powderline.gateways.topas.conversions import fmt
+
+    recipe = _rietveld()
+    recipe["payload"].pop("fit_range", None)
+    w = recipe["payload"]["xrd_data"]["Itth_weights"]
+    for i in (0, 1, len(w) - 1):
+        w[i] = 0.0
+    tth = recipe["payload"]["xrd_data"]["tth"]
+    model = schema.validate_recipe(recipe)
+    native = native_writer.render_native(model, "x")
+    assert f"   start_X {fmt(tth[2])}\n   finish_X {fmt(tth[-2])}\n" in native.inp_text
+    assert native.dropped_points == 3
