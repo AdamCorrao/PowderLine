@@ -537,7 +537,8 @@ class FitRange(BaseModel):
 
 
 def check_fit_range_within_data(fit_range: Optional[FitRange], xrd_data: XRDData) -> None:
-    """Raise ``ValueError`` unless both ``fit_range`` ends lie within the data's 2theta span.
+    """Raise ``ValueError`` unless both ``fit_range`` ends lie within the data's 2theta span
+    and the window holds at least one point with a positive weight.
 
     A payload-level check (it needs the pattern): engine payload models call it
     from a model validator (A68). ``None`` (or an open end) means "the data limit".
@@ -550,6 +551,27 @@ def check_fit_range_within_data(fit_range: Optional[FitRange], xrd_data: XRDData
             raise ValueError(
                 f"fit_range {name} ({end}) is outside the data's 2theta range [{lo}, {hi}]"
             )
+    fit_limits_on_data(fit_range, xrd_data)  # the window holds a weighted point
+
+
+def fit_limits_on_data(fit_range: Optional[FitRange], xrd_data: XRDData) -> tuple[Optional[float], Optional[float]]:
+    """The limits a gateway hands its engine: each stated end moved onto a data point (A149).
+
+    A stated ``min`` becomes the first weighted point with 2theta >= min, a
+    stated ``max`` the last weighted point with 2theta <= max; an open end stays
+    ``None``. With its limits on data points every engine fits exactly the
+    points min <= 2theta <= max that core scores (A131): GSAS-II's slice ends one
+    point past a limit between points (EB-54), TOPAS takes the point nearest each
+    limit (EB-59). Raises ``ValueError`` when no weighted point lies in the window.
+    """
+    if fit_range is None or (fit_range.min is None and fit_range.max is None):
+        return None, None
+    inside = [t for t, w in zip(xrd_data.tth, xrd_data.Itth_weights)
+              if w > 0 and (fit_range.min is None or t >= fit_range.min)
+              and (fit_range.max is None or t <= fit_range.max)]
+    if not inside:
+        raise ValueError(f"fit_range [{fit_range.min}, {fit_range.max}] holds no data point with a positive weight")
+    return (None if fit_range.min is None else inside[0]), (None if fit_range.max is None else inside[-1])
 
 
 # --- background -------------------------------------------------------------

@@ -45,7 +45,7 @@ from powderline.gateways.topas.schema import (
     TopasSpfRecipe,
     topas_space_group,
 )
-from powderline.schema_core import BoundedRefinableParameter
+from powderline.schema_core import BoundedRefinableParameter, fit_limits_on_data
 from powderline.symmetry import analyze_site, cell_tie_groups, coupling_groups
 
 P = BoundedRefinableParameter
@@ -216,11 +216,11 @@ class _Writer:
         self._instrument_prms()
         self.lines.append(f'xdd "{self.base}.xye" xye_format')
         self.lines.append(f"   x_calculation_step {fmt(c.x_calculation_step)}")
-        if p.fit_range is not None:
-            if p.fit_range.min is not None:
-                self.lines.append(f"   start_X {fmt(p.fit_range.min)}")
-            if p.fit_range.max is not None:
-                self.lines.append(f"   finish_X {fmt(p.fit_range.max)}")
+        start, finish = fit_limits_on_data(p.fit_range, p.xrd_data)  # on data points (A149, EB-59)
+        if start is not None:
+            self.lines.append(f"   start_X {fmt(start)}")
+        if finish is not None:
+            self.lines.append(f"   finish_X {fmt(finish)}")
         self._geometry_and_corrections()
         self._emission()
         self._background()

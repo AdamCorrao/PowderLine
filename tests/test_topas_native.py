@@ -884,3 +884,12 @@ def test_runner_profile_x_rounded_above_the_recipe_value(tmp_path, monkeypatch):
     expected = 100 * math.sqrt(np.sum(w[m] * (yo[m] - np.array(ycalc)) ** 2) / np.sum(w[m] * yo[m] ** 2))
     assert result["rwp"] == pytest.approx(expected, rel=1e-12)
     assert result["fit_profile"]["y_weights"].tolist() == w[m].tolist()
+
+
+def test_writer_fit_limits_on_data_points():
+    """start_X/finish_X are the first/last data points inside fit_range, written as in the .xye (A149, EB-59)."""
+    recipe = json.loads((Path(__file__).parent / "data" / "topas" / "native" / "lab6_rietveld.json").read_text())
+    native = native_writer.render_native(schema.validate_recipe(recipe), "test")
+    assert "   start_X 1.000355998\n   finish_X 14.99760389\n" in native.inp_text
+    xs = [line.split()[0] for line in native.xye_text.splitlines()]
+    assert "1.000355998" in xs and "14.99760389" in xs
