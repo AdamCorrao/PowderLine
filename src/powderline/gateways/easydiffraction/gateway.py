@@ -6,8 +6,9 @@
   ``GSASII_*`` recipe builds the ``RecipeModel`` then runs the policy pre-flight,
   exactly the check ``validate_only`` runs today (raises
   ``EasyDiffractionTranslationError``), until re/07. No easydiffraction import.
-- **Runtime layer** — ``run``: a thin wrapper over
-  ``powderline.gateways.easydiffraction.engine.run_easydiffraction_recipe`` (behavior unchanged).
+- **Runtime layer** — ``run``: a native recipe runs through
+  :func:`.native_run.run_native`; a 0.26.0 recipe through
+  ``powderline.gateways.easydiffraction.engine.run_easydiffraction_recipe`` (unchanged until re/07).
   On a real run it first reads the installed easydiffraction version: missing ⇒
   ``EngineNotAvailableError``; outside ``ENGINE_VERSION_SPEC`` ⇒
   ``EngineVersionError``.
@@ -69,6 +70,15 @@ def run(recipe, output_dir, *, verbose: bool = False, validate_only: bool = Fals
     ``allow_unsupported_engine_version`` is the test-only bypass of the engine
     version check (A53); the check is skipped for ``validate_only``.
     """
+    if schema.is_native_recipe(recipe):
+        from powderline.gateways.easydiffraction import native_run
+
+        model = schema.validate_recipe(recipe)  # the model validated from the user's recipe (A115)
+        if validate_only:
+            return native_run.run_native_validate(model)
+        check_engine_version(gateway=NAME, engine="easydiffraction", installed=installed_engine_version(),
+                             spec=ENGINE_VERSION_SPEC, allow_unsupported=allow_unsupported_engine_version)
+        return native_run.run_native(model, output_dir)
     if not validate_only:
         check_engine_version(gateway=NAME, engine="easydiffraction",
                              installed=installed_engine_version(), spec=ENGINE_VERSION_SPEC,

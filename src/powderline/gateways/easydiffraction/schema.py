@@ -24,7 +24,9 @@ compute, so the choice is part of the recipe.
 
 easydiffraction rules checked here:
 
-- the space group must be a setting easydiffraction has (EB-42);
+- the space group must be a setting easydiffraction has (EB-42) and one the
+  chosen calculator computes correctly (EB-80: established by computation;
+  CrysFML misreads most non-default settings);
 - a value outside easydiffraction's physical limits is refused by the engine
   even when fixed, so it is an error (cell lengths 0..30 A, angles 0..180 deg,
   occupancy 0..1, Uiso and U11/U22/U33 0..10 A^2, wavelength, scale and
@@ -47,6 +49,7 @@ from pydantic import Field, ValidationError, field_validator, model_serializer, 
 from pydantic_core import InitErrorDetails, PydanticCustomError
 
 from powderline.compat import check_engine_schema_version
+from powderline.gateways.easydiffraction.space_group_support import CRYSFML_SETTINGS, CRYSPY_SETTINGS
 from powderline.gateways.easydiffraction.space_group_table import SPACE_GROUPS
 from powderline.schema_core import (
     UNIT_ANGSTROM,
@@ -146,6 +149,25 @@ def physical_problems(p: Optional[P], limits: tuple, loc: tuple, what: str) -> l
     return [_error("easydiffraction_physical_limit",
                    "{what} {value} is outside easydiffraction's physical limit {span}: the engine refuses it (EB-71)",
                    loc, p.model_dump(), what=what, value=p.value, span=span)]
+
+
+#: Settings each calculator computes correctly, by computation (EB-80; ``scripts/verify_easydiffraction_settings.py``).
+CALCULATOR_SETTINGS = {"cryspy": CRYSPY_SETTINGS, "crysfml": CRYSFML_SETTINGS}
+
+
+def calculator_setting_problem(name: str, calculator: str) -> Optional[str]:
+    """Why ``calculator`` cannot use the setting ``name`` (EB-80), naming one it can; ``None`` when it can."""
+    if name in CALCULATOR_SETTINGS[calculator] or name not in SPACE_GROUPS:
+        return None
+    number = SPACE_GROUPS[name][0]
+    usable = [x for x, entry in SPACE_GROUPS.items() if entry[0] == number and x in CALCULATOR_SETTINGS[calculator]]
+    usable.sort(key=lambda x: not SPACE_GROUPS[x][2])  # easydiffraction's default setting first
+    other = [c for c in CALCULATOR_SETTINGS if c != calculator and name in CALCULATOR_SETTINGS[c]]
+    hint = (f"transform the structure to {usable[0]!r}" if usable else "no setting of this space group is computed "
+            "correctly by it")
+    alt = f", or use the {other[0]} calculator" if other else ""
+    return (f"the {calculator} calculator does not compute the setting {name!r} correctly (easydiffraction "
+            f"misreads it or fails, EB-80): {hint}{alt}")
 
 
 def easydiffraction_space_group(name: str) -> tuple[str, str]:
@@ -457,6 +479,11 @@ class RietveldPayload(CoreModel):
                     value=self.xrd_data.Itth_weights[i], sigma=self.xrd_data.Itth_weights[i] ** -0.5,
                     limit=MAX_WEIGHT))
         calculator = self.refinement_controls.calculator
+        for name, phase in self.phases.items():
+            why = calculator_setting_problem(phase.space_group, calculator)
+            if why is not None:
+                problems.append(_error("easydiffraction_setting", "{why}", ("phases", name, "space_group"),
+                                       phase.space_group, why=why))
         profile = self.instrument.broadening
         if profile.peak_type not in CALCULATOR_PEAK_TYPES[calculator]:
             problems.append(_error(

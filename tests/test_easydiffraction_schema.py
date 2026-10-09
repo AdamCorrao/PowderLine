@@ -457,3 +457,39 @@ def test_window_mask_selects_weighted_points_in_range():
     actual_mask = model.payload.window_mask()
 
     np.testing.assert_array_equal(actual_mask, expected_mask)
+
+
+# --- settings per calculator (EB-80) -------------------------------------------------
+
+
+@pytest.mark.parametrize("setting, calculator, suggestion", [
+    ("F d -3 m:1", "crysfml", "F d -3 m:2"),
+    ("P n n n:1", "crysfml", "P n n n:2"),
+    ("R -3 m:R", "cryspy", "R -3 m:H"),
+    ("P 1 1 2", "cryspy", "P 1 2 1"),
+])
+def test_setting_the_calculator_misreads_rejected(setting, calculator, suggestion):
+    from powderline.gateways.easydiffraction.schema import calculator_setting_problem
+
+    why = calculator_setting_problem(setting, calculator)
+    assert why is not None and "EB-80" in why and repr(suggestion) in why
+
+
+@pytest.mark.parametrize("setting, calculator", [("P m -3 m", "crysfml"), ("P m -3 m", "cryspy"),
+                                                 ("F d -3 m:1", "cryspy"), ("C 1 2/m 1", "crysfml")])
+def test_setting_the_calculator_computes_accepted(setting, calculator):
+    from powderline.gateways.easydiffraction.schema import calculator_setting_problem
+
+    assert calculator_setting_problem(setting, calculator) is None
+
+
+def test_setting_rule_reported_at_the_phase():
+    r = _load_fixture("lab6_cryspy_pv.json")
+    r["payload"]["refinement_controls"]["calculator"] = "crysfml"
+    r["payload"]["phases"]["LaB6"]["space_group"] = "P 1 1 2"
+    cell = r["payload"]["phases"]["LaB6"]["unit_cell"]
+    cell["gamma"] = P(95.0)
+    for label, xyz in (("La", (0.0, 0.0, 0.0)), ("B", (0.2021, 0.31, 0.47))):
+        for k, v in zip("xyz", xyz):
+            r["payload"]["phases"]["LaB6"]["atoms"][label][k] = P(v)
+    _fails(r, ("payload", "phases", "LaB6", "space_group"), "easydiffraction_setting")

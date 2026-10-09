@@ -1,0 +1,738 @@
+"""Native ``easydiffraction.*`` runtime tests (re/06).
+
+Tests the easydiffraction gateway builder, runner, and integration on the native
+schema with easydiffraction 0.21.1. These tests require the easydiffraction
+package and run full fits (slow).
+"""
+
+from __future__ import annotations
+
+import json
+import math
+import sys
+import textwrap
+from pathlib import Path
+from unittest.mock import Mock
+
+import numpy as np
+import pytest
+
+easydiffraction = pytest.importorskip("easydiffraction")
+from importlib.metadata import version
+
+pytestmark = pytest.mark.skipif(
+    version("easydiffraction") != "0.21.1", reason="native path is built for easydiffraction 0.21.1"
+)
+
+from powderline.exceptions import EngineExecutionError
+from powderline.gateways.easydiffraction import gateway, native_builder, native_run, schema
+from powderline.schema_core import parameters_requested
+
+DATA = Path(__file__).resolve().parent / "data"
+
+
+def _load_fixture(name: str) -> dict:
+    """Load a fixture from tests/data/easydiffraction/native/."""
+    with open(DATA / "easydiffraction" / "native" / name, encoding="utf-8") as f:
+        return json.load(f)
+
+
+# ============================================================================
+# Module-scoped fixtures: run each LaB6 fit once, reuse results
+# ============================================================================
+
+
+@pytest.fixture(scope="module")
+def lab6_crysfml_tch_result(tmp_path_factory):
+    """Run lab6_crysfml_tch.json once; return result dict."""
+    recipe = _load_fixture("lab6_crysfml_tch.json")
+    out = tmp_path_factory.mktemp("lab6_crysfml_tch")
+    return gateway.run(recipe, str(out), allow_unsupported_engine_version=True)
+
+
+@pytest.fixture(scope="module")
+def lab6_cryspy_pv_result(tmp_path_factory):
+    """Run lab6_cryspy_pv.json once; return result dict."""
+    recipe = _load_fixture("lab6_cryspy_pv.json")
+    out = tmp_path_factory.mktemp("lab6_cryspy_pv")
+    return gateway.run(recipe, str(out), allow_unsupported_engine_version=True)
+
+
+@pytest.fixture(scope="module")
+def lab6_slots_simulation_result(tmp_path_factory):
+    """Run lab6_slots_simulation.json once; return result dict."""
+    recipe = _load_fixture("lab6_slots_simulation.json")
+    out = tmp_path_factory.mktemp("lab6_slots_simulation")
+    return gateway.run(recipe, str(out), allow_unsupported_engine_version=True)
+
+
+@pytest.fixture(scope="module")
+def lab6_crysfml_tch_build():
+    """Build lab6_crysfml_tch.json once; return Build object."""
+    model = schema.validate_recipe(_load_fixture("lab6_crysfml_tch.json"))
+    return native_builder.build_project(model)
+
+
+@pytest.fixture(scope="module")
+def lab6_cryspy_pv_build():
+    """Build lab6_cryspy_pv.json once; return Build object."""
+    model = schema.validate_recipe(_load_fixture("lab6_cryspy_pv.json"))
+    return native_builder.build_project(model)
+
+
+@pytest.fixture(scope="module")
+def lab6_slots_simulation_build():
+    """Build lab6_slots_simulation.json once; return Build object."""
+    model = schema.validate_recipe(_load_fixture("lab6_slots_simulation.json"))
+    return native_builder.build_project(model)
+
+
+# ============================================================================
+# Builder tests (build_project)
+# ============================================================================
+
+
+@pytest.mark.parametrize(
+    "fixture_name,build_fixture,calculator,peak_type",
+    [
+        ("lab6_crysfml_tch.json", "lab6_crysfml_tch_build", "crysfml", "cwl-thompson-cox-hastings"),
+        ("lab6_cryspy_pv.json", "lab6_cryspy_pv_build", "cryspy", "cwl-pseudo-voigt"),
+        ("lab6_slots_simulation.json", "lab6_slots_simulation_build", "cryspy", "cwl-pseudo-voigt-berar-baldinozzi-asymmetry"),
+    ],
+)
+def test_builder_calculator_and_peak_type(fixture_name, build_fixture, calculator, peak_type, request):
+    """Calculator and peak type are set correctly."""
+    build = request.getfixturevalue(build_fixture)
+    expt = build.experiment
+    assert expt.calculator.type == calculator
+    assert expt.peak.type == peak_type
+
+
+def test_builder_instrument_values_match_recipe(lab6_crysfml_tch_build):
+    """Every instrument value in the recipe equals the easydiffraction value."""
+    recipe = _load_fixture("lab6_crysfml_tch.json")
+    model = schema.validate_recipe(recipe)
+    build = lab6_crysfml_tch_build
+    expt = build.experiment
+    inst = model.payload.instrument
+
+    # Wavelength
+    assert expt.instrument.setup_wavelength.value == inst.radiation.setup_wavelength.value
+
+    # Corrections
+    assert expt.instrument.calib_twotheta_offset.value == inst.corrections.calib_twotheta_offset.value
+
+    # Broadening parameters
+    profile = inst.broadening.parameters
+    assert expt.peak.broad_gauss_u.value == profile.broad_gauss_u.value
+    assert expt.peak.broad_gauss_v.value == profile.broad_gauss_v.value
+    assert expt.peak.broad_gauss_w.value == profile.broad_gauss_w.value
+    assert expt.peak.broad_lorentz_x.value == profile.broad_lorentz_x.value
+    assert expt.peak.broad_lorentz_y.value == profile.broad_lorentz_y.value
+
+    # TCH asymmetry parameters
+    assert expt.peak.asym_fcj_1.value == profile.asym_fcj_1.value
+    assert expt.peak.asym_fcj_2.value == profile.asym_fcj_2.value
+
+
+def test_builder_kα2_doublet(lab6_slots_simulation_build):
+    """Kα2 wavelength and ratio are set when present."""
+    recipe = _load_fixture("lab6_slots_simulation.json")
+    model = schema.validate_recipe(recipe)
+    build = lab6_slots_simulation_build
+    expt = build.experiment
+
+    assert expt.instrument.setup_wavelength_2.value == model.payload.instrument.radiation.setup_wavelength_2
+    assert (
+        expt.instrument.setup_wavelength_2_to_1_ratio.value
+        == model.payload.instrument.radiation.setup_wavelength_2_to_1_ratio
+    )
+
+
+def test_builder_polarization(lab6_slots_simulation_build):
+    """Polarization coefficient and monochromator angle are set."""
+    recipe = _load_fixture("lab6_slots_simulation.json")
+    model = schema.validate_recipe(recipe)
+    build = lab6_slots_simulation_build
+    expt = build.experiment
+
+    assert (
+        expt.instrument.setup_polarization_coefficient.value
+        == model.payload.instrument.polarization.setup_polarization_coefficient
+    )
+    assert (
+        expt.instrument.setup_monochromator_twotheta.value
+        == model.payload.instrument.polarization.setup_monochromator_twotheta
+    )
+
+
+def test_builder_displacement_transparency(lab6_slots_simulation_build):
+    """Displacement and transparency corrections are set."""
+    recipe = _load_fixture("lab6_slots_simulation.json")
+    model = schema.validate_recipe(recipe)
+    build = lab6_slots_simulation_build
+    expt = build.experiment
+
+    assert (
+        expt.instrument.calib_sample_displacement.value
+        == model.payload.instrument.corrections.calib_sample_displacement.value
+    )
+    assert (
+        expt.instrument.calib_sample_transparency.value
+        == model.payload.instrument.corrections.calib_sample_transparency.value
+    )
+
+
+def test_builder_absorption(lab6_slots_simulation_build):
+    """Absorption type and mu_r are set."""
+    recipe = _load_fixture("lab6_slots_simulation.json")
+    model = schema.validate_recipe(recipe)
+    build = lab6_slots_simulation_build
+    expt = build.experiment
+
+    assert expt.absorption.type == model.payload.instrument.absorption.type
+    assert expt.absorption.mu_r.value == model.payload.instrument.absorption.mu_r.value
+
+
+def test_builder_cutoff_fwhm(lab6_slots_simulation_build):
+    """CrysPy cutoff_fwhm is set."""
+    recipe = _load_fixture("lab6_slots_simulation.json")
+    model = schema.validate_recipe(recipe)
+    build = lab6_slots_simulation_build
+    expt = build.experiment
+
+    assert expt.peak.cutoff_fwhm.value == model.payload.instrument.broadening.cutoff_fwhm
+
+
+def test_builder_background_terms(lab6_crysfml_tch_build):
+    """Background terms equal the recipe's."""
+    recipe = _load_fixture("lab6_crysfml_tch.json")
+    model = schema.validate_recipe(recipe)
+    build = lab6_crysfml_tch_build
+    expt = build.experiment
+
+    cheb_recipe = model.payload.background.chebyshev.coefficients
+    cheb_ed = list(expt.background)
+    assert len(cheb_ed) == len(cheb_recipe)
+    for term, coef in zip(cheb_ed, cheb_recipe):
+        assert term.coef.value == coef
+
+
+def test_builder_phase_scale(lab6_crysfml_tch_build):
+    """Linked-structure scale equals the recipe's phase scale."""
+    recipe = _load_fixture("lab6_crysfml_tch.json")
+    model = schema.validate_recipe(recipe)
+    build = lab6_crysfml_tch_build
+
+    for name, phase in model.payload.phases.items():
+        ed_name = native_builder.structure_name(name)
+        assert build.experiment.linked_structures[ed_name].scale.value == phase.scale.value
+
+
+def test_builder_structure_name_lowercased(lab6_crysfml_tch_build):
+    """Structure name is the phase name lowercased."""
+    recipe = _load_fixture("lab6_crysfml_tch.json")
+    model = schema.validate_recipe(recipe)
+    build = lab6_crysfml_tch_build
+
+    for name in model.payload.phases:
+        # build.structures is keyed by original phase name
+        assert name in build.structures
+        # The structure's datablock name is lowercased
+        s = build.structures[name]
+        assert s.name == native_builder.structure_name(name)
+        assert native_builder.structure_name(name) == name.lower()
+
+
+def test_builder_cell_values(lab6_crysfml_tch_build):
+    """Cell values equal the recipe's."""
+    recipe = _load_fixture("lab6_crysfml_tch.json")
+    model = schema.validate_recipe(recipe)
+    build = lab6_crysfml_tch_build
+
+    for name, phase in model.payload.phases.items():
+        s = build.structures[name]
+        assert s.cell.length_a.value == phase.unit_cell.a.value
+        assert s.cell.length_b.value == phase.unit_cell.b.value
+        assert s.cell.length_c.value == phase.unit_cell.c.value
+        assert s.cell.angle_alpha.value == phase.unit_cell.alpha.value
+        assert s.cell.angle_beta.value == phase.unit_cell.beta.value
+        assert s.cell.angle_gamma.value == phase.unit_cell.gamma.value
+
+
+def test_builder_atom_values(lab6_crysfml_tch_build):
+    """Atom positions, occupancy, and Uiso equal the recipe's."""
+    recipe = _load_fixture("lab6_crysfml_tch.json")
+    model = schema.validate_recipe(recipe)
+    build = lab6_crysfml_tch_build
+
+    for name, phase in model.payload.phases.items():
+        s = build.structures[name]
+        for label, atom in phase.atoms.items():
+            site = s.atom_sites[label]
+            assert site.fract_x.value == atom.x.value
+            assert site.fract_y.value == atom.y.value
+            assert site.fract_z.value == atom.z.value
+            assert site.occupancy.value == atom.occupancy.value
+            if atom.ADP == "Uiso":
+                assert site.adp_iso.value == atom.Uiso.value
+
+
+def test_builder_data_arrays_exact(lab6_crysfml_tch_build):
+    """experiment.data.x equals the recipe's tth at window points exactly."""
+    recipe = _load_fixture("lab6_crysfml_tch.json")
+    model = schema.validate_recipe(recipe)
+    build = lab6_crysfml_tch_build
+
+    mask = model.payload.window_mask()
+    tth = np.asarray(model.payload.xrd_data.tth, dtype=float)
+    x_window = tth[mask]
+
+    ed_x = np.asarray(build.experiment.data.x, dtype=float)
+    np.testing.assert_array_equal(ed_x, x_window)
+
+
+def test_builder_data_sigma(lab6_crysfml_tch_build):
+    """sigma = 1/sqrt(weight)."""
+    recipe = _load_fixture("lab6_crysfml_tch.json")
+    model = schema.validate_recipe(recipe)
+    build = lab6_crysfml_tch_build
+
+    mask = model.payload.window_mask()
+    w = np.asarray(model.payload.xrd_data.Itth_weights, dtype=float)
+    sigma_expected = 1.0 / np.sqrt(w[mask])
+
+    ed_sigma = np.asarray(build.experiment.data.intensity_meas_su, dtype=float)
+    np.testing.assert_allclose(ed_sigma, sigma_expected, rtol=1e-15)
+
+
+def test_builder_free_parameters_lab6_crysfml_tch(lab6_crysfml_tch_build):
+    """Free parameters for lab6_crysfml_tch: exactly the expected set."""
+    build = lab6_crysfml_tch_build
+
+    # Expected: broad_gauss_u/v/w, broad_lorentz_x/y, 6 background coefficients, LaB6_scale, LaB6_a
+    expected_names = {
+        "broad_gauss_u",
+        "broad_gauss_v",
+        "broad_gauss_w",
+        "broad_lorentz_x",
+        "broad_lorentz_y",
+        "background_coefficient_0",
+        "background_coefficient_1",
+        "background_coefficient_2",
+        "background_coefficient_3",
+        "background_coefficient_4",
+        "background_coefficient_5",
+        "LaB6_scale",
+        "LaB6_a",
+    }
+
+    actual_names = {fp.name for fp in build.free}
+    assert actual_names == expected_names, f"Expected {expected_names}, got {actual_names}"
+    assert len(build.free) == 13
+
+
+def test_builder_cubic_cell_one_parameter(lab6_crysfml_tch_build):
+    """Cubic cell: one parameter (a), b and c are tied."""
+    build = lab6_crysfml_tch_build
+
+    cell_params = [fp for fp in build.free if fp.category == "unit_cell"]
+    assert len(cell_params) == 1
+    assert cell_params[0].name == "LaB6_a"
+
+
+def test_builder_parameter_limits_physical(lab6_crysfml_tch_build):
+    """Parameters with no stated bounds have physical limits as source."""
+    build = lab6_crysfml_tch_build
+
+    # LaB6_a has no stated bounds in the fixture, so it should have physical limits
+    a_param = next(fp for fp in build.free if fp.name == "LaB6_a")
+    assert a_param.limits == (0.0, 30.0)
+    assert a_param.limit_source == ("physical", "physical")
+
+
+def test_builder_parameter_limits_stated():
+    """A stated bound becomes fit_min/fit_max and is marked 'stated'."""
+    recipe = _load_fixture("lab6_cryspy_pv.json")
+    # Set a's min/max to 4.1/4.2
+    for axis in ("a", "b", "c"):
+        recipe["payload"]["phases"]["LaB6"]["unit_cell"][axis] = [4.15682, True, 4.1, 4.2]
+    model = schema.validate_recipe(recipe)
+    build = native_builder.build_project(model)
+
+    a_param = next(fp for fp in build.free if fp.name == "LaB6_a")
+    assert a_param.limits == (4.1, 4.2)
+    assert a_param.limit_source == ("stated", "stated")
+
+    # Check easydiffraction's fit_min/fit_max
+    s = build.structures["LaB6"]
+    assert s.cell.length_a.fit_min == 4.1
+    assert s.cell.length_a.fit_max == 4.2
+
+
+def test_builder_scale_limits(lab6_crysfml_tch_build):
+    """Scale has physical lower limit 0.0, no upper limit."""
+    build = lab6_crysfml_tch_build
+
+    scale_param = next(fp for fp in build.free if fp.name == "LaB6_scale")
+    assert scale_param.limits == (0.0, None)
+    assert scale_param.limit_source == ("physical", None)
+
+
+def test_builder_fixed_parameters_not_free(lab6_crysfml_tch_build):
+    """Fixed parameters are not in the free list."""
+    build = lab6_crysfml_tch_build
+
+    # asym_fcj_1/2, wavelength, Uiso should not be free in this fixture
+    free_names = {fp.name for fp in build.free}
+    assert "asym_fcj_1" not in free_names
+    assert "asym_fcj_2" not in free_names
+    assert "setup_wavelength" not in free_names
+    assert "LaB6_La_Uiso" not in free_names
+
+
+def test_builder_eb77_cryspy_pv_wrong_orientation_raises():
+    """EB-77: CrysPy with B at (0.5, 0.5, 0.2021) raises with EB-77 in the message."""
+    recipe = _load_fixture("lab6_cryspy_pv.json")
+    # Change B's position to the wrong orientation
+    recipe["payload"]["phases"]["LaB6"]["atoms"]["B"]["x"] = [0.5, False, None, None]
+    recipe["payload"]["phases"]["LaB6"]["atoms"]["B"]["y"] = [0.5, False, None, None]
+    recipe["payload"]["phases"]["LaB6"]["atoms"]["B"]["z"] = [0.2021, False, None, None]
+
+    model = schema.validate_recipe(recipe)
+    with pytest.raises(EngineExecutionError) as exc:
+        native_builder.build_project(model)
+
+    assert "EB-77" in str(exc.value)
+    assert "0.2021, 0.5, 0.5" in str(exc.value) or "(0.2021, 0.5, 0.5)" in str(exc.value)
+
+
+def test_builder_eb77_crysfml_accepts_both_orientations():
+    """EB-77: CrysFML accepts either orientation."""
+    recipe = _load_fixture("lab6_crysfml_tch.json")
+    # Try both orientations
+    for x, y, z in [(0.2021, 0.5, 0.5), (0.5, 0.5, 0.2021)]:
+        r = json.loads(json.dumps(recipe))
+        r["payload"]["phases"]["LaB6"]["atoms"]["B"]["x"] = [x, False, None, None]
+        r["payload"]["phases"]["LaB6"]["atoms"]["B"]["y"] = [y, False, None, None]
+        r["payload"]["phases"]["LaB6"]["atoms"]["B"]["z"] = [z, False, None, None]
+        model = schema.validate_recipe(r)
+        build = native_builder.build_project(model)  # Should not raise
+        assert build is not None
+
+
+def test_matches_template_unit_cases():
+    """Unit tests for _matches_template."""
+    from powderline.gateways.easydiffraction.native_builder import _matches_template
+
+    # Positive cases
+    assert _matches_template("(x,1/2,1/2)", (0.2, 0.5, 0.5))
+    assert _matches_template("(x,x,x)", (0.1, 0.1, 0.1))
+    assert _matches_template("(2x,x,z)", (0.2, 0.1, 0.3))
+    assert _matches_template("(x,-x,z)", (0.1, 0.9, 0.3))
+
+    # Negative cases
+    assert not _matches_template("(x,1/2,1/2)", (0.5, 0.5, 0.2))
+    assert not _matches_template("(2x,x,z)", (0.1, 0.2, 0.3))
+
+
+# ============================================================================
+# Run tests (gateway.run)
+# ============================================================================
+
+
+def test_run_lab6_crysfml_tch_success(lab6_crysfml_tch_result):
+    """CrysFML TCH fit succeeds."""
+    result = lab6_crysfml_tch_result
+    assert result["success"]
+    assert result["simulation_mode"] is False
+
+
+def test_run_lab6_cryspy_pv_success(lab6_cryspy_pv_result):
+    """CrysPy PV fit succeeds."""
+    result = lab6_cryspy_pv_result
+    assert result["success"]
+    assert result["simulation_mode"] is False
+
+
+def test_run_rwp_matches_engine_details(lab6_crysfml_tch_result, lab6_cryspy_pv_result):
+    """rwp equals engine_details['rwp'] within 1e-9 relative."""
+    for result in [lab6_crysfml_tch_result, lab6_cryspy_pv_result]:
+        rwp = result["rwp"]
+        ed_rwp = result["engine_details"]["rwp"]
+        assert rwp is not None
+        assert ed_rwp is not None
+        assert abs(rwp - ed_rwp) / abs(ed_rwp) < 1e-9
+
+
+def test_run_parameters_varied_matches_requested(lab6_crysfml_tch_result, lab6_cryspy_pv_result):
+    """parameters_varied == parameters_requested == 13."""
+    for result in [lab6_crysfml_tch_result, lab6_cryspy_pv_result]:
+        assert result["engine_details"]["parameters_varied"] == 13
+        assert result["engine_details"]["parameters_requested"] == 13
+
+
+def test_run_simulation_mode(lab6_slots_simulation_result):
+    """Simulation: simulation_mode True, method easydiffraction_simulation, rwp present (from stats), ed rwp None."""
+    result = lab6_slots_simulation_result
+    assert result["simulation_mode"] is True
+    assert result["method"] == "easydiffraction_simulation"
+    assert result["engine_details"]["rwp"] is None
+    assert result["rwp"] is not None  # From core stats
+
+
+def test_run_simulation_parameters_varied_zero(lab6_slots_simulation_result):
+    """Simulation: parameters_varied 0."""
+    result = lab6_slots_simulation_result
+    assert result["engine_details"]["parameters_varied"] == 0
+
+
+def test_run_simulation_statistics_present(lab6_slots_simulation_result):
+    """Simulation: statistics present (rwp not None)."""
+    result = lab6_slots_simulation_result
+    assert result["rwp"] is not None
+    assert result["r_exp"] is not None
+    assert result["gof"] is not None
+
+
+def test_run_output_files_include_expected(lab6_crysfml_tch_result, lab6_cryspy_pv_result):
+    """Output files include refined_parameters.csv, fit_profile.txt, LaB6_unit_cell_report.csv."""
+    expected_files = {"refined_parameters.csv", "fit_profile.txt", "LaB6_unit_cell_report.csv"}
+    for result in [lab6_crysfml_tch_result, lab6_cryspy_pv_result]:
+        output_files = {Path(f).name for f in result["output_files"]}
+        assert expected_files.issubset(output_files)
+
+
+def test_run_cryspy_has_peak_list(lab6_cryspy_pv_result):
+    """CrysPy run has LaB6_peak_list_report.csv and peak_list_data non-empty."""
+    result = lab6_cryspy_pv_result
+    output_files = {Path(f).name for f in result["output_files"]}
+    assert "LaB6_peak_list_report.csv" in output_files
+    assert "LaB6" in result["peak_list_data"]
+    assert len(result["peak_list_data"]["LaB6"]) > 0
+
+
+def test_run_crysfml_no_peak_list(lab6_crysfml_tch_result):
+    """CrysFML run has warning easydiffraction_reflections_not_available and no peak list file."""
+    result = lab6_crysfml_tch_result
+    output_files = {Path(f).name for f in result["output_files"]}
+    assert "LaB6_peak_list_report.csv" not in output_files
+
+    warnings = [w for w in result["warnings"] if w["code"] == "easydiffraction_reflections_not_available"]
+    assert len(warnings) == 1
+
+
+def test_run_fit_profile_columns(lab6_crysfml_tch_result):
+    """fit_profile has expected columns and y_diff == y_obs - y_calc."""
+    result = lab6_crysfml_tch_result
+    profile = result["fit_profile"]
+
+    expected_cols = {"two_theta", "y_obs", "y_weights", "y_calc", "y_diff", "y_bkg", "q_values", "d_spacings"}
+    assert set(profile.columns) == expected_cols
+
+    # y_diff == y_obs - y_calc
+    np.testing.assert_allclose(profile["y_diff"], profile["y_obs"] - profile["y_calc"], rtol=1e-12)
+
+
+def test_run_fit_profile_y_bkg_finite(lab6_crysfml_tch_result):
+    """y_bkg is finite."""
+    result = lab6_crysfml_tch_result
+    profile = result["fit_profile"]
+    assert np.isfinite(profile["y_bkg"]).all()
+
+
+def test_run_fit_profile_row_count_matches_window(lab6_crysfml_tch_result):
+    """Number of rows == window points."""
+    recipe = _load_fixture("lab6_crysfml_tch.json")
+    model = schema.validate_recipe(recipe)
+    mask = model.payload.window_mask()
+    n_window = np.sum(mask)
+
+    result = lab6_crysfml_tch_result
+    assert len(result["fit_profile"]) == n_window
+
+
+def test_run_unit_cell_report_cubic_ties(lab6_crysfml_tch_result):
+    """b and c equal a with a's esd; alpha..gamma 90 with esd 0.0."""
+    result = lab6_crysfml_tch_result
+    uc = result["unit_cell_data"]["LaB6"]
+
+    a_row = uc[uc["parameter"] == "a"].iloc[0]
+    b_row = uc[uc["parameter"] == "b"].iloc[0]
+    c_row = uc[uc["parameter"] == "c"].iloc[0]
+
+    assert b_row["value"] == a_row["value"]
+    assert c_row["value"] == a_row["value"]
+    assert b_row["esd"] == a_row["esd"]
+    assert c_row["esd"] == a_row["esd"]
+
+    for param in ["alpha", "beta", "gamma"]:
+        row = uc[uc["parameter"] == param].iloc[0]
+        assert row["value"] == 90.0
+        assert row["esd"] == 0.0
+
+
+def test_run_unit_cell_volume(lab6_crysfml_tch_result):
+    """Volume == a**3 (rel 1e-12)."""
+    result = lab6_crysfml_tch_result
+    uc = result["unit_cell_data"]["LaB6"]
+
+    a = uc[uc["parameter"] == "a"].iloc[0]["value"]
+    vol = uc[uc["parameter"] == "volume"].iloc[0]["value"]
+
+    assert abs(vol - a**3) / a**3 < 1e-12
+
+
+def test_run_simulation_phase_scale_zero_warning(tmp_path):
+    """A phase with scale 0 in simulation → warning easydiffraction_phase_contributes_nothing."""
+    recipe = _load_fixture("lab6_slots_simulation.json")
+    recipe["payload"]["phases"]["LaB6"]["scale"] = [0.0, False, None, None]
+
+    result = gateway.run(recipe, str(tmp_path), allow_unsupported_engine_version=True)
+    warnings = [w for w in result["warnings"] if w["code"] == "easydiffraction_phase_contributes_nothing"]
+    assert len(warnings) == 1
+    assert warnings[0]["field_path"] == "payload.phases.LaB6"
+
+
+def test_run_parameter_at_limit_warning(tmp_path):
+    """Tight stated bound that the fit hits → warning easydiffraction_parameter_at_limit."""
+    recipe = _load_fixture("lab6_cryspy_pv.json")
+    # Set a max just above the starting value; the fit will hit it
+    for axis in ("a", "b", "c"):
+        recipe["payload"]["phases"]["LaB6"]["unit_cell"][axis] = [4.15682, True, None, 4.157]
+
+    result = gateway.run(recipe, str(tmp_path), allow_unsupported_engine_version=True)
+    warnings = [w for w in result["warnings"] if w["code"] == "easydiffraction_parameter_at_limit"]
+    assert len(warnings) >= 1
+    assert any("payload.phases.LaB6.unit_cell.a" in w["field_path"] for w in warnings)
+
+
+def test_run_max_iterations_3_fit_not_converged(tmp_path):
+    """max_iterations = 3 (lmfit max_nfev) stops lmfit unconverged: a success with the not-converged warning."""
+    recipe = _load_fixture("lab6_crysfml_tch.json")
+    recipe["payload"]["refinement_controls"]["max_iterations"] = 3
+    result = gateway.run(recipe, str(tmp_path), allow_unsupported_engine_version=True)
+    assert result["success"] is True
+    assert result["engine_details"]["fit_success"] is False
+    warnings = [w for w in result["warnings"] if w["code"] == "easydiffraction_fit_not_converged"]
+    assert len(warnings) == 1 and warnings[0]["field_path"] == "payload.refinement_controls"
+
+
+def test_run_divergence_nan_in_calc(tmp_path, monkeypatch):
+    """A non-finite calculated point is the divergence error (A130, A154)."""
+    model = schema.validate_recipe(_load_fixture("lab6_cryspy_pv.json"))
+    build = native_builder.build_project(model)
+    build.project.analysis.calculate()
+    data_class = type(build.experiment.data)  # the instance is guarded; patch its class
+    original = data_class.fit_data_arrays
+
+    def with_nan(self):
+        arrays = {k: np.array(v, dtype=float) for k, v in original(self).items()}
+        arrays["calc"][10] = np.nan
+        return arrays
+
+    monkeypatch.setattr(data_class, "fit_data_arrays", with_nan)
+    with pytest.raises(EngineExecutionError, match="diverged"):
+        native_run.build_result(model, build, tmp_path, [], elapsed=0.0, fit_info={})
+
+
+def test_run_validate_only(tmp_path):
+    """validate_only returns method 'validate_only' without importing easydiffraction's runtime."""
+    recipe = _load_fixture("lab6_crysfml_tch.json")
+    result = gateway.run(recipe, str(tmp_path), validate_only=True, allow_unsupported_engine_version=True)
+
+    assert result["method"] == "validate_only"
+    assert result["success"] is True
+    assert result["rwp"] is None
+    assert "schema_name" in result
+    assert "engine_schema_version" in result
+
+
+def test_zero_gsasii_imports_subprocess():
+    """A subprocess that blocks GSASII imports can import native_run and schema."""
+    import textwrap
+
+    script = textwrap.dedent(
+        """
+        import sys, importlib.abc
+
+        class _Block(importlib.abc.MetaPathFinder):
+            def find_spec(self, name, path, target=None):
+                if name == "GSASII" or name.startswith("GSASII."):
+                    raise ImportError("GSASII blocked for easydiffraction native test")
+                return None
+
+        sys.meta_path.insert(0, _Block())
+        import powderline.gateways.easydiffraction.native_run
+        import powderline.gateways.easydiffraction.schema
+        assert "GSASII" not in sys.modules, "easydiffraction native path pulled GSAS-II into sys.modules"
+        print("OK")
+        """
+    )
+
+    import subprocess
+
+    proc = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True)
+    assert proc.returncode == 0, f"stdout={proc.stdout!r} stderr={proc.stderr!r}"
+    assert "OK" in proc.stdout
+
+
+# ============================================================================
+# Goldens (A157 B8): regenerated only on a deliberate engine change
+# (devkit probes/re06/make_goldens.py)
+# ============================================================================
+
+_GOLDEN_CASES = [("lab6_crysfml_tch.json", "lab6_crysfml_tch_build", "lab6_crysfml_tch_result"),
+                 ("lab6_cryspy_pv.json", "lab6_cryspy_pv_build", "lab6_cryspy_pv_result"),
+                 ("lab6_slots_simulation.json", "lab6_slots_simulation_build", "lab6_slots_simulation_result")]
+
+
+def _golden(name: str) -> dict:
+    with open(DATA / "easydiffraction" / "native" / "golden" / name, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _finite_or_none(v):
+    return None if v is None or (isinstance(v, float) and not math.isfinite(v)) else v
+
+
+@pytest.mark.parametrize("name,build_fixture,_result", _GOLDEN_CASES)
+def test_built_project_matches_golden(name, build_fixture, _result, request):
+    """The built project's parameters (value, free, fit_min, fit_max) equal the golden exactly."""
+    build = request.getfixturevalue(build_fixture)
+    built = {}
+    for p in build.project.parameters:
+        value = getattr(p, "value", None)
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            continue
+        built[p.unique_name] = {"value": _finite_or_none(value), "free": bool(getattr(p, "free", False)),
+                                "fit_min": _finite_or_none(getattr(p, "fit_min", None)),
+                                "fit_max": _finite_or_none(getattr(p, "fit_max", None))}
+    assert built == _golden(name)["built_parameters"]
+
+
+@pytest.mark.parametrize("name,_build,result_fixture", _GOLDEN_CASES)
+def test_run_matches_golden(name, _build, result_fixture, request):
+    """Statistics, refined values (rel 1e-6) and ESDs (rel 1e-3), unit cell and warning codes match the golden."""
+    res = request.getfixturevalue(result_fixture)
+    gold = _golden(name)["run"]
+    for key in ("rwp", "r_exp", "gof", "chi2_red"):
+        assert res[key] == pytest.approx(gold[key], rel=1e-6)
+    assert res["simulation_mode"] == gold["simulation_mode"]
+    details = res["engine_details"]
+    for key in ("calculator", "peak_type", "parameters_requested", "parameters_varied", "n_points"):
+        assert details[key] == gold["engine_details"][key]
+    rp = res["refined_parameters"]
+    refined = {n: (v, _finite_or_none(e)) for n, v, e in zip(rp.parameter_name, rp.value, rp.esd)}
+    assert refined.keys() == gold["refined"].keys()
+    for n, (value, esd) in gold["refined"].items():
+        assert refined[n][0] == pytest.approx(value, rel=1e-6, abs=1e-12)
+        assert (refined[n][1] is None) == (esd is None)
+        if esd is not None:
+            assert refined[n][1] == pytest.approx(esd, rel=1e-3)
+    for phase, rows in gold["unit_cell"].items():
+        got = res["unit_cell_data"][phase].to_dict("records")
+        for g, r in zip(rows, got):
+            assert r["parameter"] == g["parameter"]
+            assert r["value"] == pytest.approx(g["value"], rel=1e-9)
+    assert sorted(w["code"] for w in res["warnings"]) == gold["warnings"]
