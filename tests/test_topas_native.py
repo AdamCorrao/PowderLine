@@ -289,13 +289,22 @@ def test_writer_render_xye_drops_zero_weight():
 # ============================================================================
 
 
-def _fake_topas_runner(results_csv_content, profile_content, peaks_content=None):
-    """Return a fake runner that writes the specified output files."""
+def _fake_topas_runner(results_csv_content, profile_content, peaks_content=None, bkg_profile_content=None):
+    """Return a fake runner that writes the specified output files.
+
+    The background run (``<base>_bkg.inp``, A152) writes only its profile:
+    ``bkg_profile_content``, else the main profile.
+    """
     def runner(cmd, cwd, capture_output=True):
         # cmd is [tc, inp_path]
         inp_path = Path(cmd[1])
         base = inp_path.stem
         out_dir = inp_path.parent
+        if base.endswith("_bkg"):
+            (out_dir / f"{base}_profile.txt").write_text(
+                bkg_profile_content if bkg_profile_content is not None else profile_content,
+                encoding="utf-8", newline="\n")
+            return MagicMock(returncode=0)
 
         # Write the files TOPAS would write
         (out_dir / f"{base}_results.csv").write_text(results_csv_content, encoding="utf-8", newline="\n")
@@ -654,68 +663,56 @@ def test_runner_phase_contributes_nothing_warning(tmp_path, monkeypatch):
     assert "LaB6" in contrib_warnings[0]["message"]
 
 
-def test_runner_background_column_chebyshev(tmp_path, monkeypatch):
-    """Background column: Chebyshev coefficients over profile X range."""
-    recipe = _rietveld()
-    # Remove One_on_X and peaks, keep only Chebyshev
-    recipe["payload"]["background"] = {
-        "chebyshev": {"num_coefficients": 3, "coefficients": [10, 5, 1], "refine_flag": True}
-    }
-    model = schema.validate_recipe(recipe)
-
-    refined_params = {
-        "p1_cell_a": (4.1580, 0.0002),
-        "bkg_bkg0__": (10.5, 0.1),
-        "bkg_bkg1__": (5.2, 0.1),
-        "bkg_bkg2__": (1.1, 0.1),
-        "p1_volume": (71.85, 0.01)
-    }
-    results_csv = _make_results_csv(refined_params, {"r_wp": 8.5, "r_exp": 5.2, "gof": 1.6, "number_independent_parameters": 4})
-
-    tth = model.payload.xrd_data.tth
+def _bkg_case(tmp_path, monkeypatch, recipe=None, bkg_profile=None, write_bkg=True):
+    model = schema.validate_recipe(recipe or _rietveld())
+    refined = {"p1_cell_a": (4.1580, 0.0002), "bkg_bkg0__": (10.5, 0.1), "p1_volume": (71.85, 0.01)}
+    results_csv = _make_results_csv(refined, {"r_wp": 8.5, "r_exp": 5.2, "gof": 1.6,
+                                              "number_independent_parameters": 2})
     lo, hi = model.payload.window()
-    profile_tth = [t for t in tth if lo <= t <= hi]
-    profile = _make_profile(profile_tth, [100.0] * len(profile_tth), [100.0] * len(profile_tth))
-    peaks = _make_peak_list()
+    xs = [t for t in model.payload.xrd_data.tth if lo <= t <= hi]
+    profile = _make_profile(xs, [100.0] * len(xs), [100.0] * len(xs))
+    calls = []
+    inner = _fake_topas_runner(results_csv, profile, {"LaB6": _make_peak_list()},
+                               bkg_profile_content=bkg_profile or _make_profile(xs, [100.0] * len(xs),
+                                                                                [40.0 + i for i in range(len(xs))]))
 
-    runner = _fake_topas_runner(results_csv, profile, {"LaB6": peaks})
+    def runner(cmd, cwd, capture_output=True):
+        calls.append(Path(cmd[1]).name)
+        if Path(cmd[1]).stem.endswith("_bkg") and not write_bkg:
+            return MagicMock(returncode=0)
+        return inner(cmd, cwd, capture_output)
 
-    fake_tc = tmp_path / "TOPAS6" / "tc.exe"
-    monkeypatch.setattr("powderline.gateways.topas.native_run.discover_tc_exe", lambda *a, **kw: fake_tc)
-
-    result = native_run.run_native(model, tmp_path, runner=runner)
-
-    # Compute expected background
-    x_arr = np.array(profile_tth)
-    t = (2 * x_arr - (x_arr[0] + x_arr[-1])) / (x_arr[-1] - x_arr[0])
-    expected_bkg = np.polynomial.chebyshev.chebval(t, [10.5, 5.2, 1.1])
-
-    profile_df = result["fit_profile"]
-    actual_bkg = profile_df["y_bkg"].values
-    np.testing.assert_allclose(actual_bkg, expected_bkg, rtol=1e-5)
+    monkeypatch.setattr("powderline.gateways.topas.native_run.discover_tc_exe",
+                        lambda *a, **kw: tmp_path / "TOPAS6" / "tc.exe")
+    return native_run.run_native(model, tmp_path, base_name="run", runner=runner), calls, xs
 
 
-def test_runner_peak_shape_integration(tmp_path):
-    """_peak_shape: each kind integrates to 1 numerically and split shapes are continuous at 0."""
-    # Test pv (Lorentzian has long tails, so use wide range)
-    prm_pv = {"pv_fwhm": 1.0, "pv_lor": 0.5}
-    dx = np.linspace(-100, 100, 50000)
-    shape_pv = native_run._peak_shape("pv", prm_pv, dx)
-    assert abs(np.trapezoid(shape_pv, dx) - 1.0) < 1e-2  # 1% tolerance due to finite range
+def test_runner_background_column_from_the_background_run(tmp_path, monkeypatch):
+    """A152: a second TOPAS run (background alone, refined values fixed) gives y_bkg."""
+    result, calls, xs = _bkg_case(tmp_path, monkeypatch)
+    assert calls == ["run.inp", "run_bkg.inp"]
+    bkg_inp = (tmp_path / "run_bkg.inp").read_text()
+    assert "iters 0" in bkg_inp and "   bkg !bkg 10.5 " in bkg_inp and "str" not in bkg_inp.split()
+    assert result["fit_profile"]["y_bkg"].tolist() == [40.0 + i for i in range(len(xs))]
+    assert not [w for w in result["warnings"] if w["code"] == "topas_background_not_calculated"]
 
-    # Test spv (continuity at 0)
-    prm_spv = {"spv_h1": 0.5, "spv_h2": 0.6, "spv_l1": 0.4, "spv_l2": 0.5}
-    shape_spv = native_run._peak_shape("spv", prm_spv, dx)
-    assert abs(np.trapezoid(shape_spv, dx) - 1.0) < 1e-2
-    # Continuity: value at dx=0 from left and right should match
-    idx_zero = np.argmin(np.abs(dx))
-    assert abs(shape_spv[idx_zero - 1] - shape_spv[idx_zero + 1]) / shape_spv[idx_zero] < 0.01
 
-    # Test spvii
-    prm_spvii = {"h1": 0.5, "h2": 0.6, "m1": 2.0, "m2": 2.5}
-    shape_spvii = native_run._peak_shape("spvii", prm_spvii, dx)
-    assert abs(np.trapezoid(shape_spvii, dx) - 1.0) < 1e-2
-    assert abs(shape_spvii[idx_zero - 1] - shape_spvii[idx_zero + 1]) / shape_spvii[idx_zero] < 0.01
+def test_runner_background_run_missing_leaves_the_column_empty(tmp_path, monkeypatch):
+    """No background profile (or a stale one from an earlier run): y_bkg empty + a warning; the fit stands."""
+    (tmp_path / "run_bkg_profile.txt").write_text("1 2 3\n", encoding="utf-8")  # stale: removed before the run
+    result, calls, _ = _bkg_case(tmp_path, monkeypatch, write_bkg=False)
+    assert result["success"] is True and calls == ["run.inp", "run_bkg.inp"]
+    assert result["fit_profile"]["y_bkg"].isna().all()
+    hits = [w for w in result["warnings"] if w["code"] == "topas_background_not_calculated"]
+    assert [w["field_path"] for w in hits] == ["payload.background"]
+
+
+def test_runner_no_background_modelled_is_zero_and_no_second_run(tmp_path, monkeypatch):
+    recipe = _rietveld()
+    recipe["payload"].pop("background")
+    result, calls, _ = _bkg_case(tmp_path, monkeypatch, recipe=recipe)
+    assert calls == ["run.inp"]
+    assert (result["fit_profile"]["y_bkg"] == 0).all()
 
 
 def test_runner_no_tc_exe_generate_only(tmp_path, monkeypatch):

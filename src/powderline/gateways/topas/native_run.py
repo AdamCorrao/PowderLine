@@ -10,8 +10,10 @@ TOPAS 6 facts this module is built on (devkit ``re05-topas6-compat.md``):
   judged from **fresh expected output files** (written during this run);
 - TOPAS's messages go to the console window only (C14), so everything
   reported comes from those files;
-- ``Get(bkg)`` is 0 (C17): the background column is computed here from the
-  refined terms (C18 basis; background peaks per A147 Q-B3);
+- ``Get(bkg)`` is 0 (C17) and ``phase_out_X`` is TOPAS 7 only (C34): the
+  background column comes from a second TOPAS run, the background alone at
+  the refined values (``render_background``, A152), so it carries every
+  convolution TOPAS applies (and TOPAS's last-point behaviour, C33);
 - ``_LIMIT_`` markers are unreliable (C21): limit hits are checked here
   against the fixed limits the writer recorded (A147 Q-L4);
 - a non-finite term silently zeroes a phase (C23): a phase whose calculated
@@ -34,7 +36,14 @@ import pandas as pd
 from powderline import reports
 from powderline.exceptions import EngineExecutionError, StructuredWarning
 from powderline.fitstats import compute_fit_statistics
-from powderline.gateways.topas.native_writer import CHEBYSHEV_NAME, NativeInput, render_native
+from powderline.gateways.topas.native_writer import (
+    PROFILE_SUFFIX,
+    NativeInput,
+    background_base,
+    has_background,
+    render_background,
+    render_native,
+)
 from powderline.gateways.topas.roundtrip import PEAK_LIST_COLUMNS, parse_peak_list, parse_results_csv
 from powderline.gateways.topas.runner import discover_tc_exe
 from powderline.gateways.topas.schema import TopasRietveldRecipe
@@ -108,7 +117,28 @@ def run_native(model, output_dir, *, base_name: str | None = None, topas_dir=Non
             f"TOPAS stopped without writing its results ({', '.join(missing)} missing or not updated in {out}). "
             "TOPAS reports the reason only in its console window; run the INP in a terminal to see it. The "
             f"expanded input is in {tc.parent / 'tc.log'}.")
+    _run_background(model, native, out, tc, runner)
     return build_result(model, native, out, validated_warnings, elapsed=time.time() - started)
+
+
+def _run_background(model, native: NativeInput, out: Path, tc: Path, runner) -> None:
+    """The background run (A152): the background alone at the refined values; its profile is ``y_bkg``.
+
+    A stale background profile is removed first, so ``build_result`` reads only
+    this run's. Skipped when nothing models a background or the fit diverged
+    (``build_result`` then reports the divergence).
+    """
+    base = native.profile_file[: -len(PROFILE_SUFFIX)]
+    bkg_base = background_base(base)
+    (out / f"{bkg_base}{PROFILE_SUFFIX}").unlink(missing_ok=True)
+    if not has_background(model):
+        return
+    _, values = parse_results_csv((out / native.results_file).read_text(encoding="utf-8"))
+    if any(v is None for v, _ in values.values()):
+        return
+    bkg = render_background(model, base, {name: v for name, (v, _) in values.items()})
+    (out / f"{bkg_base}.inp").write_text(bkg.inp_text, encoding="utf-8", newline="\n")
+    run_tc(tc, out / f"{bkg_base}.inp", runner=runner)
 
 
 # --- reading TOPAS's files --------------------------------------------------------------
@@ -188,7 +218,9 @@ def build_result(model, native: NativeInput, out: Path, validated_warnings: list
     spf_rows, spf_diag = _spf_rows(model, native, values) if not isinstance(model, TopasRietveldRecipe) else ([], [])
 
     wavelength = _final(native, values, "lam_lo", p.instrument.radiation.lo.value)
-    bkg = _background(model, native, values, profile[:, 0])
+    bkg, bkg_warning = _background_column(model, native, out, profile[:, 0])
+    if bkg_warning is not None:
+        warnings.append(bkg_warning)
     profile_rows = []
     for i, x, yo, yc, yb in zip(_nearest(tth, profile[:, 0]), profile[:, 0], profile[:, 1], profile[:, 2], bkg):
         weight = w[i]
@@ -361,66 +393,32 @@ def _spf_rows(model, native: NativeInput, values: dict) -> tuple[list[dict], lis
     return rows, diag
 
 
-# --- background column (A147 Q-B3; C17, C18) ------------------------------------------------
+# --- background column (A152; C17, C34) ---------------------------------------------------
 
 
-def _background(model, native: NativeInput, values: dict, x: np.ndarray) -> np.ndarray:
-    """Chebyshev (T_n over the calculated window, C18) + One_on_X + background peaks at the run's values.
+def _background_column(model, native: NativeInput, out: Path, x: np.ndarray):
+    """``y_bkg`` at the profile's X: the background run's Ycalc (A152); 0 when no background is modelled.
 
-    Background peaks are unit-area pv / split-pv / split-PVII shapes times ``I``
-    at ``xo`` + zero error; the xdd-level axial and capillary convolutions are
-    not applied to this column (the fit itself has them).
+    Returns ``(column, warning)``; without the background run's profile the
+    column is empty (NaN) and the warning says so.
     """
-    bg = model.payload.background
-    y = np.zeros_like(x)
-    if bg is None or len(x) == 0:
-        return y
-    if bg.chebyshev is not None:
-        coeffs = [_final(native, values, f"{CHEBYSHEV_NAME}_bkg{n}__", c) for n, c in enumerate(bg.chebyshev.coefficients)]
-        t = (2 * x - (x[0] + x[-1])) / (x[-1] - x[0]) if x[-1] != x[0] else np.zeros_like(x)
-        y += np.polynomial.chebyshev.chebval(t, coeffs)
-    if bg.One_on_X is not None:
-        y += _final(native, values, "oox", bg.One_on_X.value) / x
-    corr = model.payload.instrument.corrections
-    zero = 0.0
-    if corr is not None and corr.Zero_Error is not None:
-        zero = _final(native, values, "ze_th2_offset", corr.Zero_Error.th2_offset.value)
-    for i, pk in enumerate(bg.peaks or [], start=1):
-        v = lambda n, rec: _final(native, values, f"bkpk{i}_{n}", rec.value)  # noqa: E731
-        pos = v("xo", pk.xo) + zero
-        area = v("I", pk.I)
-        prm = {n: v(n, rec) for n, rec in pk.parameters.items()}
-        y += area * _peak_shape(pk.peak_type, prm, x - pos)
-    return y
-
-
-def _pv(dx, fwhm, eta):
-    g = (2 / fwhm) * math.sqrt(math.log(2) / math.pi) * np.exp(-4 * math.log(2) * dx ** 2 / fwhm ** 2)
-    lor = (2 / (math.pi * fwhm)) / (1 + 4 * dx ** 2 / fwhm ** 2)
-    return eta * lor + (1 - eta) * g
-
-
-def _pvii_unit_height(dx, fwhm, m):
-    return (1 + 4 * (2 ** (1 / m) - 1) * dx ** 2 / fwhm ** 2) ** (-m)
-
-
-def _pvii_half_area(fwhm, m):
-    """Area of one half of a unit-height Pearson VII."""
-    return 0.5 * fwhm * math.sqrt(math.pi) * math.gamma(m - 0.5) / (2 * math.sqrt(2 ** (1 / m) - 1) * math.gamma(m))
-
-
-def _peak_shape(kind: str, prm: dict, dx: np.ndarray) -> np.ndarray:
-    """Unit-area peak (TR p. 39, Tables 6.1/6.2): split halves meet at the peak (one height)."""
-    if kind == "pv":
-        return _pv(dx, prm["pv_fwhm"], prm["pv_lor"])
-    if kind == "spv":
-        f1, f2 = 2 * prm["spv_h1"], 2 * prm["spv_h2"]
-        h1, h2 = _pv(0.0, f1, prm["spv_l1"]), _pv(0.0, f2, prm["spv_l2"])
-        shape = np.where(dx < 0, _pv(dx, f1, prm["spv_l1"]) / h1, _pv(dx, f2, prm["spv_l2"]) / h2)
-        return shape / (0.5 / h1 + 0.5 / h2)
-    f1, f2 = 2 * prm["h1"], 2 * prm["h2"]
-    shape = np.where(dx < 0, _pvii_unit_height(dx, f1, prm["m1"]), _pvii_unit_height(dx, f2, prm["m2"]))
-    return shape / (_pvii_half_area(f1, prm["m1"]) + _pvii_half_area(f2, prm["m2"]))
+    if not has_background(model):
+        return np.zeros_like(x), None
+    path = out / f"{background_base(native.profile_file[: -len(PROFILE_SUFFIX)])}{PROFILE_SUFFIX}"
+    column = np.full_like(x, np.nan)
+    if path.is_file():
+        bkg = _read_profile(path)
+        if len(bkg):
+            idx = _nearest(bkg[:, 0], x) if len(bkg) > 1 else np.zeros(len(x), dtype=int)
+            near = np.abs(bkg[idx, 0] - x) <= 1e-6 * np.maximum(np.abs(x), 1.0)
+            column[near] = bkg[idx[near], 2]
+    if np.isfinite(column).all():
+        return column, None
+    return column, StructuredWarning(
+        code="topas_background_not_calculated",
+        message=(f"the background column is empty where TOPAS's background run ({path.name}) gave no value: "
+                 "TOPAS 6 cannot report the background of the fit itself (A152)"),
+        field_path="payload.background")
 
 
 def run_native_validate(model, warnings_from=None) -> dict:
