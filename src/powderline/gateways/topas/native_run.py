@@ -7,7 +7,8 @@ write, and build the result dict every gateway returns.
 TOPAS 6 facts this module is built on (devkit ``re05-topas6-compat.md``):
 
 - the exit code says nothing: 3221226324 on success too (C13), so success is
-  judged from **fresh expected output files** (written during this run);
+  judged from the **expected output files**, removed before the run so that
+  only this run's can exist (never by timestamps, A154);
 - TOPAS's messages go to the console window only (C14), so everything
   reported comes from those files;
 - ``Get(bkg)`` is 0 (C17) and ``phase_out_X`` is TOPAS 7 only (C34): the
@@ -89,10 +90,6 @@ def run_tc(tc: Path, inp: Path, runner=subprocess.run) -> None:
     runner([str(tc), str(inp)], cwd=str(tc.parent), capture_output=True)
 
 
-def _fresh(path: Path, started: float) -> bool:
-    return path.is_file() and path.stat().st_mtime >= started - 1.0
-
-
 def run_native(model, output_dir, *, base_name: str | None = None, topas_dir=None, topas_version=None,
                engine_version_check=None, runner=subprocess.run, warnings_from=None) -> dict:
     """Generate, run and read back one native recipe; return the standard result dict.
@@ -116,13 +113,14 @@ def run_native(model, output_dir, *, base_name: str | None = None, topas_dir=Non
                                    ".powderline_config.yaml topas.dir to run TOPAS)")
     if engine_version_check is not None:
         engine_version_check(tc)
-    run_started = time.time()
+    expected = (native.results_file, native.profile_file, *native.phase_files.values())
+    for f in expected:  # a file left by an earlier run must never pass for this run's (A154)
+        (out / f).unlink(missing_ok=True)
     run_tc(tc, out / f"{base}.inp", runner=runner)
-    missing = [f for f in (native.results_file, native.profile_file, *native.phase_files.values())
-               if not _fresh(out / f, run_started)]
+    missing = [f for f in expected if not (out / f).is_file()]
     if missing:
         raise EngineExecutionError(
-            f"TOPAS stopped without writing its results ({', '.join(missing)} missing or not updated in {out}). "
+            f"TOPAS stopped without writing its results ({', '.join(missing)} missing in {out}). "
             "TOPAS reports the reason only in its console window; run the INP in a terminal to see it. The "
             f"expanded input is in {tc.parent / 'tc.log'}.")
     _run_background(model, native, out, tc, runner)

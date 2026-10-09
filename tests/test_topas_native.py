@@ -526,15 +526,17 @@ def test_runner_missing_output_error(tmp_path, monkeypatch):
         native_run.run_native(model, tmp_path, runner=no_output_runner)
 
 
-def test_runner_stale_output_error(tmp_path, monkeypatch):
-    """Stale output (older than the run) -> EngineExecutionError."""
+@pytest.mark.parametrize("age", [-7200, 7200])
+def test_runner_stale_output_error(tmp_path, monkeypatch, age):
+    """Files left by an earlier run never pass for this run's, whatever their timestamps (A154):
+    they are removed before TOPAS runs (a share's clock may be ahead of or behind the PC's)."""
     recipe = _rietveld()
     model = schema.validate_recipe(recipe)
 
     # Pre-create old files
     native = native_run.write_input(model, tmp_path, "test")
     base = "test"
-    old_time = os.path.getmtime(tmp_path / f"{base}.inp") - 7200
+    old_time = os.path.getmtime(tmp_path / f"{base}.inp") + age
     for f in [f"{base}_results.csv", f"{base}_profile.txt", f"{base}_p1_peaks.txt"]:
         (tmp_path / f).write_text("old", encoding="utf-8")
         os.utime(tmp_path / f, (old_time, old_time))
