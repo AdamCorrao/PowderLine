@@ -56,7 +56,7 @@ def isolated_registry():
     [
         (gsasii_gateway, "==5.7.9"),
         (topas_gateway, ">=7,<8"),
-        (easydiff_gateway, ">=0.20.1,<0.21"),
+        (easydiff_gateway, "==0.21.1"),
     ],
 )
 def test_engine_version_spec_parses_and_matches_capabilities(gateway_module, expected_spec):
@@ -290,8 +290,8 @@ def test_topas_validate_only_skips_version_check(tmp_path, monkeypatch):
 
 
 def test_easydiff_version_out_of_range_raises(tmp_path, monkeypatch):
-    """When installed_engine_version() returns '0.21.0', run() raises EngineVersionError."""
-    monkeypatch.setattr(easydiff_gateway, "installed_engine_version", lambda: "0.21.0")
+    """When installed_engine_version() returns '0.20.1' (the previous pin), run() raises EngineVersionError."""
+    monkeypatch.setattr(easydiff_gateway, "installed_engine_version", lambda: "0.20.1")
     from powderline.gateways.easydiffraction import engine
 
     fake_run = Mock()
@@ -303,8 +303,8 @@ def test_easydiff_version_out_of_range_raises(tmp_path, monkeypatch):
 
 
 def test_easydiff_version_in_range_calls_engine(tmp_path, monkeypatch):
-    """When installed_engine_version() returns '0.20.1', run() calls the engine."""
-    monkeypatch.setattr(easydiff_gateway, "installed_engine_version", lambda: "0.20.1")
+    """When installed_engine_version() returns '0.21.1', run() calls the engine."""
+    monkeypatch.setattr(easydiff_gateway, "installed_engine_version", lambda: "0.21.1")
     from powderline.gateways.easydiffraction import engine
 
     fake_run = Mock(return_value={})
@@ -349,7 +349,7 @@ def test_easydiff_not_installed_validate_only_does_not_raise(tmp_path, monkeypat
 def test_easydiff_installed_version_satisfies_spec():
     """When easydiffraction is installed, its version satisfies ENGINE_VERSION_SPEC.
 
-    easydiffraction 0.20.1 has no ``__version__``; its own runtime version source
+    easydiffraction (0.20.1, 0.21.1) has no ``__version__``; its own runtime version source
     is ``utils.package_version`` (distribution metadata), which must agree.
     """
     from easydiffraction.utils.utils import package_version

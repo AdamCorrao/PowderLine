@@ -47,7 +47,7 @@ def lab6_crysfml_tch_result(tmp_path_factory):
     """Run lab6_crysfml_tch.json once; return result dict."""
     recipe = _load_fixture("lab6_crysfml_tch.json")
     out = tmp_path_factory.mktemp("lab6_crysfml_tch")
-    return gateway.run(recipe, str(out), allow_unsupported_engine_version=True)
+    return gateway.run(recipe, str(out))
 
 
 @pytest.fixture(scope="module")
@@ -55,7 +55,7 @@ def lab6_cryspy_pv_result(tmp_path_factory):
     """Run lab6_cryspy_pv.json once; return result dict."""
     recipe = _load_fixture("lab6_cryspy_pv.json")
     out = tmp_path_factory.mktemp("lab6_cryspy_pv")
-    return gateway.run(recipe, str(out), allow_unsupported_engine_version=True)
+    return gateway.run(recipe, str(out))
 
 
 @pytest.fixture(scope="module")
@@ -63,7 +63,7 @@ def lab6_slots_simulation_result(tmp_path_factory):
     """Run lab6_slots_simulation.json once; return result dict."""
     recipe = _load_fixture("lab6_slots_simulation.json")
     out = tmp_path_factory.mktemp("lab6_slots_simulation")
-    return gateway.run(recipe, str(out), allow_unsupported_engine_version=True)
+    return gateway.run(recipe, str(out))
 
 
 @pytest.fixture(scope="module")
@@ -588,7 +588,7 @@ def test_run_simulation_phase_scale_zero_warning(tmp_path):
     recipe = _load_fixture("lab6_slots_simulation.json")
     recipe["payload"]["phases"]["LaB6"]["scale"] = [0.0, False, None, None]
 
-    result = gateway.run(recipe, str(tmp_path), allow_unsupported_engine_version=True)
+    result = gateway.run(recipe, str(tmp_path))
     warnings = [w for w in result["warnings"] if w["code"] == "easydiffraction_phase_contributes_nothing"]
     assert len(warnings) == 1
     assert warnings[0]["field_path"] == "payload.phases.LaB6"
@@ -601,7 +601,7 @@ def test_run_parameter_at_limit_warning(tmp_path):
     for axis in ("a", "b", "c"):
         recipe["payload"]["phases"]["LaB6"]["unit_cell"][axis] = [4.15682, True, None, 4.157]
 
-    result = gateway.run(recipe, str(tmp_path), allow_unsupported_engine_version=True)
+    result = gateway.run(recipe, str(tmp_path))
     warnings = [w for w in result["warnings"] if w["code"] == "easydiffraction_parameter_at_limit"]
     assert len(warnings) >= 1
     assert any("payload.phases.LaB6.unit_cell.a" in w["field_path"] for w in warnings)
@@ -611,7 +611,7 @@ def test_run_max_iterations_3_fit_not_converged(tmp_path):
     """max_iterations = 3 (lmfit max_nfev) stops lmfit unconverged: a success with the not-converged warning."""
     recipe = _load_fixture("lab6_crysfml_tch.json")
     recipe["payload"]["refinement_controls"]["max_iterations"] = 3
-    result = gateway.run(recipe, str(tmp_path), allow_unsupported_engine_version=True)
+    result = gateway.run(recipe, str(tmp_path))
     assert result["success"] is True
     assert result["engine_details"]["fit_success"] is False
     warnings = [w for w in result["warnings"] if w["code"] == "easydiffraction_fit_not_converged"]
@@ -639,7 +639,7 @@ def test_run_divergence_nan_in_calc(tmp_path, monkeypatch):
 def test_run_validate_only(tmp_path):
     """validate_only returns method 'validate_only' without importing easydiffraction's runtime."""
     recipe = _load_fixture("lab6_crysfml_tch.json")
-    result = gateway.run(recipe, str(tmp_path), validate_only=True, allow_unsupported_engine_version=True)
+    result = gateway.run(recipe, str(tmp_path), validate_only=True)
 
     assert result["method"] == "validate_only"
     assert result["success"] is True
