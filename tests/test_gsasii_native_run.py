@@ -57,6 +57,8 @@ def test_standard_fit_statistics_and_engine_details(lab6_result):
     assert abs(r["rwp"] - d["rwp"]) < 0.05  # core Rwp vs GSAS-II's wR (same data; A23 documents differences)
     assert abs(r["gof"] - d["gof"]) / d["gof"] < 0.01  # Rietveld: GSAS-II's 'GOF' is sqrt(reduced chi^2) (EB-52)
     assert r["gof"] == pytest.approx(r["chi2_red"] ** 0.5)
+    assert d["converged"] is True  # GSAS-II's Rvals['converged'] (A172)
+    assert "gsasii_fit_not_converged" not in [w["code"] for w in r["warnings"]]
     json.dumps(d)  # crosses the server boundary
 
 
@@ -173,6 +175,7 @@ def test_spf_runs_with_standard_statistics(tmp_path):
     assert isinstance(r["engine_details"]["gof"], float)  # DoPeakFit's own reduced chi^2 (EB-52; ledger R16)
     assert r["rwp"] == pytest.approx(r["engine_details"]["rwp"], rel=1e-9)  # A149/R17: SPF fits the stated window too
     assert r["simulation_mode"] is False
+    assert r["engine_details"]["converged"] is None  # DoPeakFit keeps no convergence flag (A172)
 
 
 
@@ -209,6 +212,34 @@ def test_fewer_parameters_varied_than_requested_warns():
     assert f"GSAS-II varied {requested - 3} parameter(s), but the recipe refines {requested}" in out["warnings"][0]["message"]
     proj, hist = _fake_run(recipe, lambda y: y * 1.01, requested)
     assert fit_report(proj, hist, recipe, engine_rwp=1.0)["warnings"] == []
+
+
+@pytest.mark.parametrize("converged, cycles, warned", [(False, 5, True), (True, 5, False), (False, 1, False)])
+def test_not_converged_is_reported_with_values_kept(converged, cycles, warned):
+    """GSAS-II's Rvals['converged'] goes to engine_details; False warns, except in a simulation (A172, EB-85)."""
+    raw = _lab6()
+    raw["payload"]["refinement_controls"]["refinement_cycles"] = cycles
+    if cycles == 1:  # a simulation refines nothing
+        raw = json.loads(json.dumps(raw).replace("true", "false"))
+    recipe = validate_recipe(raw)
+    proj, hist = _fake_run(recipe, lambda y: y * 1.01, parameters_requested(recipe))
+    proj.data["Covariance"]["data"]["Rvals"]["converged"] = converged
+    out = fit_report(proj, hist, recipe, engine_rwp=1.0)
+    assert out["engine_details"]["converged"] is converged
+    hits = [w for w in out["warnings"] if w["code"] == "gsasii_fit_not_converged"]
+    assert len(hits) == int(warned)
+    if warned:
+        assert hits[0]["field_path"] == "payload.refinement_controls.refinement_cycles"
+
+
+def test_two_cycles_lab6_not_converged(tmp_path):
+    """LaB6 with 2 cycles: GSAS-II stops before converging; a success with the warning (A172, EB-85)."""
+    recipe = _lab6()
+    recipe["payload"]["refinement_controls"]["refinement_cycles"] = 2
+    r = powderline.run(recipe, tmp_path, execution_mode="subprocess")
+    assert r["success"], r.get("error")
+    assert r["engine_details"]["converged"] is False
+    assert "gsasii_fit_not_converged" in [w["code"] for w in r["warnings"]]
 
 
 def test_undefined_statistic_is_none_not_nan():

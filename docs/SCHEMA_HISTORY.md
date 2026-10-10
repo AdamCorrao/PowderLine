@@ -252,9 +252,11 @@ core `==1.0.0`. A 0.26.0 `GSASII_*` recipe is converted with
   statistics over the stated fit window (`None` where undefined, e.g. no
   degrees of freedom); `simulation_mode` (a simulation gets the same
   statistics; against placeholder data they mean nothing); GSAS-II's own
-  values, `parameters_requested` and `parameters_varied` under
+  values, `parameters_requested`, `parameters_varied` and `converged`
+  (Rietveld; GSAS-II keeps no such flag for a peak fit) under
   `engine_details`; structured `warnings` (defaults applied, GSAS-II's
-  refinement messages, fewer parameters varied than requested). A refinement
+  refinement messages, fewer parameters varied than requested, a Rietveld
+  refinement that stopped before converging, values kept). A refinement
   that diverges (a non-finite calculated pattern) is a failure with a clear
   message; GSAS-II itself does not flag it.
 
