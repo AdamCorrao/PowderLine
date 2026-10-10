@@ -495,8 +495,17 @@ def test_setting_the_calculator_misreads_rejected(setting, calculator, suggestio
     assert why is not None and "EB-80" in why and repr(suggestion) in why
 
 
+def test_p31_cryspy_rejected_naming_crysfml():
+    """CrysPy computes P 31 with P 32's operators (the other hand per reflection); CrysFML is fine (A170)."""
+    from powderline.gateways.easydiffraction.schema import calculator_setting_problem
+
+    why = calculator_setting_problem("P 31", "cryspy")
+    assert why is not None and "use the crysfml calculator" in why
+
+
 @pytest.mark.parametrize("setting, calculator", [("P m -3 m", "crysfml"), ("P m -3 m", "cryspy"),
-                                                 ("F d -3 m:1", "cryspy"), ("C 1 2/m 1", "crysfml")])
+                                                 ("F d -3 m:1", "cryspy"), ("C 1 2/m 1", "crysfml"),
+                                                 ("P 31", "crysfml"), ("P 6/m", "crysfml"), ("F d -3 c:2", "crysfml")])
 def test_setting_the_calculator_computes_accepted(setting, calculator):
     from powderline.gateways.easydiffraction.schema import calculator_setting_problem
 
