@@ -228,6 +228,10 @@ def test_heavy_weight_inside_window_rejected():
 
     r["payload"]["xrd_data"]["Itth_weights"][idx] = 2e8
     _fails(r, ("payload", "xrd_data", "Itth_weights", idx), "easydiffraction_weight")
+    with pytest.raises(ValidationError) as exc:
+        validate_recipe(r)
+    msg = next(e["msg"] for e in exc.value.errors() if e["type"] == "easydiffraction_weight")
+    assert "sigma 7.07e-05" in msg and "above 1e+08" in msg and "{" not in msg
 
 
 def test_heavy_weight_outside_window_accepted():
@@ -328,6 +332,39 @@ def test_uaniso_with_crysfml_rejected():
 
 def test_uaniso_with_cryspy_accepted():
     validate_recipe(_b_uaniso(_load_fixture("lab6_cryspy_pv.json"), u11=0.03))
+
+
+def _w_negative_below(two_theta: float, r: dict) -> float:
+    """The W that makes the fixture's Gaussian FWHM^2 (U tan^2 + V tan + W) negative below ``two_theta``."""
+    pars = r["payload"]["instrument"]["broadening"]["parameters"]
+    t = np.tan(np.radians(two_theta / 2))
+    return -(pars["broad_gauss_u"][0] * t ** 2 + pars["broad_gauss_v"][0] * t)
+
+
+@pytest.mark.parametrize("fixture", ["lab6_cryspy_pv.json", "lab6_crysfml_tch.json"])
+def test_negative_gaussian_width_in_window_rejected(fixture):
+    """FWHM^2 < 0 below 5 deg: CrysFML would drop those peaks, CrysPy distort them (EB-87, A171)."""
+    r = _load_fixture(fixture)
+    r["payload"]["instrument"]["broadening"]["parameters"]["broad_gauss_w"][0] = _w_negative_below(5.0, r)
+    with pytest.raises(ValidationError) as exc:
+        validate_recipe(r)
+    hits = [e for e in exc.value.errors() if e["type"] == "easydiffraction_negative_width"]
+    assert [e["loc"] for e in hits] == [("payload", "instrument", "broadening", "parameters")]
+    assert "Gaussian" in hits[0]["msg"] and "from 1" in hits[0]["msg"] and "{" not in hits[0]["msg"]
+
+
+def test_negative_lorentzian_width_rejected():
+    r = _load_fixture("lab6_cryspy_pv.json")
+    r["payload"]["instrument"]["broadening"]["parameters"]["broad_lorentz_y"][0] = -0.0028
+    errors = _fails(r, ("payload", "instrument", "broadening", "parameters"), "easydiffraction_negative_width")
+    assert len(errors) == 1
+
+
+def test_negative_width_outside_the_window_accepted():
+    """Only the points handed to the engine count (window [1, 15])."""
+    r = _load_fixture("lab6_cryspy_pv.json")
+    r["payload"]["instrument"]["broadening"]["parameters"]["broad_gauss_w"][0] = _w_negative_below(0.9, r)
+    validate_recipe(r)
 
 
 # --- per-type parameter sets (test 8) -----------------------------------------------

@@ -726,6 +726,18 @@ def test_run_divergence_nan_in_calc(tmp_path, monkeypatch):
         native_run.build_result(model, build, tmp_path, [], elapsed=0.0, fit_info={})
 
 
+def test_run_refined_negative_width_warns(tmp_path):
+    """A refined profile that makes a width negative in the window is reported, values kept (A171, EB-87)."""
+    model = schema.validate_recipe(_load_fixture("lab6_slots_simulation.json"))
+    build = native_builder.build_project(model)
+    build.project.analysis.calculate()
+    build.experiment.peak.broad_gauss_w._set_value_from_minimizer(-0.01)  # as lmfit could leave it
+    result = native_run.build_result(model, build, tmp_path, [], elapsed=0.0, fit_info={})
+    hits = [w for w in result["warnings"] if w["code"] == "easydiffraction_negative_width"]
+    assert len(hits) == 1 and hits[0]["field_path"] == "payload.instrument.broadening.parameters"
+    assert "Gaussian" in hits[0]["message"]
+
+
 def test_run_validate_only(tmp_path):
     """validate_only returns method 'validate_only' without importing easydiffraction's runtime."""
     recipe = _load_fixture("lab6_crysfml_tch.json")

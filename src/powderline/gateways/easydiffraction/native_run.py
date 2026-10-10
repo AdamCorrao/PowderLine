@@ -25,7 +25,9 @@ dict with the shared report files (``refined_parameters.csv``,
   ``easydiffraction_parameter_at_limit`` (A157 B4: PowderLine's own check
   against the limits acting in the fit), ``easydiffraction_phase_contributes_nothing``
   (A157 B7), ``easydiffraction_fit_not_converged`` (informative, A166: lmfit stopped without
-  success; the values are reported), ``easydiffraction_reflections_not_available`` (CrysFML, A165).
+  success; the values are reported), ``easydiffraction_reflections_not_available`` (CrysFML, A165),
+  ``easydiffraction_negative_width`` (the refined profile makes a peak width
+  negative in the window, A171).
 
 Runtime layer: imports easydiffraction.
 """
@@ -46,6 +48,7 @@ from powderline import reports
 from powderline.exceptions import EngineExecutionError, StructuredWarning
 from powderline.fitstats import compute_fit_statistics
 from powderline.gateways.easydiffraction.native_builder import Build, build_project, structure_name
+from powderline.gateways.easydiffraction.schema import profile_negative_widths
 from powderline.schema_core import collect_warnings, parameters_requested
 from powderline.symmetry import cell_tie_groups
 
@@ -129,6 +132,13 @@ def build_result(model, build: Build, out: Path, warnings: list, *, elapsed: flo
             field_path=None))
     warnings += _limit_hits(build)
     warnings += _empty_phases(model, build)
+    for kind, (lo, hi) in profile_negative_widths(lambda n: getattr(expt.peak, n).value, x_window).items():
+        warnings.append(StructuredWarning(
+            code="easydiffraction_negative_width",
+            message=(f"with the refined profile the {kind} is negative from {lo:g} to {hi:g} deg 2theta: "
+                     "easydiffraction computed those peaks wrongly without a message (CrysFML drops them, CrysPy "
+                     "distorts them; EB-87); the values are reported as they stand"),
+            field_path="payload.instrument.broadening.parameters"))
 
     refined_rows = _refined_rows(model, build)
     unit_cells = {name: _cell_rows(model, build, name) for name in p.phases}

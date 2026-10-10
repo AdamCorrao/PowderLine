@@ -38,6 +38,9 @@ easydiffraction rules checked here:
   CrysPy setting (CrysFML ignores it) (A162, A127 principle);
 - ``Uaniso`` needs the cryspy calculator: easydiffraction hands CrysFML only
   B = 8 pi^2 Ueq, so the tensor would have no effect (EB-23, A127 principle);
+- the stated profile makes no peak width negative at a point handed to the
+  engine (Gaussian FWHM^2 or Lorentzian FWHM): easydiffraction would compute a
+  wrong pattern without a message (EB-87, A171);
 - the Kα2 wavelength and its intensity ratio are stated together;
 - simulation = no refine flag set (lmfit is not run).
 """
@@ -138,6 +141,31 @@ def _omit_none(data: dict, model: CoreModel, names: tuple[str, ...]) -> dict:
         if getattr(model, name) is None:
             data.pop(name, None)
     return data
+
+
+def negative_widths(u: float, v: float, w: float, x: float, y: float, tth) -> dict[str, tuple[float, float]]:
+    """2theta range (first, last point of ``tth``) where a peak width is negative, per width.
+
+    The Gaussian FWHM^2 is U tan^2 theta + V tan theta + W, the Lorentzian FWHM X tan theta + Y / cos theta
+    (both calculators, EB-76). Where either is negative easydiffraction computes a wrong pattern without a
+    message: CrysFML drops those peaks, CrysPy distorts them (EB-87, A171).
+    """
+    tth = np.asarray(tth, dtype=float)
+    theta = np.radians(tth / 2)
+    tan, cos = np.tan(theta), np.cos(theta)
+    out = {}
+    for kind, width in (("Gaussian FWHM^2 (U tan^2 + V tan + W)", u * tan ** 2 + v * tan + w),
+                        ("Lorentzian FWHM (X tan + Y / cos)", x * tan + y / cos)):
+        bad = tth[width < 0]
+        if bad.size:
+            out[kind] = (float(bad.min()), float(bad.max()))
+    return out
+
+
+def profile_negative_widths(values, tth) -> dict[str, tuple[float, float]]:
+    """:func:`negative_widths` for an object carrying ``broad_gauss_u`` ... ``broad_lorentz_y`` values."""
+    return negative_widths(*(float(values(name)) for name in (
+        "broad_gauss_u", "broad_gauss_v", "broad_gauss_w", "broad_lorentz_x", "broad_lorentz_y")), tth)
 
 
 def physical_problems(p: Optional[P], limits: tuple, loc: tuple, what: str) -> list[InitErrorDetails]:
@@ -475,11 +503,11 @@ class RietveldPayload(CoreModel):
             for i in heavy[:20]:
                 problems.append(_error(
                     "easydiffraction_weight",
-                    "weight {value} (sigma {sigma:.3g}) is above {limit:g}: easydiffraction would replace sigma "
+                    "weight {value} (sigma {sigma}) is above {limit}: easydiffraction would replace sigma "
                     "< 1e-4 by 1.0 without saying so (EB-73); rescale the intensities and weights",
                     ("xrd_data", "Itth_weights", int(i)), self.xrd_data.Itth_weights[i],
-                    value=self.xrd_data.Itth_weights[i], sigma=self.xrd_data.Itth_weights[i] ** -0.5,
-                    limit=MAX_WEIGHT))
+                    value=self.xrd_data.Itth_weights[i], sigma=f"{self.xrd_data.Itth_weights[i] ** -0.5:.3g}",
+                    limit=f"{MAX_WEIGHT:g}"))  # pydantic's templates take no format specs
         calculator = self.refinement_controls.calculator
         for name, phase in self.phases.items():
             why = calculator_setting_problem(phase.space_group, calculator)
@@ -507,6 +535,16 @@ class RietveldPayload(CoreModel):
                 "easydiffraction_cutoff",
                 "cutoff_fwhm is a CrysPy setting; {calculator} ignores it (fixed 30-FWHM window, EB-76): leave it out",
                 ("instrument", "broadening", "cutoff_fwhm"), profile.cutoff_fwhm, calculator=calculator))
+        if mask is not None:
+            pars = profile.parameters
+            tth = np.asarray(self.xrd_data.tth, dtype=float)[mask]
+            for kind, (lo, hi) in profile_negative_widths(lambda n: getattr(pars, n).value, tth).items():
+                problems.append(_error(
+                    "easydiffraction_negative_width",
+                    "the {width} is negative from {lo} to {hi} deg 2theta in the fit window: easydiffraction "
+                    "then computes a wrong pattern without a message (CrysFML drops those peaks, CrysPy distorts "
+                    "them; EB-87)", ("instrument", "broadening", "parameters"), pars.model_dump(),
+                    width=kind, lo=f"{lo:g}", hi=f"{hi:g}"))
         _raise(type(self).__name__, problems)
         return self
 
