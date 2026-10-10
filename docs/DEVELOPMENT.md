@@ -470,6 +470,7 @@ class SizeBroadening(BaseModel):
 
 **src/powderline/gsas_server.py / gsas_client.py**:
 - Persistent FastAPI server keeping GSAS-II loaded in memory, and the HTTP client that talks to it (with in-process subprocess fallback)
+- Per-user and token-authenticated (private state dir, loopback, ephemeral port); `POWDERLINE_NO_SERVER=1` disables it
 - **Role**: Execution backends for `run()`'s `server`/`auto` modes
 
 **src/powderline/topas/ + src/powderline/easydiff/ + src/powderline/engine.py**:
@@ -809,20 +810,37 @@ pixi run gsas-server status  # Check if running
 pixi run gsas-server stop    # Shutdown server
 ```
 
-**Configure server port (if default port 19471 is in use):**
+**Server state and security (per user):** the server binds `127.0.0.1` on a
+free ephemeral port and writes its PID, log, and an endpoint file (port +
+random bearer token, mode 0600) to a private per-user state directory:
+`$XDG_RUNTIME_DIR/powderline` (if owned by you), else
+`<tempdir>/powderline-<uid>` on POSIX (mode 0700; refused if it is a symlink,
+owned by someone else, or group/other-accessible), and
+`%LOCALAPPDATA%\powderline` on Windows. Every endpoint requires the token, and
+`/health` returns an HMAC of a client nonce so the client knows it reached its
+own server. Other users on a shared host therefore can neither submit jobs to
+your server nor have their jobs land on it. `gsas-server start` holds the PID
+file as a lock, so concurrent auto-starts do not spawn duplicate servers.
+
+**Pin the server port** (only if needed — the default ephemeral port avoids
+collisions between users):
 ```bash
-# Set custom port before starting server
 export POWDERLINE_SERVER_PORT=19472
 pixi run gsas-server start
-
-# Client will automatically detect the port from the powderline_gsas_server.port
-# file in the platform temp directory (e.g. /tmp on Linux, %TEMP% on Windows)
-pixi run kicker input.json  # No additional configuration needed
+pixi run kicker input.json  # client reads the port from your state directory
 ```
 
-**View server logs** (`powderline_gsas_server.log` in the platform temp directory):
+**Disable the server entirely** (shared workstations, locked-down deployments):
 ```bash
-tail -f /tmp/powderline_gsas_server.log   # Linux; on Windows: %TEMP%\powderline_gsas_server.log
+export POWDERLINE_NO_SERVER=1   # also: true / yes
+```
+With it set, `execution_mode='auto'` (and the CLI default) runs in-process and
+never starts a server, `execution_mode='server'` / `--use-server` fail with a
+clear error, and `pixi run gsas-server start|restart` refuse.
+
+**View server logs** (`server.log` in the state directory; `status` prints the path):
+```bash
+pixi run gsas-server logs
 ```
 
 **Server benefits:**

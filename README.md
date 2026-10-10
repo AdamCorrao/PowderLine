@@ -112,9 +112,15 @@ needed), which is a large speedup across many refinements. Manage it directly,
 or opt out per run with `--no-server`:
 
 ```bash
-pixi run gsas-server status                 # start | status | stop | restart
+pixi run gsas-server status                 # start | status | stop | restart | logs
 pixi run kicker <recipe.json> --no-server   # force an isolated one-shot subprocess
 ```
+
+The server is per-user: it listens on loopback only, requires a bearer token
+kept in a directory only you can read, and is never shared with (or used by)
+other users on the same machine. To switch it off entirely — e.g. on a shared
+workstation — set `POWDERLINE_NO_SERVER=1`: refinements then always run
+in-process and nothing is auto-started.
 
 **Simulate a pattern from Materials Project** (requires an MP API key in
 `.powderline_config.yaml` — see `.powderline_config.yaml.example` — or in the

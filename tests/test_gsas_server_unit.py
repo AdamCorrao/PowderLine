@@ -1,9 +1,11 @@
 """Unit tests for gsas_server process-management helpers.
 
 Covers the cross-platform liveness probe (_pid_alive), is_server_running(),
-and stop_server() PID-file handling. All os.kill / PID-file interactions are
-mocked with monkeypatch + tmp_path so NO real server is ever started and no
-signals reach real processes.
+and stop_server() PID-file handling, plus the multi-user safety layer: the
+per-user state directory checks, the PID-file start lock, bearer-token auth on
+every route, and the POWDERLINE_NO_SERVER switch. All os.kill / PID-file
+interactions are mocked with monkeypatch + tmp_path so NO real server is ever
+started and no signals reach real processes.
 
 Import note: gsas_server.py does NOT import GSAS-II at module top (only stdlib
 + pydantic); GSAS-II is imported lazily inside GSASServer.__init__ / the
@@ -34,12 +36,9 @@ posix_only = pytest.mark.skipif(
 
 @pytest.fixture
 def isolated_pid_files(monkeypatch, tmp_path):
-    """Point PID_FILE / PORT_FILE at a throwaway tmp dir (nonexistent by default)."""
-    pid_file = tmp_path / "server.pid"
-    port_file = tmp_path / "server.port"
-    monkeypatch.setattr(gsas_server, "PID_FILE", pid_file)
-    monkeypatch.setattr(gsas_server, "PORT_FILE", port_file)
-    return pid_file, port_file
+    """Point the state dir at a throwaway tmp dir (state files absent by default)."""
+    monkeypatch.setattr(gsas_server, "state_dir", lambda: tmp_path)
+    return tmp_path / "server.pid", tmp_path / "server.json"
 
 
 # --- _pid_alive: cross-platform contract (real PIDs, no mocking) ---
@@ -215,3 +214,253 @@ def test_stop_server_force_kill_never_dies_returns_false(isolated_pid_files, mon
     assert result is False
     assert calls["signals"] == [(4242, signal.SIGTERM), (4242, _FORCE_SIGNAL)]
     assert "failed to stop" in capsys.readouterr().out.lower()
+
+
+# --- POWDERLINE_NO_SERVER ---
+
+@pytest.mark.parametrize("value", ["1", "true", "TRUE", "yes", " Yes "])
+def test_server_disabled_truthy(monkeypatch, value):
+    monkeypatch.setenv("POWDERLINE_NO_SERVER", value)
+    assert gsas_server.server_disabled() is True
+
+
+@pytest.mark.parametrize("value", [None, "", "0", "false", "no"])
+def test_server_disabled_falsy(monkeypatch, value):
+    if value is None:
+        monkeypatch.delenv("POWDERLINE_NO_SERVER", raising=False)
+    else:
+        monkeypatch.setenv("POWDERLINE_NO_SERVER", value)
+    assert gsas_server.server_disabled() is False
+
+
+@pytest.mark.parametrize("action", ["start", "restart"])
+def test_main_start_refuses_when_disabled(monkeypatch, capsys, action):
+    monkeypatch.setenv("POWDERLINE_NO_SERVER", "1")
+    monkeypatch.setattr(sys, "argv", ["gsas_server.py", action])
+    monkeypatch.setattr(gsas_server, "GSASServer",
+                        lambda *a, **k: pytest.fail("server must not be created"))
+    monkeypatch.setattr(gsas_server, "stop_server",
+                        lambda: pytest.fail("restart must not stop the server first"))
+    with pytest.raises(SystemExit) as exc:
+        gsas_server.main()
+    assert exc.value.code == 1
+    assert "POWDERLINE_NO_SERVER" in capsys.readouterr().out
+
+
+# --- Per-user state directory ---
+
+@posix_only
+def test_state_dir_uses_private_xdg_runtime_dir(monkeypatch, tmp_path):
+    runtime = tmp_path / "runtime"
+    runtime.mkdir(mode=0o700)
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(runtime))
+    path = gsas_server.state_dir()
+    assert path == runtime / "powderline"
+    assert (path.stat().st_mode & 0o777) == 0o700
+
+
+@posix_only
+def test_state_dir_falls_back_to_per_uid_tempdir(monkeypatch, tmp_path):
+    monkeypatch.delenv("XDG_RUNTIME_DIR", raising=False)
+    monkeypatch.setattr(gsas_server.tempfile, "gettempdir", lambda: str(tmp_path))
+    path = gsas_server.state_dir()
+    assert path == tmp_path / f"powderline-{os.getuid()}"
+    assert (path.stat().st_mode & 0o777) == 0o700
+
+
+@posix_only
+def test_state_dir_ignores_shared_xdg_runtime_dir(monkeypatch, tmp_path):
+    # An XDG_RUNTIME_DIR others can write to (e.g. inherited after su) is not used.
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    shared.chmod(0o777)
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(shared))
+    monkeypatch.setattr(gsas_server.tempfile, "gettempdir", lambda: str(tmp_path))
+    assert gsas_server.state_dir() == tmp_path / f"powderline-{os.getuid()}"
+
+
+@posix_only
+def test_state_dir_path_is_distinct_per_uid(monkeypatch, tmp_path):
+    monkeypatch.delenv("XDG_RUNTIME_DIR", raising=False)
+    monkeypatch.setattr(gsas_server.tempfile, "gettempdir", lambda: str(tmp_path))
+    paths = set()
+    for uid in (1001, 1002):
+        monkeypatch.setattr(gsas_server.os, "getuid", lambda uid=uid: uid)
+        paths.add(gsas_server._state_dir_path())
+    assert paths == {tmp_path / "powderline-1001", tmp_path / "powderline-1002"}
+
+
+@posix_only
+def test_state_dir_refuses_dir_owned_by_another_user(monkeypatch, tmp_path):
+    # The dir exists (created by "someone else"): we are not its owner.
+    monkeypatch.delenv("XDG_RUNTIME_DIR", raising=False)
+    monkeypatch.setattr(gsas_server.tempfile, "gettempdir", lambda: str(tmp_path))
+    other_uid = os.getuid() + 1
+    (tmp_path / f"powderline-{other_uid}").mkdir(mode=0o700)
+    monkeypatch.setattr(gsas_server.os, "getuid", lambda: other_uid)
+    with pytest.raises(gsas_server.ServerStateError, match="owned by uid"):
+        gsas_server.state_dir()
+
+
+@posix_only
+def test_state_dir_refuses_symlink(monkeypatch, tmp_path):
+    monkeypatch.delenv("XDG_RUNTIME_DIR", raising=False)
+    monkeypatch.setattr(gsas_server.tempfile, "gettempdir", lambda: str(tmp_path))
+    target = tmp_path / "elsewhere"
+    target.mkdir(mode=0o700)
+    (tmp_path / f"powderline-{os.getuid()}").symlink_to(target)
+    with pytest.raises(gsas_server.ServerStateError, match="symlink"):
+        gsas_server.state_dir()
+
+
+@posix_only
+@pytest.mark.parametrize("mode", [0o750, 0o705, 0o777])
+def test_state_dir_refuses_group_or_other_access(monkeypatch, tmp_path, mode):
+    monkeypatch.delenv("XDG_RUNTIME_DIR", raising=False)
+    monkeypatch.setattr(gsas_server.tempfile, "gettempdir", lambda: str(tmp_path))
+    path = tmp_path / f"powderline-{os.getuid()}"
+    path.mkdir()
+    path.chmod(mode)
+    with pytest.raises(gsas_server.ServerStateError, match="accessible to other users"):
+        gsas_server.state_dir()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows state-dir location")
+def test_state_dir_windows_uses_localappdata(monkeypatch, tmp_path):
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    assert gsas_server.state_dir() == tmp_path / "powderline"
+
+
+@posix_only
+def test_write_private_is_owner_only(tmp_path):
+    target = tmp_path / "server.json"
+    target.write_text("old")
+    target.chmod(0o644)
+    gsas_server._write_private(target, "new")
+    assert target.read_text() == "new"
+    assert (target.stat().st_mode & 0o777) == 0o600
+
+
+def test_read_endpoint_absent_or_garbage_is_none(isolated_pid_files):
+    _, endpoint_file = isolated_pid_files
+    assert gsas_server.read_endpoint() is None
+    endpoint_file.write_text("{not json")
+    assert gsas_server.read_endpoint() is None
+    endpoint_file.write_text('{"pid": 1, "port": 2}')  # no token
+    assert gsas_server.read_endpoint() is None
+    endpoint_file.write_text('{"pid": 1, "port": 2, "token": "t"}')
+    assert gsas_server.read_endpoint() == {"pid": 1, "port": 2, "token": "t"}
+
+
+# --- Start lock / state-file lifecycle ---
+
+def test_claim_pid_file_when_absent(isolated_pid_files):
+    pid_file, _ = isolated_pid_files
+    assert gsas_server._claim_pid_file() is True
+    assert pid_file.read_text() == str(os.getpid())
+
+
+def test_claim_pid_file_refused_while_server_alive(isolated_pid_files, monkeypatch):
+    pid_file, _ = isolated_pid_files
+    pid_file.write_text("4242")
+    monkeypatch.setattr(gsas_server, "_pid_alive", lambda pid: True)
+    assert gsas_server._claim_pid_file() is False
+    assert pid_file.read_text() == "4242"
+
+
+def test_claim_pid_file_replaces_stale_claim(isolated_pid_files, monkeypatch):
+    pid_file, endpoint_file = isolated_pid_files
+    pid_file.write_text("4242")
+    endpoint_file.write_text('{"pid": 4242, "port": 1, "token": "old"}')
+    monkeypatch.setattr(gsas_server, "_pid_alive", lambda pid: False)
+    assert gsas_server._claim_pid_file() is True
+    assert pid_file.read_text() == str(os.getpid())
+    assert not endpoint_file.exists()  # stale endpoint removed with it
+
+
+def test_release_state_files_only_removes_own(isolated_pid_files):
+    pid_file, endpoint_file = isolated_pid_files
+    pid_file.write_text("4242")
+    endpoint_file.write_text("{}")
+    gsas_server._release_state_files()
+    assert pid_file.exists() and endpoint_file.exists()
+
+    pid_file.write_text(str(os.getpid()))
+    gsas_server._release_state_files()
+    assert not pid_file.exists() and not endpoint_file.exists()
+
+
+# --- Bearer-token auth on the FastAPI app ---
+
+@pytest.fixture
+def app_client():
+    """TestClient for the real app, without importing GSAS-II or binding a port."""
+    pytest.importorskip("fastapi")
+    pytest.importorskip("httpx")
+    import logging
+    from fastapi.testclient import TestClient
+
+    server = gsas_server.GSASServer.__new__(gsas_server.GSASServer)
+    server.request_count = 0
+    server.start_time = None
+    server.token = "s3cret-token"
+    server.logger = logging.getLogger("powderline.server.test")
+    calls = []
+    server._run_simulation = lambda req: calls.append(req) or {
+        "success": False, "error": "stub", "method": "server"}
+    return TestClient(server.create_app()), server.token, calls
+
+
+@pytest.mark.parametrize("headers", [
+    {},
+    {"Authorization": "Bearer wrong"},
+    {"Authorization": "s3cret-token"},          # missing scheme
+    {"Authorization": "Bearer s3cret-token "},  # not an exact match
+    {"Authorization": "Bearer s3cret-tokén".encode("latin-1")},  # non-ASCII: no crash
+])
+def test_unauthenticated_requests_rejected(app_client, headers, tmp_path):
+    client, _, calls = app_client
+    out = tmp_path / "out"
+    resp = client.post("/simulate", headers=headers,
+                       json={"recipe_data": {}, "output_dir": str(out)})
+    assert resp.status_code == 401
+    assert client.get("/health", headers=headers).status_code == 401
+    assert calls == [], "no job may run without the token"
+    assert not out.exists()
+
+
+def test_authenticated_requests_accepted(app_client, tmp_path):
+    client, token, calls = app_client
+    auth = {"Authorization": f"Bearer {token}"}
+    resp = client.post("/simulate", headers=auth,
+                       json={"recipe_data": {}, "output_dir": str(tmp_path)})
+    assert resp.status_code == 200
+    assert len(calls) == 1
+
+
+def test_health_proves_token_knowledge(app_client):
+    client, token, _ = app_client
+    resp = client.get("/health", headers={"Authorization": f"Bearer {token}",
+                                          gsas_server.NONCE_HEADER: "abc123"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "ok"
+    assert body["proof"] == gsas_server.health_proof(token, "abc123")
+    assert body["proof"] != gsas_server.health_proof("other-token", "abc123")
+
+
+@pytest.mark.parametrize("path", ["/docs", "/redoc", "/openapi.json"])
+def test_docs_routes_disabled(app_client, path):
+    client, token, _ = app_client
+    assert client.get(path).status_code == 401
+    assert client.get(path, headers={"Authorization": f"Bearer {token}"}).status_code == 404
+
+
+@posix_only
+def test_state_dir_uncreatable_raises_state_error(monkeypatch, tmp_path):
+    # e.g. an unwritable tempdir: callers must get ServerStateError, not OSError.
+    monkeypatch.delenv("XDG_RUNTIME_DIR", raising=False)
+    monkeypatch.setattr(gsas_server.tempfile, "gettempdir",
+                        lambda: str(tmp_path / "missing" / "deeper"))
+    with pytest.raises(gsas_server.ServerStateError, match="Cannot create"):
+        gsas_server.state_dir()

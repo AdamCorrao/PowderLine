@@ -326,6 +326,12 @@ discovery/lifecycle mismatch below remains open.
 HTTP shutdown endpoint, or have `stop` fall back to the PID reported by
 `/health`).
 
+**Update (v0.1.2, KI-13).** Server state moved to a per-user directory
+(`server.pid`, `server.json` = port + token) and the port is ephemeral. An
+orphaned server whose state files were lost is no longer *used* by clients
+(they cannot authenticate to it and start their own), but `status`/`stop`
+still cannot manage it; the lifecycle mismatch stays open.
+
 **Revisit.** Next branch touching `gsas_server.py`/`gsas_client.py`.
 
 ---
@@ -356,3 +362,36 @@ supported topology. Needs protocol versioning for already-running servers.
 
 **Revisit.** Next branch touching the server protocol, or when the HPC
 deployment work starts.
+
+---
+
+## KI-13 — GSAS-II server was shared across users on multi-user hosts `implemented · critical`
+
+**What.** Through v0.1.1 the server kept machine-global state
+(`<tempdir>/powderline_gsas_server.{port,pid,log}`), listened on a fixed port
+(19471) and had no authentication. On a shared workstation: user B's client
+found user A's server and ran B's job as A (files owned by A, possibly written
+where B could not write); any local user could POST a job with an
+`output_dir` inside another user's directories and have it written with that
+user's identity; users collided on the port and the shared files; and there
+was no global way to keep `powderline.run()` from auto-starting a server.
+
+**Evidence.** `gsas_server.py` (v0.1.1) `PORT_FILE`/`PID_FILE`/`LOG_FILE`,
+`DEFAULT_PORT = 19471`, unauthenticated `/simulate`; `gsas_client.py` probed
+`/health` on that port and submitted to whatever answered.
+
+**Decision.** Fixed in v0.1.2. Server state (PID, log, endpoint = port +
+token) lives in a per-user directory — `$XDG_RUNTIME_DIR/powderline` or
+`<tempdir>/powderline-<uid>` (POSIX, 0700, refused if a symlink, foreign-owned,
+or group/other-accessible), `%LOCALAPPDATA%\powderline` (Windows). The server
+binds `127.0.0.1` on an ephemeral port and requires a per-start bearer token
+(`secrets.token_urlsafe(32)`, file mode 0600) on every route; `/health`
+answers with an HMAC of a client nonce so clients only ever use a server that
+holds their own token. `POWDERLINE_NO_SERVER=1|true|yes` disables the server:
+`auto` runs in-process without starting one, `server` mode / `--use-server`
+error, `gsas-server start|restart` refuse. Tests:
+`tests/test_gsas_server_unit.py`, `tests/test_gsas_server_http.py`,
+`tests/test_gsas_client_visibility.py`, `tests/test_api.py`.
+
+**Revisit.** Closed; kept for history. A Unix-domain-socket transport would be
+equivalent on POSIX but needs a second code path for Windows.

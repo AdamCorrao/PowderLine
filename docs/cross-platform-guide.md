@@ -549,3 +549,11 @@ If you prefer native tools, the platform equivalents are:
 
 - **Unix (Linux/macOS)**: `tail -f <log_file>`
 - **Windows PowerShell**: `Get-Content <log_file> -Wait -Tail 50`
+
+`<log_file>` is `server.log` in the per-user state directory
+(`pixi run gsas-server status` prints it): `$XDG_RUNTIME_DIR/powderline` or
+`<tempdir>/powderline-<uid>` on Linux/macOS (POSIX mode 0700, ownership
+checked), `%LOCALAPPDATA%\powderline` on Windows (protected by the user-profile
+ACL; POSIX mode checks do not apply). The server's port and token live in the
+same directory, so the security model is identical on every platform: loopback
+TCP plus a bearer token only the owning user can read.

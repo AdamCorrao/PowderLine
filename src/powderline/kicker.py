@@ -3393,6 +3393,11 @@ def run(
                 subprocess. Suitable for batch/HPC workflows where each
                 refinement is isolated.
 
+            Only the calling user's own server is used. If the
+            ``POWDERLINE_NO_SERVER`` environment variable is truthy
+            (``1``/``true``/``yes``), ``'auto'`` runs in-process without
+            starting a server and ``'server'`` returns an error result.
+
     Returns:
         **Normal refinement** (``validate_only=False``):
 
@@ -3878,6 +3883,7 @@ Execution modes:
   Default (no flags):  Try server → auto-start if needed → fall back to subprocess
   --use-server:        Use server only (fail if unavailable, auto-start enabled)
   --no-server:         Use subprocess only (skip server entirely)
+  POWDERLINE_NO_SERVER=1 (env): never use a server; default mode runs in-process
 
 Examples:
   pixi run kicker recipe.json                    # Smart mode (auto-detect)
@@ -3937,6 +3943,10 @@ Examples:
         if args.no_server:
             execution_mode = 'subprocess'
         elif args.use_server:
+            from powderline.gsas_server import NO_SERVER_MESSAGE, server_disabled
+            if server_disabled():
+                print(f"\n{CROSS} --use-server: {NO_SERVER_MESSAGE}\n")
+                sys.exit(1)
             execution_mode = 'server'
         else:
             execution_mode = 'auto'

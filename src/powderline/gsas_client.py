@@ -5,19 +5,31 @@ Automatically falls back to in-process execution when the server is not
 running, or when a "successful" server run produced output files that are
 not visible to this process (server with a divergent filesystem view, e.g.
 on another node or inside a sandbox with a private /tmp).
+
+Only the calling user's own server is ever used: its port and bearer token
+are read from the user's private state directory, and the server must prove
+it holds that token before any job is sent. ``POWDERLINE_NO_SERVER`` disables
+server use entirely (see :func:`powderline.gsas_server.server_disabled`).
 """
 
+import secrets
 import subprocess
 import sys
 import os
 from pathlib import Path
-from typing import Dict, Any
-import tempfile
+from typing import Dict, Any, Optional
 
-HOST = "127.0.0.1"
-DEFAULT_PORT = 19471
-PORT = int(os.environ.get('POWDERLINE_SERVER_PORT', DEFAULT_PORT))
-PORT_FILE = Path(tempfile.gettempdir()) / 'powderline_gsas_server.port'
+from powderline import gsas_server
+from powderline.gsas_server import (
+    HOST,
+    NO_SERVER_ENV,
+    NO_SERVER_MESSAGE,
+    NONCE_HEADER,
+    ServerStateError,
+    health_proof,
+    read_endpoint,
+    server_disabled,
+)
 
 
 class GSASClient:
@@ -30,26 +42,48 @@ class GSASClient:
             fallback_to_subprocess: If True, use subprocess when server unavailable
         """
         self.fallback_to_subprocess = fallback_to_subprocess
+        self._state_warning_shown = False
 
-    def _get_port(self) -> int:
-        """Read the server port from the port file."""
-        if PORT_FILE.exists():
-            try:
-                return int(PORT_FILE.read_text().strip())
-            except (ValueError, OSError):
-                pass
-        return PORT
+    def _endpoint(self) -> Optional[Dict[str, Any]]:
+        """This user's server endpoint (``pid``/``port``/``token``), or None."""
+        try:
+            return read_endpoint()
+        except ServerStateError as e:
+            if not self._state_warning_shown:
+                print(f"   WARNING: {e}")
+                self._state_warning_shown = True
+            return None
 
     def is_server_available(self) -> bool:
-        """Check if server is running and accepting connections."""
+        """Check that THIS user's server is up and holds this user's token.
+
+        The server must answer ``/health`` with an HMAC of a fresh nonce under
+        the token, so a listener that does not know the token (e.g. another
+        user's process on a recycled port) is never treated as available.
+        """
         import httpx
 
-        port = self._get_port()
-        try:
-            resp = httpx.get(f"http://{HOST}:{port}/health", timeout=2.0)
-            return resp.status_code == 200
-        except (httpx.ConnectError, httpx.TimeoutException, OSError):
+        endpoint = self._endpoint()
+        if endpoint is None:
             return False
+        nonce = secrets.token_hex(16)
+        try:
+            resp = httpx.get(
+                f"http://{HOST}:{endpoint['port']}/health",
+                headers={**self._auth_headers(endpoint), NONCE_HEADER: nonce},
+                timeout=2.0,
+                trust_env=False,  # loopback only: never route via a proxy
+            )
+            proof = resp.json().get('proof') if resp.status_code == 200 else None
+        except (httpx.HTTPError, OSError, ValueError, AttributeError):
+            return False
+        expected = health_proof(endpoint['token'], nonce)
+        return isinstance(proof, str) and secrets.compare_digest(
+            proof.encode(), expected.encode())
+
+    @staticmethod
+    def _auth_headers(endpoint: Dict[str, Any]) -> Dict[str, str]:
+        return {'Authorization': f"Bearer {endpoint['token']}"}
 
     @staticmethod
     def _stat_fit_profile(output_dir: Path) -> tuple | None:
@@ -153,10 +187,22 @@ class GSASClient:
             execution with a warning — or, when fallback_to_subprocess is
             False, returns a structured error explaining the filesystem-view
             mismatch.
+
+            With ``POWDERLINE_NO_SERVER`` set, the server is never probed or
+            started: the run goes in-process, or — when fallback is disabled
+            (``execution_mode='server'``) — returns a structured error.
         """
         recipe_dict = self._normalize_recipe(recipe)
 
-        if not use_server:
+        if use_server and server_disabled():
+            if not self.fallback_to_subprocess:
+                return {
+                    'success': False,
+                    'error': NO_SERVER_MESSAGE,
+                    'method': 'none'
+                }
+            print(f"   Using in-process mode ({NO_SERVER_ENV} is set)")
+        elif not use_server:
             if not verbose:
                 print("   Using in-process mode (use_server=False)")
         # Try server first
@@ -269,6 +315,15 @@ class GSASClient:
         import os
         import time
 
+        if server_disabled():
+            return False
+        try:
+            gsas_server.state_dir()  # a server could not start with an unsafe state dir
+        except ServerStateError as e:
+            if verbose:
+                print(f"   Could not auto-start server: {e}")
+            return False
+
         # Check if already running
         if self.is_server_available():
             return True
@@ -330,7 +385,9 @@ class GSASClient:
         import httpx
         import time
 
-        port = self._get_port()
+        endpoint = self._endpoint()
+        if endpoint is None:
+            raise httpx.ConnectError("No GSAS-II server endpoint for this user")
         payload = {
             'recipe_data': recipe_dict,
             'output_dir': str(output_dir.absolute()),
@@ -344,9 +401,11 @@ class GSASClient:
         for attempt in range(max_retries):
             try:
                 resp = httpx.post(
-                    f"http://{HOST}:{port}/simulate",
+                    f"http://{HOST}:{endpoint['port']}/simulate",
                     json=payload,
+                    headers=self._auth_headers(endpoint),
                     timeout=300.0,
+                    trust_env=False,  # loopback only: never route via a proxy
                 )
                 resp.raise_for_status()
                 return resp.json()

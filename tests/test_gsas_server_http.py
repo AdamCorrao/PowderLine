@@ -1,22 +1,16 @@
 """Tests for GSAS-II server HTTP endpoints.
 
-These tests verify that the FastAPI server exposes the correct HTTP API
-and handles requests properly.
+These tests verify that the FastAPI server exposes the correct HTTP API,
+handles requests properly, and rejects callers that do not hold its token.
 
-NOTE: These are integration tests that require a running server.
-They can be run in two ways:
-
-1. Manual server start (recommended):
-   ```bash
-   pixi run gsas-server start
-   pixi run pytest tests/test_gsas_server_http.py -v
-   pixi run gsas-server stop
-   ```
-
-2. Auto-start in fixture (slower, may be flaky):
-   Just run pytest and the fixture will attempt to start a test server.
+These are integration tests: the module fixture starts a real server in a
+private, per-test state directory (via ``XDG_RUNTIME_DIR`` / ``LOCALAPPDATA``),
+so it never touches — or reuses — the developer's own server, and reads the
+server's port and bearer token from that directory. They skip if the server
+cannot start (e.g. GSAS-II unavailable).
 """
 
+import json
 import pytest
 import time
 import subprocess
@@ -25,59 +19,52 @@ from pathlib import Path
 import tempfile
 import os
 
+from powderline import gsas_server
+from powderline.gsas_client import GSASClient
 
-def is_server_running(port: int = 19471) -> bool:
-    """Check if server is running on given port."""
+
+def _endpoint_in(state_root: Path):
+    """The endpoint (pid/port/token) the server wrote under ``state_root``."""
+    try:
+        return json.loads((state_root / 'powderline' / 'server.json').read_text())
+    except (OSError, ValueError):
+        return None
+
+
+def _health_ok(port: int, token: str) -> bool:
     import httpx
     try:
-        resp = httpx.get(f"http://127.0.0.1:{port}/health", timeout=1.0)
+        resp = httpx.get(f"http://127.0.0.1:{port}/health", timeout=1.0,
+                         headers={"Authorization": f"Bearer {token}"}, trust_env=False)
         return resp.status_code == 200
-    except (httpx.ConnectError, httpx.TimeoutException, OSError):
+    except (httpx.HTTPError, OSError):
         return False
 
 
 @pytest.fixture(scope="module")
-def server_port():
-    """Use default port or find available port for testing."""
-    # First try default port (19471)
-    if is_server_running(19471):
-        yield 19471
-        return
-
-    # If default port not available, try to find a free port
-    import socket
-    sock = socket.socket()
-    sock.bind(('', 0))
-    port = sock.getsockname()[1]
-    sock.close()
-    yield port
+def server_state_root(tmp_path_factory):
+    """A private (0700) directory standing in for this user's runtime dir."""
+    root = tmp_path_factory.mktemp("server_state")
+    root.chmod(0o700)
+    return root
 
 
 @pytest.fixture(scope="module")
-def test_server(server_port):
-    """Ensure test server is running on the specified port.
-
-    If server is already running on the port, use it.
-    Otherwise, attempt to start one for testing.
-    """
-    # Check if already running
-    if is_server_running(server_port):
-        yield server_port
-        return
-
-    # Try to start test server
+def test_server(server_state_root):
+    """Start a server in an isolated state dir; yield ``(port, token)``."""
     src_dir = Path(__file__).parent.parent / 'src'
     server_script = src_dir / 'powderline' / 'gsas_server.py'
 
     if not server_script.exists():
         pytest.skip(f"Server script not found: {server_script}")
 
-    # Set custom port via environment
     env = os.environ.copy()
     env['PYTHONPATH'] = str(src_dir) + os.pathsep + env.get('PYTHONPATH', '')
-    env['POWDERLINE_SERVER_PORT'] = str(server_port)
+    env['XDG_RUNTIME_DIR'] = str(server_state_root)   # POSIX state dir
+    env['LOCALAPPDATA'] = str(server_state_root)      # Windows state dir
+    env.pop('POWDERLINE_NO_SERVER', None)
+    env.pop('POWDERLINE_SERVER_PORT', None)           # exercise the ephemeral port
 
-    # Start server process
     proc = subprocess.Popen(
         [sys.executable, str(server_script), 'start'],
         env=env,
@@ -85,24 +72,21 @@ def test_server(server_port):
         stderr=subprocess.DEVNULL
     )
 
-    # Wait for server to start (up to 15 seconds for GSAS-II import)
-    started = False
-    for attempt in range(150):
+    # Wait for server to start (up to 30 seconds for GSAS-II import)
+    endpoint = None
+    for attempt in range(300):
         time.sleep(0.1)
-        if is_server_running(server_port):
-            started = True
+        endpoint = _endpoint_in(server_state_root)
+        if endpoint and _health_ok(endpoint['port'], endpoint['token']):
             break
-        # Check if process died
         if proc.poll() is not None:
             pytest.skip(f"Test server exited unexpectedly (exit code: {proc.returncode})")
-
-    if not started:
+    else:
         proc.kill()
-        pytest.skip(f"Test server failed to start within 15 seconds on port {server_port}")
+        pytest.skip("Test server failed to start within 30 seconds")
 
-    yield server_port
+    yield endpoint['port'], endpoint['token']
 
-    # Cleanup - only kill if we started it
     proc.terminate()
     try:
         proc.wait(timeout=5)
@@ -110,12 +94,17 @@ def test_server(server_port):
         proc.kill()
 
 
+def _auth(token: str) -> dict:
+    return {"Authorization": f"Bearer {token}"}
+
+
 def test_health_endpoint(test_server):
     """Test /health endpoint returns correct format."""
     import httpx
 
-    port = test_server
-    resp = httpx.get(f"http://127.0.0.1:{port}/health", timeout=2.0)
+    port, token = test_server
+    resp = httpx.get(f"http://127.0.0.1:{port}/health", headers=_auth(token), timeout=2.0,
+                     trust_env=False)
 
     assert resp.status_code == 200, "Health endpoint should return 200"
 
@@ -136,8 +125,9 @@ def test_health_endpoint_format(test_server):
     """Verify health endpoint returns proper JSON structure."""
     import httpx
 
-    port = test_server
-    resp = httpx.get(f"http://127.0.0.1:{port}/health", timeout=2.0)
+    port, token = test_server
+    resp = httpx.get(f"http://127.0.0.1:{port}/health", headers=_auth(token), timeout=2.0,
+                     trust_env=False)
 
     # Verify response is valid JSON
     data = resp.json()
@@ -152,11 +142,13 @@ def test_simulate_endpoint_missing_fields(test_server):
     """Test /simulate endpoint validates required fields."""
     import httpx
 
-    port = test_server
+    port, token = test_server
 
     # Missing recipe_data
     resp = httpx.post(
         f"http://127.0.0.1:{port}/simulate",
+        headers=_auth(token),
+        trust_env=False,
         json={"output_dir": "/tmp/test"},
         timeout=5.0
     )
@@ -165,6 +157,8 @@ def test_simulate_endpoint_missing_fields(test_server):
     # Missing output_dir
     resp = httpx.post(
         f"http://127.0.0.1:{port}/simulate",
+        headers=_auth(token),
+        trust_env=False,
         json={"recipe_data": {}},
         timeout=5.0
     )
@@ -173,6 +167,8 @@ def test_simulate_endpoint_missing_fields(test_server):
     # Empty request
     resp = httpx.post(
         f"http://127.0.0.1:{port}/simulate",
+        headers=_auth(token),
+        trust_env=False,
         json={},
         timeout=5.0
     )
@@ -183,12 +179,14 @@ def test_simulate_endpoint_invalid_recipe(test_server):
     """Test /simulate endpoint handles invalid recipe_data gracefully."""
     import httpx
 
-    port = test_server
+    port, token = test_server
 
     # Invalid (empty) recipe_data — server should return 200 with success=False
     with tempfile.TemporaryDirectory() as tmpdir:
         resp = httpx.post(
             f"http://127.0.0.1:{port}/simulate",
+            headers=_auth(token),
+            trust_env=False,
             json={
                 "recipe_data": {},
                 "output_dir": tmpdir
@@ -210,12 +208,14 @@ def test_simulate_endpoint_optional_verbose(test_server):
     """Test /simulate endpoint accepts optional verbose parameter."""
     import httpx
 
-    port = test_server
+    port, token = test_server
 
     with tempfile.TemporaryDirectory() as tmpdir:
         # Request with verbose=true — should accept and return 200 (even if recipe invalid)
         resp = httpx.post(
             f"http://127.0.0.1:{port}/simulate",
+            headers=_auth(token),
+            trust_env=False,
             json={
                 "recipe_data": {},
                 "output_dir": tmpdir,
@@ -229,6 +229,8 @@ def test_simulate_endpoint_optional_verbose(test_server):
         # Request with verbose=false
         resp = httpx.post(
             f"http://127.0.0.1:{port}/simulate",
+            headers=_auth(token),
+            trust_env=False,
             json={
                 "recipe_data": {},
                 "output_dir": tmpdir,
@@ -244,10 +246,11 @@ def test_health_endpoint_performance(test_server):
     """Test that health endpoint responds quickly."""
     import httpx
 
-    port = test_server
+    port, token = test_server
 
     start = time.time()
-    resp = httpx.get(f"http://127.0.0.1:{port}/health", timeout=2.0)
+    resp = httpx.get(f"http://127.0.0.1:{port}/health", headers=_auth(token), timeout=2.0,
+                     trust_env=False)
     elapsed = time.time() - start
 
     assert resp.status_code == 200
@@ -258,11 +261,12 @@ def test_multiple_health_checks(test_server):
     """Test that multiple health checks work correctly."""
     import httpx
 
-    port = test_server
+    port, token = test_server
 
     # Multiple rapid health checks
     for _ in range(10):
-        resp = httpx.get(f"http://127.0.0.1:{port}/health", timeout=2.0)
+        resp = httpx.get(f"http://127.0.0.1:{port}/health", headers=_auth(token), timeout=2.0,
+                     trust_env=False)
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "ok"
@@ -272,16 +276,19 @@ def test_server_increments_request_count(test_server):
     """Test that server tracks request count correctly."""
     import httpx
 
-    port = test_server
+    port, token = test_server
 
     # Get initial count (might not be 0 due to startup checks)
-    resp = httpx.get(f"http://127.0.0.1:{port}/health", timeout=2.0)
+    resp = httpx.get(f"http://127.0.0.1:{port}/health", headers=_auth(token), timeout=2.0,
+                     trust_env=False)
     initial_count = resp.json()["request_count"]
 
     # Make a simulation request (will fail validation but should still increment counter)
     with tempfile.TemporaryDirectory() as tmpdir:
         httpx.post(
             f"http://127.0.0.1:{port}/simulate",
+            headers=_auth(token),
+            trust_env=False,
             json={
                 "recipe_data": {},
                 "output_dir": tmpdir
@@ -290,7 +297,69 @@ def test_server_increments_request_count(test_server):
         )
 
     # Check count increased
-    resp = httpx.get(f"http://127.0.0.1:{port}/health", timeout=2.0)
+    resp = httpx.get(f"http://127.0.0.1:{port}/health", headers=_auth(token), timeout=2.0,
+                     trust_env=False)
     new_count = resp.json()["request_count"]
 
     assert new_count > initial_count, "Request count should increment after simulation request"
+
+
+# --- Multi-user safety: only the token holder can use the server ---
+
+def test_requests_without_token_rejected(test_server, tmp_path):
+    """No token (or a wrong one) -> 401 on every route, and nothing is written."""
+    import httpx
+
+    port, _ = test_server
+    out = tmp_path / "other_users_output"
+    for headers in ({}, {"Authorization": "Bearer not-the-token"}):
+        resp = httpx.post(f"http://127.0.0.1:{port}/simulate", headers=headers,
+                          json={"recipe_data": {}, "output_dir": str(out)},
+                          timeout=5.0, trust_env=False)
+        assert resp.status_code == 401
+        resp = httpx.get(f"http://127.0.0.1:{port}/health", headers=headers,
+                         timeout=2.0, trust_env=False)
+        assert resp.status_code == 401
+        assert "pid" not in resp.text
+    assert not out.exists(), "an unauthenticated request must not create output_dir"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+def test_state_files_are_owner_only(test_server, server_state_root):
+    state = server_state_root / "powderline"
+    assert (state.stat().st_mode & 0o777) == 0o700
+    assert (state / "server.json").stat().st_mode & 0o777 == 0o600
+
+
+def test_client_uses_own_server(test_server, server_state_root, monkeypatch):
+    monkeypatch.delenv("POWDERLINE_NO_SERVER", raising=False)
+    monkeypatch.setattr(gsas_server, "state_dir", lambda: server_state_root / "powderline")
+    assert GSASClient().is_server_available() is True
+
+
+def test_client_ignores_another_users_server(test_server, tmp_path, monkeypatch):
+    """A client whose state dir lacks the token never treats the server as its own,
+    even when it knows the port (here: a forged endpoint with a guessed token)."""
+    port, _ = test_server
+    monkeypatch.setattr(gsas_server, "state_dir", lambda: tmp_path)
+    client = GSASClient()
+    assert client.is_server_available() is False
+
+    (tmp_path / "server.json").write_text(
+        json.dumps({"pid": os.getpid(), "port": port, "token": "guessed"}))
+    assert client.is_server_available() is False
+    with pytest.raises(Exception):
+        client._submit_to_server({}, tmp_path / "out")
+    assert not (tmp_path / "out").exists()
+
+
+def test_refinement_through_authenticated_server(test_server, server_state_root,
+                                                 monkeypatch, recipe_LaB6_dict, tmp_path):
+    """End to end: the owner's client runs a real refinement via the server."""
+    monkeypatch.delenv("POWDERLINE_NO_SERVER", raising=False)
+    monkeypatch.setattr(gsas_server, "state_dir", lambda: server_state_root / "powderline")
+    client = GSASClient(fallback_to_subprocess=False)
+    result = client.submit_simulation(recipe_LaB6_dict, tmp_path, auto_start_server=False)
+    assert result["success"] is True, result.get("error")
+    assert result["method"] == "server"
+    assert (tmp_path / "fit_profile.txt").exists()

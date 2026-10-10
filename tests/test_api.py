@@ -407,7 +407,50 @@ def test_run_server_mode_failure_normalizes_result(recipe_LaB6_dict, tmp_path):
     assert set(result["refined_parameters"].columns) == expected_cols
 
 
+# ─── POWDERLINE_NO_SERVER (deployment off switch) ─────────────────────────────
+
+def _no_server_paths():
+    """Patches that fail the test if any server path is touched."""
+    from powderline import gsas_client as _gc
+
+    def _fail(*a, **k):
+        raise AssertionError("server path used despite POWDERLINE_NO_SERVER")
+
+    return (patch.object(_gc.GSASClient, "is_server_available", side_effect=_fail),
+            patch.object(_gc.GSASClient, "_start_server_background", side_effect=_fail),
+            patch.object(_gc.GSASClient, "_submit_to_server", side_effect=_fail))
+
+
+def test_run_auto_mode_with_no_server_env_runs_in_process(
+    recipe_LaB6_dict, tmp_path, monkeypatch
+):
+    """POWDERLINE_NO_SERVER: run(execution_mode='auto') never probes or starts a server."""
+    monkeypatch.setenv("POWDERLINE_NO_SERVER", "1")
+    probe, start, submit = _no_server_paths()
+    with probe, start, submit:
+        result = powderline.run(recipe_LaB6_dict, tmp_path / "out", execution_mode="auto")
+
+    assert result["success"] is True, f"Refinement failed: {result.get('error')}"
+    assert result["method"] == "subprocess"
+
+
+def test_run_server_mode_with_no_server_env_errors(recipe_LaB6_dict, tmp_path, monkeypatch):
+    """POWDERLINE_NO_SERVER: run(execution_mode='server') returns a clear error result."""
+    monkeypatch.setenv("POWDERLINE_NO_SERVER", "true")
+    probe, start, submit = _no_server_paths()
+    with probe, start, submit:
+        result = powderline.run(recipe_LaB6_dict, tmp_path / "out", execution_mode="server")
+
+    assert result["success"] is False
+    assert "POWDERLINE_NO_SERVER" in result["error"]
+    assert isinstance(result["fit_profile"], pd.DataFrame)
+
+
 # ─── HTTP retry logic tests ────────────────────────────────────────────────────
+
+# This user's server endpoint as read from the private state dir.
+_FAKE_ENDPOINT = {"pid": 4242, "port": 50123, "token": "t0ken"}
+
 
 def test_submit_to_server_retries_on_connect_error(recipe_LaB6_dict, tmp_path):
     """_submit_to_server() retries up to 3 times on ConnectError before raising."""
@@ -417,7 +460,8 @@ def test_submit_to_server_retries_on_connect_error(recipe_LaB6_dict, tmp_path):
     client = GSASClient()
     connect_error = httpx.ConnectError("Simulated connection refused")
 
-    with patch("httpx.post", side_effect=connect_error) as mock_post:
+    with patch.object(GSASClient, "_endpoint", return_value=_FAKE_ENDPOINT), \
+         patch("httpx.post", side_effect=connect_error) as mock_post:
         with pytest.raises(httpx.ConnectError):
             client._submit_to_server(recipe_LaB6_dict, tmp_path / "out")
 
@@ -440,7 +484,8 @@ def test_submit_to_server_does_not_retry_on_http_status_error(
         "500 Server Error", request=MagicMock(), response=mock_response
     )
 
-    with patch("httpx.post", side_effect=http_error) as mock_post:
+    with patch.object(GSASClient, "_endpoint", return_value=_FAKE_ENDPOINT), \
+         patch("httpx.post", side_effect=http_error) as mock_post:
         with pytest.raises(httpx.HTTPStatusError):
             client._submit_to_server(recipe_LaB6_dict, tmp_path / "out")
 
