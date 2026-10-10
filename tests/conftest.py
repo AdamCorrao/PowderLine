@@ -7,6 +7,25 @@ import tempfile
 import shutil
 
 
+@pytest.fixture(autouse=True)
+def _private_server_state(request, tmp_path_factory, monkeypatch):
+    """Keep every test away from the developer's real GSAS-II server state.
+
+    A probe there would create the per-user state directory and could submit
+    jobs to the developer's own running server. Each test gets a private
+    directory instead (in-process only; subprocesses are unaffected). The
+    state-path logic itself is tested in test_gsas_server_unit.py, which
+    isolates every case explicitly.
+    """
+    if request.module.__name__.endswith("test_gsas_server_unit"):
+        return
+    from powderline import gsas_server
+
+    root = tmp_path_factory.mktemp("server_state")
+    root.chmod(0o700)
+    monkeypatch.setattr(gsas_server, "_state_dir_path", lambda: root / "powderline")
+
+
 @pytest.fixture
 def example_LaB6_dir():
     """Path to example_LaB6 directory."""

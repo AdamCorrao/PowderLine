@@ -326,6 +326,18 @@ discovery/lifecycle mismatch below remains open.
 HTTP shutdown endpoint, or have `stop` fall back to the PID reported by
 `/health`).
 
+**Update (v0.1.2, KI-13).** The split discovery is resolved. Server state
+moved to a per-user directory (`server.lock`, `server.pid`, `server.json` =
+port + token; ephemeral port), and `status`/`stop` and clients now agree:
+"running" means holding the kernel lock on `server.lock` (released by the OS
+on exit, so a leftover PID file or a recycled PID no longer fools `status` or
+`stop`), and clients use only the endpoint in `server.json`, verified by
+signed responses. **Residual (why this stays open):** if the state directory
+itself is deleted while a server runs (e.g. `$XDG_RUNTIME_DIR` removed at
+logout, or a tempdir cleaner), that server keeps running unused — clients can
+no longer find or authenticate to it — but `status`/`stop` cannot see it
+either; it must be killed by hand (`pkill -u "$USER" -f gsas_server.py`).
+
 **Revisit.** Next branch touching `gsas_server.py`/`gsas_client.py`.
 
 ---
@@ -356,3 +368,61 @@ supported topology. Needs protocol versioning for already-running servers.
 
 **Revisit.** Next branch touching the server protocol, or when the HPC
 deployment work starts.
+
+---
+
+## KI-13 — GSAS-II server was shared across users on multi-user hosts `implemented · critical`
+
+**What.** Through v0.1.1 the server kept machine-global state
+(`<tempdir>/powderline_gsas_server.{port,pid,log}`), listened on a fixed port
+(19471) and had no authentication. On a shared workstation: user B's client
+found user A's server and ran B's job as A (files owned by A, possibly written
+where B could not write); any local user could POST a job with an
+`output_dir` inside another user's directories and have it written with that
+user's identity; users collided on the port and the shared files; and there
+was no global way to keep `powderline.run()` from auto-starting a server.
+
+**Evidence.** `gsas_server.py` (v0.1.1) `PORT_FILE`/`PID_FILE`/`LOG_FILE`,
+`DEFAULT_PORT = 19471`, unauthenticated `/simulate`; `gsas_client.py` probed
+`/health` on that port and submitted to whatever answered.
+
+**Decision.** Fixed in v0.1.2:
+
+- *Per-user state.* Lock, PID, log and endpoint (port + token), all mode
+  0600, live in `$XDG_RUNTIME_DIR/powderline` (only if that is a real
+  directory owned by the user) or `<tempdir>/powderline-<uid>` (POSIX: 0700;
+  refused if a symlink, foreign-owned or group/other-accessible, or if the
+  temp directory would let other users replace it; files opened via a
+  re-verified `O_NOFOLLOW` directory handle), or `%LOCALAPPDATA%\powderline`
+  (Windows, protected by the profile ACL).
+- *Authentication both ways, token never on the wire.* The server binds
+  `127.0.0.1` on an ephemeral port. Every request must carry a fresh nonce, a
+  timestamp and an HMAC-SHA256 (keyed by a per-start `secrets.token_urlsafe(32)`
+  token) over method, path, nonce, timestamp and body; unsigned, wrongly
+  signed, stale or replayed requests get 401 on every route before the body is
+  read. Every response is signed over the nonce, status and body, and the
+  client discards unsigned ones — so a process that takes over the port of a
+  crashed server learns nothing reusable and cannot fake a result. Clients
+  also ignore an endpoint whose server process is gone.
+- *Single instance.* A kernel-held lock (`flock` / `msvcrt.locking`) on
+  `server.lock` for the server's lifetime replaces the PID-file lock, which a
+  stale PID file let several concurrent starters win.
+- *Off switch.* `POWDERLINE_NO_SERVER=1|true|yes|on` disables the server:
+  `auto` runs in-process without starting or contacting one, `server` mode /
+  `--use-server` error, `gsas-server start|restart` refuse.
+- *Upgrade.* A v0.1.1 server still running after the upgrade is never used,
+  but is invisible to `gsas-server status|stop`; stop it by hand (see
+  TROUBLESHOOTING).
+
+**Evidence.** `src/powderline/gsas_server.py:119-315` (state directory and
+file access), `:318-450` (signing and `SignedRequestMiddleware`), `:476-562`
+(start lock), `:847` (`is_server_running`); `src/powderline/gsas_client.py:59-136`
+(endpoint, signed requests, identity check). Tests:
+`tests/test_gsas_server_unit.py` (state-dir checks, lock incl. a concurrent
+start race, signing on every route), `tests/test_gsas_server_http.py` (live
+server), `tests/test_gsas_client_visibility.py` (impostor listeners, forged
+results, `POWDERLINE_NO_SERVER`), `tests/test_api.py`.
+
+**Revisit.** Closed; kept for history. A Unix-domain-socket / named-pipe
+transport would give OS-level peer authentication but needs separate POSIX and
+Windows code paths; revisit if the HTTP transport is replaced (see KI-12).
