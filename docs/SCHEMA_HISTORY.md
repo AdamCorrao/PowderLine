@@ -364,8 +364,10 @@ easydiffraction path is unchanged until re/07).
   (CrysPy) or `cwl-thompson-cox-hastings` (CrysFML, FCJ `asym_fcj_1/2`), and
   `cutoff_fwhm` (CrysPy only). Gaussian FWHM² = U tan²θ + V tanθ + W (deg²),
   Lorentzian FWHM = X tanθ + Y/cosθ (deg; GSAS-II's X and Y swap roles). A stated
-  profile that makes either width negative at a point handed to the engine is
-  an error (easydiffraction would compute a wrong pattern without a message).
+  profile that makes either width negative within 1° of the fit window (widened
+  by the size of the stated zero, displacement and transparency corrections) is
+  an error: easydiffraction computes reflections just outside the window too,
+  and would compute a wrong pattern without a message.
 - **Background**: `chebyshev`, over the fit window's first and last points.
 - **Phase block**: core's `space_group`, `unit_cell`, `atoms` (`Uiso` and
   `Uaniso` in Å², used as given), plus `scale` (≥ 0: a phase may contribute
@@ -373,14 +375,22 @@ easydiffraction path is unchanged until re/07).
   the one easydiffraction leaves free.
 - **Space groups**: the canonical name maps to one of easydiffraction's 230
   short names plus a setting code (531 settings); each calculator accepts only
-  the settings it was verified to compute (CrysPy 437, CrysFML 230; the error
-  names one it computes, or the other calculator).
+  the settings it was verified to compute, for a general position and for every
+  special Wyckoff site (CrysPy 428, CrysFML 230; CrysPy computes
+  special positions wrongly in nine origin-choice-1 settings, which are refused
+  for it; the error names one it computes, or the other calculator).
 - **Calculator-specific rules**: `Uaniso` needs CrysPy (CrysFML is handed only
   B = 8π²·Ueq). With CrysPy, an atom on a special position with a free
   coordinate must be written in the pattern of easydiffraction's Wyckoff
   template for its site (CrysPy computes wrong intensities for other equivalent
   writings); the run refuses it before calculating and names the position to
-  write.
+  write. A position easydiffraction stores in another writing of the same site
+  (a lattice translation, e.g. (0.137, 0.863, z) on (x, −x, z) held as
+  (0.137, −0.137, z)) is accepted with the warning
+  `easydiffraction_position_translated`; bounds and reports stay in the recipe's
+  writing. CrysFML computes in single precision, below lmfit's finite-difference
+  step, so a CrysFML refinement can depend on its starting values: every CrysFML
+  refinement carries the warning `easydiffraction_crysfml_start_dependent`.
 - **Refinement controls** (required): `calculator` (`cryspy` | `crysfml`),
   `minimizer` (`lmfit (leastsq)`), `max_iterations` (lmfit's maximum number of
   function evaluations), `chi_square_change_tolerance`,
@@ -389,7 +399,8 @@ easydiffraction path is unchanged until re/07).
 - **Fit window and data**: easydiffraction gets exactly the weighted points
   with min ≤ 2θ ≤ max (open ends: the data's first or last weighted point), as
   a CIF data loop at full precision; a weight above 1e8 (σ < 1e-4) on one of
-  them is an error (easydiffraction would replace σ by 1.0 without saying so).
+  them is an error (easydiffraction would replace σ by 1.0 without saying so),
+  and so is a negative intensity on one of them (easydiffraction refuses it).
 - **Results**: `rwp`, `r_exp`, `gof`, `chi2_red` from PowderLine's uniform fit
   statistics over the window (Rwp equal to easydiffraction's); its values,
   calculator, peak type, `parameters_requested` and `parameters_varied`
@@ -399,8 +410,10 @@ easydiffraction path is unchanged until re/07).
   `easydiffraction_parameter_at_limit`, `easydiffraction_phase_contributes_nothing`
   (informative), `easydiffraction_fit_not_converged` (the values are reported),
   `easydiffraction_negative_width` (the refined profile makes a width negative
-  in the window), `easydiffraction_reflections_not_available` (CrysFML). Any
-  non-finite calculated value is a divergence error.
+  within the checked range), `easydiffraction_reflections_not_available`
+  (CrysFML), `easydiffraction_position_translated`,
+  `easydiffraction_crysfml_start_dependent`. Any non-finite calculated value,
+  refined value or reflection-list value is a divergence error.
 
 ---
 
