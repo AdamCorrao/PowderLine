@@ -197,7 +197,7 @@ def calculator_setting_problem(name: str, calculator: str) -> Optional[str]:
             "correctly by it")
     alt = f", or use the {other[0]} calculator" if other else ""
     return (f"the {calculator} calculator does not compute the setting {name!r} correctly (easydiffraction "
-            f"misreads it or fails, EB-80): {hint}{alt}")
+            f"misreads it, fails, or computes its special positions wrongly; EB-80, EB-77): {hint}{alt}")
 
 
 def easydiffraction_space_group(name: str) -> tuple[str, str]:

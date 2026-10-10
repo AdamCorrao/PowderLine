@@ -524,6 +524,9 @@ def test_window_mask_selects_weighted_points_in_range():
     ("P n n n:1", "crysfml", "P n n n:2"),
     ("R -3 m:R", "cryspy", "R -3 m:H"),
     ("P 1 1 2", "cryspy", "P 1 2 1"),
+    ("F d -3 m:1", "cryspy", "F d -3 m:2"),  # special positions computed wrongly (A174, EB-77)
+    ("F d d d:1", "cryspy", "F d d d:2"),
+    ("P n -3 m:1", "cryspy", "P n -3 m:2"),
 ])
 def test_setting_the_calculator_misreads_rejected(setting, calculator, suggestion):
     from powderline.gateways.easydiffraction.schema import calculator_setting_problem
@@ -541,7 +544,7 @@ def test_p31_cryspy_rejected_naming_crysfml():
 
 
 @pytest.mark.parametrize("setting, calculator", [("P m -3 m", "crysfml"), ("P m -3 m", "cryspy"),
-                                                 ("F d -3 m:1", "cryspy"), ("C 1 2/m 1", "crysfml"),
+                                                 ("P n -3:1", "cryspy"), ("C 1 2/m 1", "crysfml"),
                                                  ("P 31", "crysfml"), ("P 6/m", "crysfml"), ("F d -3 c:2", "crysfml")])
 def test_setting_the_calculator_computes_accepted(setting, calculator):
     from powderline.gateways.easydiffraction.schema import calculator_setting_problem

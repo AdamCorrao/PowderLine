@@ -71,10 +71,12 @@ def test_structure_accepts_the_mapped_setting(xhm, expected):
 
 
 #: A fixed sample re-verified by computation against the committed support sets (EB-80): defaults,
-#: origin choices, rhombohedral axes, non-default monoclinic and orthorhombic settings, CrysPy crashes, and
-#: P 31 (CrysPy computes the other hand; A170).
+#: origin choices, rhombohedral axes, non-default monoclinic and orthorhombic settings, CrysPy crashes,
+#: P 31 (CrysPy computes the other hand; A170), and origin-1 settings whose special positions CrysPy computes
+#: wrongly (A174).
 SUPPORT_SAMPLE = ("P m -3 m", "F d -3 m:1", "F d -3 m:2", "R -3 m:H", "R -3 m:R", "C 1 2/m 1", "P 1 1 2",
-                  "P n n n:1", "P n n n:2", "P b n m", "A 1 2 1", "P 31", "P 6/m", "F d -3 c:2")
+                  "P n n n:1", "P n n n:2", "P b n m", "A 1 2 1", "P 31", "P 6/m", "F d -3 c:2", "F d d d:1",
+                  "P n -3 m:1")
 
 
 def test_support_sets_reverified_on_a_sample():
