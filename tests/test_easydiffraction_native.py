@@ -767,6 +767,36 @@ def test_zero_gsasii_imports_subprocess():
     assert "OK" in proc.stdout
 
 
+@pytest.fixture(scope="module")
+def drx33_two_phase_build():
+    """Build drx33_two_phase_cryspy.json once; return Build object."""
+    return native_builder.build_project(schema.validate_recipe(_load_fixture("drx33_two_phase_cryspy.json")))
+
+
+@pytest.fixture(scope="module")
+def drx33_two_phase_result(tmp_path_factory):
+    """Run drx33_two_phase_cryspy.json once (two phases, CrysPy); return (result, output dir)."""
+    out = tmp_path_factory.mktemp("drx33_two_phase")
+    return gateway.run(_load_fixture("drx33_two_phase_cryspy.json"), str(out)), out
+
+
+def test_two_phases_built_and_refined(drx33_two_phase_build, drx33_two_phase_result):
+    """Two phases (cubic + C 1 2/m 1): one structure each, scales and cells refined per phase, reports per phase."""
+    assert set(drx33_two_phase_build.structures) == {"DRX_33", "Li4MgWO6_SG12"}
+    linked = drx33_two_phase_build.experiment.linked_structures
+    assert {"drx_33", "li4mgwo6_sg12"} <= {ls.structure_id.value for ls in linked}
+    result, out = drx33_two_phase_result
+    d = result["engine_details"]
+    assert result["success"] and d["fit_success"] and d["parameters_varied"] == d["parameters_requested"] == 18
+    rows = result["refined_parameters"].set_index("parameter_name")
+    assert rows.loc["DRX_33_scale", "phase_idx"] == 0 and rows.loc["Li4MgWO6_SG12_scale", "phase_idx"] == 1
+    assert np.isfinite(rows["esd"].astype(float)).all()
+    assert set(result["unit_cell_data"]) == {"DRX_33", "Li4MgWO6_SG12"}
+    for phase in ("DRX_33", "Li4MgWO6_SG12"):
+        assert (out / f"{phase}_peak_list_report.csv").is_file() and (out / f"{phase}_unit_cell_report.csv").is_file()
+    assert not [w for w in result["warnings"] if w["code"] == "easydiffraction_phase_contributes_nothing"]
+
+
 # ============================================================================
 # Goldens (A157 B8): regenerated only on a deliberate engine change
 # (devkit probes/re06/make_goldens.py)
@@ -774,7 +804,13 @@ def test_zero_gsasii_imports_subprocess():
 
 _GOLDEN_CASES = [("lab6_crysfml_tch.json", "lab6_crysfml_tch_build", "lab6_crysfml_tch_result"),
                  ("lab6_cryspy_pv.json", "lab6_cryspy_pv_build", "lab6_cryspy_pv_result"),
-                 ("lab6_slots_simulation.json", "lab6_slots_simulation_build", "lab6_slots_simulation_result")]
+                 ("lab6_slots_simulation.json", "lab6_slots_simulation_build", "lab6_slots_simulation_result"),
+                 ("drx33_two_phase_cryspy.json", "drx33_two_phase_build", "drx33_two_phase_run")]
+
+
+@pytest.fixture(scope="module")
+def drx33_two_phase_run(drx33_two_phase_result):
+    return drx33_two_phase_result[0]
 
 
 def _golden(name: str) -> dict:

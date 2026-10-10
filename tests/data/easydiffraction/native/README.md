@@ -10,6 +10,7 @@ They are not converted recipes: PowderLine ships no 0.26.0 →
 | `lab6_crysfml_tch.json` | LaB6, CrysFML, Thompson-Cox-Hastings with FCJ axial asymmetry (fixed); U, V, W, X, Y, cell, scale and a 6-term Chebyshev refined; window [1, 15] |
 | `lab6_cryspy_pv.json` | LaB6, CrysPy, pseudo-Voigt (no asymmetry); the same refinement |
 | `lab6_slots_simulation.json` | Calculation only (no flag set), CrysPy, every instrument slot: Kα2 doublet, polarization with a monochromator angle, displacement, transparency, cylinder absorption, Bérar–Baldinozzi asymmetry, a peak cutoff. Exercises the builder; not a physical model |
+| `drx33_two_phase_cryspy.json` | Two phases from the `example_DRX_33` data: cubic DRX_33 (`F m -3 m`, four cations sharing 4a) and monoclinic Li4MgWO6 (`C 1 2/m 1`); CrysPy, pseudo-Voigt; U, V, W, X, Y, 6-term Chebyshev, both scales and cells (cubic a; a, b, c, β) refined; window [1, 15] |
 
 ## Derivations (from the example's GSAS-II instrument parameters)
 
@@ -41,6 +42,15 @@ They are not converted recipes: PowderLine ships no 0.26.0 →
   (EB-77).
 - **Scale and background.** Starting values near the refined ones (scale
   5.4e-6; Chebyshev 30, 0.6, 0.7, −0.4, −0.8, 0.9 over the window).
+- **Two phases (DRX_33).** Same instrument as LaB6 (the example's GSAS-II
+  parameters are identical), so the same conversions. The example's per-phase
+  size/strain broadening has no easydiffraction counterpart (the profile is the
+  experiment's); U, V, W, X, Y are refined instead. Li4MgWO6's `C2/m` is written
+  with gemmi's canonical name `C 1 2/m 1`; its 4g, 4h and 4i atoms are already in
+  easydiffraction's template pattern (EB-77). Starting values are near the
+  refined ones, from a first fit that started from the example's structure with
+  the LaB6 profile and a linear least-squares estimate of the scales and
+  background (Rwp 7.25 %).
 - **Refinement controls.** easydiffraction 0.21.1's own lmfit defaults
   (`max_iterations` = lmfit `max_nfev` 1000; tolerances 1e-8, 1e-8, 0).
 
