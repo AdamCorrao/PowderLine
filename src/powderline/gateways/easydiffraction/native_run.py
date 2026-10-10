@@ -24,8 +24,8 @@ dict with the shared report files (``refined_parameters.csv``,
   ``easydiffraction_parameters_not_varied`` (A128),
   ``easydiffraction_parameter_at_limit`` (A157 B4: PowderLine's own check
   against the limits acting in the fit), ``easydiffraction_phase_contributes_nothing``
-  (A157 B7), ``easydiffraction_fit_not_converged`` (lmfit stopped without
-  success), ``easydiffraction_reflections_not_available`` (CrysFML).
+  (A157 B7), ``easydiffraction_fit_not_converged`` (informative, A166: lmfit stopped without
+  success; the values are reported), ``easydiffraction_reflections_not_available`` (CrysFML, A165).
 
 Runtime layer: imports easydiffraction.
 """
@@ -89,7 +89,9 @@ def run_native(model, output_dir, *, validated_warnings: list | None = None) -> 
         if not results.success:
             warnings.append(StructuredWarning(
                 code="easydiffraction_fit_not_converged",
-                message=f"lmfit stopped without converging: {results.message}",
+                message=(f"lmfit stopped without converging ({results.message}); the values are reported as "
+                         "they stand. Likely causes: too few iterations (max_iterations) or poorly conditioned "
+                         "parameters (strong correlations, a parameter without effect); check the ESDs"),
                 field_path="payload.refinement_controls"))
     return build_result(model, build, out, warnings, elapsed=time.time() - t0, fit_info=fit_info)
 
