@@ -48,7 +48,7 @@ from powderline import reports
 from powderline.exceptions import EngineExecutionError, StructuredWarning
 from powderline.fitstats import compute_fit_statistics
 from powderline.gateways.easydiffraction.native_builder import Build, build_project, structure_name
-from powderline.gateways.easydiffraction.schema import profile_negative_widths
+from powderline.gateways.easydiffraction.schema import profile_negative_widths, width_check_points
 from powderline.schema_core import collect_warnings, parameters_requested
 from powderline.symmetry import cell_tie_groups
 
@@ -132,12 +132,16 @@ def build_result(model, build: Build, out: Path, warnings: list, *, elapsed: flo
             field_path=None))
     warnings += _limit_hits(build)
     warnings += _empty_phases(model, build)
-    for kind, (lo, hi) in profile_negative_widths(lambda n: getattr(expt.peak, n).value, x_window).items():
+    shifts = [getattr(expt.instrument, n).value for n in
+              ("calib_twotheta_offset", "calib_sample_displacement", "calib_sample_transparency")]
+    points, pad = width_check_points(x_window, shifts)
+    for kind, (lo, hi) in profile_negative_widths(lambda n: getattr(expt.peak, n).value, points).items():
         warnings.append(StructuredWarning(
             code="easydiffraction_negative_width",
-            message=(f"with the refined profile the {kind} is negative from {lo:g} to {hi:g} deg 2theta: "
-                     "easydiffraction computed those peaks wrongly without a message (CrysFML drops them, CrysPy "
-                     "distorts them; EB-87); the values are reported as they stand"),
+            message=(f"with the refined profile the {kind} is negative from {lo:g} to {hi:g} deg 2theta (within "
+                     f"{pad:g} deg of the fit window): easydiffraction computed those peaks wrongly without a "
+                     "message (CrysFML drops them, CrysPy distorts them; EB-87); the values are reported as they "
+                     "stand"),
             field_path="payload.instrument.broadening.parameters"))
 
     refined_rows = _refined_rows(model, build)

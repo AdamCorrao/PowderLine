@@ -25,22 +25,26 @@ compute, so the choice is part of the recipe.
 easydiffraction rules checked here:
 
 - the space group must be a setting easydiffraction has (EB-42) and one the
-  chosen calculator computes correctly (EB-80: established by computation;
-  CrysFML misreads most non-default settings);
+  chosen calculator computes correctly, for a general position and every special
+  site (EB-80, A174: established by computation; CrysFML misreads most
+  non-default settings, CrysPy computes special positions wrongly in nine
+  origin-choice-1 settings);
 - a value outside easydiffraction's physical limits is refused by the engine
   even when fixed, so it is an error (cell lengths 0..30 A, angles 0..180 deg,
   occupancy 0..1, Uiso and U11/U22/U33 0..10 A^2, wavelength, scale and
   absorption mu_r >= 0; EB-71; A111, A157 B4);
 - wavelength > 0 (A126); scale >= 0 (A161: a phase may contribute nothing);
 - a data point handed to the engine has a weight <= 1e8 (sigma >= 1e-4):
-  easydiffraction replaces a smaller sigma with 1.0 silently (A159);
+  easydiffraction replaces a smaller sigma with 1.0 silently (A159), and an
+  intensity >= 0: easydiffraction refuses a negative one (EB-91, A177);
 - the peak type must be one the calculator computes; ``cutoff_fwhm`` is a
   CrysPy setting (CrysFML ignores it) (A162, A127 principle);
 - ``Uaniso`` needs the cryspy calculator: easydiffraction hands CrysFML only
   B = 8 pi^2 Ueq, so the tensor would have no effect (EB-23, A127 principle);
-- the stated profile makes no peak width negative at a point handed to the
-  engine (Gaussian FWHM^2 or Lorentzian FWHM): easydiffraction would compute a
-  wrong pattern without a message (EB-87, A171);
+- the stated profile makes no peak width negative within ``WIDTH_MARGIN`` of the
+  fit window, widened by the stated position corrections (Gaussian FWHM^2 or
+  Lorentzian FWHM): easydiffraction would compute a wrong pattern without a
+  message, also from a reflection just outside the window (EB-87, A171, A178);
 - the Kα2 wavelength and its intensity ratio are stated together;
 - simulation = no refine flag set (lmfit is not run).
 """
@@ -104,6 +108,13 @@ UNIT_DIMENSIONLESS = "dimensionless"
 #: Largest data weight easydiffraction keeps: it replaces sigma < 1e-4 by 1.0 (EB-73, A159).
 MAX_WEIGHT = 1e8
 
+#: How far outside the fit window (deg 2theta) peak widths must be >= 0 (A178): easydiffraction computes
+#: reflections beyond the window whose tails reach it (EB-70), and a negative width there distorts or drops
+#: them silently (EB-87). The stated position corrections widen it further (they move reflections).
+WIDTH_MARGIN = 1.0
+#: Spacing of the 2theta grid on which the widths are checked, besides the points handed to the engine.
+WIDTH_GRID_STEP = 0.01
+
 #: easydiffraction's physical limits (min, max) on values (EB-71; ``None`` = none). The
 #: engine refuses a value outside them at input, fixed or refined, and gives an
 #: unbounded side of a refined parameter its physical limit.
@@ -166,6 +177,19 @@ def profile_negative_widths(values, tth) -> dict[str, tuple[float, float]]:
     """:func:`negative_widths` for an object carrying ``broad_gauss_u`` ... ``broad_lorentz_y`` values."""
     return negative_widths(*(float(values(name)) for name in (
         "broad_gauss_u", "broad_gauss_v", "broad_gauss_w", "broad_lorentz_x", "broad_lorentz_y")), tth)
+
+
+def width_check_points(tth, shifts=()) -> tuple[np.ndarray, float]:
+    """2theta values where the peak widths must be >= 0, and the margin used (A178).
+
+    The points handed to the engine (``tth``) and a ``WIDTH_GRID_STEP`` grid over the window widened by
+    ``WIDTH_MARGIN`` plus the size of the position corrections ``shifts`` (zero, displacement, transparency,
+    deg), kept inside (0, 179] deg.
+    """
+    tth = np.asarray(tth, dtype=float)
+    pad = WIDTH_MARGIN + sum(abs(float(v)) for v in shifts)
+    lo, hi = max(tth.min() - pad, 1e-3), min(tth.max() + pad, 179.0)
+    return np.union1d(tth, np.linspace(lo, hi, int(np.ceil((hi - lo) / WIDTH_GRID_STEP)) + 1)), pad
 
 
 def physical_problems(p: Optional[P], limits: tuple, loc: tuple, what: str) -> list[InitErrorDetails]:
@@ -508,6 +532,15 @@ class RietveldPayload(CoreModel):
                     ("xrd_data", "Itth_weights", int(i)), self.xrd_data.Itth_weights[i],
                     value=self.xrd_data.Itth_weights[i], sigma=f"{self.xrd_data.Itth_weights[i] ** -0.5:.3g}",
                     limit=f"{MAX_WEIGHT:g}"))  # pydantic's templates take no format specs
+            itth = np.asarray(self.xrd_data.Itth, dtype=float)
+            for i in np.flatnonzero(mask & (itth < 0))[:20]:
+                problems.append(_error(
+                    "easydiffraction_negative_intensity",
+                    "intensity {value} at {tth} deg 2theta is negative: easydiffraction refuses negative measured "
+                    "intensities (EB-91); shift the data so that every point in the fit window is >= 0, or give "
+                    "the point weight 0 (it is then not handed to the engine)",
+                    ("xrd_data", "Itth", int(i)), self.xrd_data.Itth[i], value=self.xrd_data.Itth[i],
+                    tth=f"{self.xrd_data.tth[i]:g}"))
         calculator = self.refinement_controls.calculator
         for name, phase in self.phases.items():
             why = calculator_setting_problem(phase.space_group, calculator)
@@ -537,14 +570,18 @@ class RietveldPayload(CoreModel):
                 ("instrument", "broadening", "cutoff_fwhm"), profile.cutoff_fwhm, calculator=calculator))
         if mask is not None:
             pars = profile.parameters
-            tth = np.asarray(self.xrd_data.tth, dtype=float)[mask]
-            for kind, (lo, hi) in profile_negative_widths(lambda n: getattr(pars, n).value, tth).items():
+            corrections = self.instrument.corrections
+            shifts = [q.value for q in (corrections.calib_twotheta_offset, corrections.calib_sample_displacement,
+                                        corrections.calib_sample_transparency) if q is not None]
+            points, pad = width_check_points(np.asarray(self.xrd_data.tth, dtype=float)[mask], shifts)
+            for kind, (lo, hi) in profile_negative_widths(lambda n: getattr(pars, n).value, points).items():
                 problems.append(_error(
                     "easydiffraction_negative_width",
-                    "the {width} is negative from {lo} to {hi} deg 2theta in the fit window: easydiffraction "
-                    "then computes a wrong pattern without a message (CrysFML drops those peaks, CrysPy distorts "
-                    "them; EB-87)", ("instrument", "broadening", "parameters"), pars.model_dump(),
-                    width=kind, lo=f"{lo:g}", hi=f"{hi:g}"))
+                    "the {width} is negative from {lo} to {hi} deg 2theta, within {pad} deg of the fit window "
+                    "(reflections there are computed and reach it): easydiffraction then computes a wrong "
+                    "pattern without a message (CrysFML drops those peaks, CrysPy distorts them; EB-87)",
+                    ("instrument", "broadening", "parameters"), pars.model_dump(),
+                    width=kind, lo=f"{lo:g}", hi=f"{hi:g}", pad=f"{pad:g}"))
         _raise(type(self).__name__, problems)
         return self
 

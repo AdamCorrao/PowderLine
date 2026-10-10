@@ -350,7 +350,8 @@ def test_negative_gaussian_width_in_window_rejected(fixture):
         validate_recipe(r)
     hits = [e for e in exc.value.errors() if e["type"] == "easydiffraction_negative_width"]
     assert [e["loc"] for e in hits] == [("payload", "instrument", "broadening", "parameters")]
-    assert "Gaussian" in hits[0]["msg"] and "from 1" in hits[0]["msg"] and "{" not in hits[0]["msg"]
+    assert "Gaussian" in hits[0]["msg"] and "within 1 deg of the fit window" in hits[0]["msg"]
+    assert "{" not in hits[0]["msg"]
 
 
 def test_negative_lorentzian_width_rejected():
@@ -360,10 +361,65 @@ def test_negative_lorentzian_width_rejected():
     assert len(errors) == 1
 
 
-def test_negative_width_outside_the_window_accepted():
-    """Only the points handed to the engine count (window [1, 15])."""
+def _x_negative_above(two_theta: float, r: dict) -> float:
+    """The Lorentzian X that makes the fixture's FWHM (X tan + Y / cos) negative above ``two_theta``."""
+    y = r["payload"]["instrument"]["broadening"]["parameters"]["broad_lorentz_y"][0]
+    return -y / np.sin(np.radians(two_theta / 2))
+
+
+def test_negative_width_beyond_the_margin_accepted():
+    """Only the window widened by WIDTH_MARGIN (1 deg) counts: window [1, 15], negative above 16.2 deg (A178)."""
     r = _load_fixture("lab6_cryspy_pv.json")
-    r["payload"]["instrument"]["broadening"]["parameters"]["broad_gauss_w"][0] = _w_negative_below(0.9, r)
+    r["payload"]["instrument"]["broadening"]["parameters"]["broad_lorentz_x"][0] = _x_negative_above(16.2, r)
+    validate_recipe(r)
+
+
+def test_negative_width_just_outside_the_window_rejected():
+    """A reflection just outside the window is computed and reaches it (A178; the review's 12-sigma case)."""
+    r = _load_fixture("lab6_cryspy_pv.json")
+    r["payload"]["instrument"]["broadening"]["parameters"]["broad_lorentz_x"][0] = _x_negative_above(15.5, r)
+    with pytest.raises(ValidationError) as exc:
+        validate_recipe(r)
+    msg = next(e["msg"] for e in exc.value.errors() if e["type"] == "easydiffraction_negative_width")
+    assert "Lorentzian" in msg and "from 15.5" in msg and "to 15.9976 deg" in msg  # last handed point 14.9976 + 1
+
+
+def test_negative_width_margin_widened_by_the_zero_shift():
+    """The stated zero offset moves reflections, so it widens the checked range (A178)."""
+    r = _load_fixture("lab6_cryspy_pv.json")
+    r["payload"]["instrument"]["broadening"]["parameters"]["broad_lorentz_x"][0] = _x_negative_above(16.2, r)
+    r["payload"]["instrument"]["corrections"]["calib_twotheta_offset"] = [0.5, False, None, None]
+    _fails(r, ("payload", "instrument", "broadening", "parameters"), "easydiffraction_negative_width")
+
+
+# --- negative intensities (A177, EB-91) --------------------------------------------
+
+
+def _index_at(r: dict, lo: float, hi: float) -> int:
+    return next(i for i, t in enumerate(r["payload"]["xrd_data"]["tth"]) if lo <= t <= hi)
+
+
+def test_negative_intensity_in_window_rejected():
+    """easydiffraction refuses a negative measured intensity on a point it is handed (EB-91)."""
+    r = _load_fixture("lab6_crysfml_tch.json")
+    i = _index_at(r, 10.0, 10.1)
+    r["payload"]["xrd_data"]["Itth"][i] = -3.0
+    with pytest.raises(ValidationError) as exc:
+        validate_recipe(r)
+    hits = [e for e in exc.value.errors() if e["type"] == "easydiffraction_negative_intensity"]
+    assert [e["loc"] for e in hits] == [("payload", "xrd_data", "Itth", i)]
+    assert "EB-91" in hits[0]["msg"] and "{" not in hits[0]["msg"]
+
+
+@pytest.mark.parametrize("where", ["outside the window", "zero weight"])
+def test_negative_intensity_not_handed_accepted(where):
+    """A negative intensity outside the window, or on a zero-weight point, never reaches the engine."""
+    r = _load_fixture("lab6_crysfml_tch.json")
+    xrd = r["payload"]["xrd_data"]
+    i = _index_at(r, 15.5, 16.0) if where == "outside the window" else _index_at(r, 10.0, 10.1)
+    xrd["Itth"][i] = -3.0
+    if where == "zero weight":
+        xrd["Itth_weights"][i] = 0.0
     validate_recipe(r)
 
 
