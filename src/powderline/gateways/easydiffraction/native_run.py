@@ -14,8 +14,8 @@ dict with the shared report files (``refined_parameters.csv``,
   handed to lmfit, which varies every one of them; A41). easydiffraction's own
   values go under ``engine_details``; an undefined statistic is ``None``.
 - **Strict reading** (A130, A154): a non-finite calculated point, background
-  point or refined value is the divergence error; an undetermined ESD is
-  left empty.
+  point, refined value or reflection-list value is the divergence error; an
+  undetermined ESD is left empty.
 - **Background column** (A152's principle): easydiffraction's own
   ``intensity_bkg`` on the fitted points.
 - **Reflection lists**: CrysPy's per phase; CrysFML provides none, and the
@@ -144,14 +144,16 @@ def build_result(model, build: Build, out: Path, warnings: list, *, elapsed: flo
     unit_cells = {name: _cell_rows(model, build, name) for name in p.phases}
     peak_lists = {}
     if expt.refln is not None:
-        refln = expt.refln
-        ids = np.asarray(refln.structure_id)
+        refln = _refln_arrays(expt.refln)
+        for key in ("d_spacing", "two_theta", "f_squared_calc"):
+            if not np.isfinite(refln[key].astype(float)).all():
+                raise _diverged(f"the reflection list ({key})")
         for name in p.phases:
-            sel = ids == structure_name(name)
+            sel = refln["structure_id"] == structure_name(name)
             peak_lists[name] = [
                 {"h": int(h), "k": int(k), "l": int(l), "d_spacing": float(d), "2theta": float(t),
                  "F_calc_squared": float(f2), "phase": name}
-                for h, k, l, d, t, f2 in zip(*(np.asarray(getattr(refln, a))[sel] for a in (
+                for h, k, l, d, t, f2 in zip(*(refln[a][sel] for a in (
                     "index_h", "index_k", "index_l", "d_spacing", "two_theta", "f_squared_calc")))]
     else:
         warnings.append(StructuredWarning(
@@ -211,6 +213,12 @@ def build_result(model, build: Build, out: Path, warnings: list, *, elapsed: flo
         "error": None,
         "traceback": None,
     }
+
+
+def _refln_arrays(refln) -> dict:
+    """easydiffraction's reflection list as arrays, one per column the reports use."""
+    return {a: np.asarray(getattr(refln, a)) for a in (
+        "structure_id", "index_h", "index_k", "index_l", "d_spacing", "two_theta", "f_squared_calc")}
 
 
 def _percent(v):

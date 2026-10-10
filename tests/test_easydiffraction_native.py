@@ -766,6 +766,105 @@ def test_run_validate_only(tmp_path):
     assert "engine_schema_version" in result
 
 
+# ============================================================================
+# Safeguards without a test before the re/06 PR review (record N1, N5)
+# ============================================================================
+
+
+def test_builder_site_mismatch_raises(monkeypatch):
+    """EB-47: an atom whose easydiffraction multiplicity differs from core's is refused before the run."""
+    model = schema.validate_recipe(_load_fixture("lab6_crysfml_tch.json"))
+    phase_class = type(model.payload.phases["LaB6"])
+    core_site = phase_class.site
+
+    def site(self, label):
+        s = core_site(self, label)
+        return Mock(multiplicity=s.multiplicity * 2) if label == "B" else s
+
+    monkeypatch.setattr(phase_class, "site", site)
+    with pytest.raises(EngineExecutionError, match=r"payload\.phases\.LaB6\.atoms\.B: .*core has multiplicity 12 \(EB-47\)"):
+        native_builder.build_project(model)
+
+
+def test_builder_interior_zero_weights_not_handed():
+    """Zero-weight points inside the window (a masked region) are not handed to easydiffraction (A154, A158)."""
+    recipe = _load_fixture("lab6_crysfml_tch.json")
+    xrd = recipe["payload"]["xrd_data"]
+    masked = [i for i, t in enumerate(xrd["tth"]) if 5.0 <= t <= 5.1]
+    for i in masked:
+        xrd["Itth_weights"][i] = 0.0
+    model = schema.validate_recipe(recipe)
+    mask = model.payload.window_mask()
+    assert masked and not mask[masked].any()
+    build = native_builder.build_project(model)
+    np.testing.assert_array_equal(np.asarray(build.experiment.data.x, dtype=float),
+                                  np.asarray(xrd["tth"], dtype=float)[mask])
+
+
+def test_builder_sets_raise_reaction(monkeypatch):
+    """EB-48: a value easydiffraction refuses raises, even when the user's environment asks it to warn."""
+    from easydiffraction.utils.logging import Logger
+
+    monkeypatch.setenv("ED_LOG_REACTION", "WARN")
+    Logger.configure()
+    try:
+        build = native_builder.build_project(schema.validate_recipe(_load_fixture("lab6_crysfml_tch.json")))
+        with pytest.raises(TypeError, match="outside"):
+            build.structures["LaB6"].cell.length_a = 35.0  # above easydiffraction's 30 A limit (EB-71)
+    finally:
+        Logger.configure(reaction=Logger.Reaction.RAISE)
+
+
+def test_run_not_varied_warning(tmp_path, monkeypatch):
+    """A128: fewer parameters varied than the recipe requests gives easydiffraction_parameters_not_varied."""
+    recipe = _load_fixture("lab6_crysfml_tch.json")
+    recipe["payload"]["refinement_controls"]["max_iterations"] = 3
+    requested = native_run.parameters_requested
+    monkeypatch.setattr(native_run, "parameters_requested", lambda model: requested(model) + 1)
+    result = gateway.run(recipe, str(tmp_path))
+    hits = [w for w in result["warnings"] if w["code"] == "easydiffraction_parameters_not_varied"]
+    assert len(hits) == 1 and "requests 14" in hits[0]["message"] and "varied 13" in hits[0]["message"]
+
+
+def test_run_y_bkg_is_the_engines_chebyshev(lab6_crysfml_tch_result):
+    """A157 B5: y_bkg is easydiffraction's Chebyshev at the refined coefficients over the handed points' range."""
+    fp = lab6_crysfml_tch_result["fit_profile"]
+    rows = lab6_crysfml_tch_result["refined_parameters"].set_index("parameter_name")
+    x = fp["two_theta"].to_numpy(dtype=float)
+    u = (x - x.min()) / (x.max() - x.min()) * 2 - 1
+    coefficients = [rows.loc[f"background_coefficient_{k}", "value"] for k in range(6)]
+    np.testing.assert_allclose(fp["y_bkg"].to_numpy(dtype=float), np.polynomial.chebyshev.chebval(u, coefficients),
+                               rtol=1e-12, atol=1e-12)
+
+
+def test_run_divergence_nan_refined_value(tmp_path):
+    """A non-finite refined value is the divergence error (A130, A154)."""
+    model = schema.validate_recipe(_load_fixture("lab6_cryspy_pv.json"))
+    build = native_builder.build_project(model)
+    build.project.analysis.calculate()
+    build.free[0].parameter._set_value_from_minimizer(float("nan"))  # as lmfit could leave it
+    with pytest.raises(EngineExecutionError, match=f"diverged.*{build.free[0].path}"):
+        native_run.build_result(model, build, tmp_path, [], elapsed=0.0, fit_info={})
+
+
+def test_run_divergence_nan_in_reflection_list(tmp_path, monkeypatch):
+    """A non-finite value in the reflection list is the divergence error (A154)."""
+    model = schema.validate_recipe(_load_fixture("lab6_slots_simulation.json"))
+    build = native_builder.build_project(model)
+    build.project.analysis.calculate()
+    arrays = native_run._refln_arrays
+
+    def with_nan(refln):
+        out = arrays(refln)
+        out["f_squared_calc"] = out["f_squared_calc"].astype(float)
+        out["f_squared_calc"][0] = np.nan
+        return out
+
+    monkeypatch.setattr(native_run, "_refln_arrays", with_nan)
+    with pytest.raises(EngineExecutionError, match=r"diverged.*reflection list \(f_squared_calc\)"):
+        native_run.build_result(model, build, tmp_path, [], elapsed=0.0, fit_info={})
+
+
 def test_zero_gsasii_imports_subprocess():
     """A subprocess that blocks GSASII imports can import native_run and schema."""
     import textwrap
