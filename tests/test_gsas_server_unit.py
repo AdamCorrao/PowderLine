@@ -174,6 +174,26 @@ def test_stop_server_sends_sigterm_to_live_pid(isolated_pid_files, monkeypatch, 
     assert calls["signals"][0][0] == 4242
     assert calls["signals"][0][1] == signal.SIGTERM
     assert "stopped" in capsys.readouterr().out.lower()
+    # A terminated server (e.g. TerminateProcess on Windows) cannot clean up;
+    # stop does it, under the lock.
+    assert not pid_file.exists()
+
+
+def test_clear_stale_state_files_never_touches_a_live_server(isolated_pid_files, other_holder):
+    pid_file, endpoint_file = isolated_pid_files
+    pid_file.write_text("4242")
+    endpoint_file.write_text("{}")
+    assert gsas_server._clear_stale_state_files() is False
+    assert pid_file.exists() and endpoint_file.exists()
+
+
+def test_clear_stale_state_files_after_crash(isolated_pid_files):
+    pid_file, endpoint_file = isolated_pid_files
+    pid_file.write_text("4242")
+    endpoint_file.write_text("{}")
+    assert gsas_server._clear_stale_state_files() is True
+    assert not pid_file.exists() and not endpoint_file.exists()
+    assert gsas_server.is_server_running() is False  # lock released again
 
 
 # The escalation signal stop_server() uses when the graceful SIGTERM window
@@ -604,6 +624,50 @@ def test_replayed_request_rejected(app_client, tmp_path):
     assert client.post("/simulate", headers=headers, content=body).status_code == 200
     assert client.post("/simulate", headers=headers, content=body).status_code == 401
     assert len(calls) == 1
+
+
+def test_concurrent_replays_run_at_most_once():
+    """Two copies of one signed request arriving together: the nonce is
+    re-checked after the body is read, so only one reaches the app."""
+    import asyncio
+
+    calls = []
+
+    async def app(scope, receive, send):
+        calls.append(scope["path"])
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b"{}"})
+
+    middleware = gsas_server.SignedRequestMiddleware(app, TOKEN)
+    body = b'{"recipe_data": {}, "output_dir": "x"}'
+    _, headers = _signed_headers("POST", "/simulate", body)
+    scope = {"type": "http", "method": "POST", "path": "/simulate", "query_string": b"",
+             "headers": [(k.lower().encode(), v.encode()) for k, v in headers.items()]}
+
+    async def main():
+        body_ready = asyncio.Event()
+        statuses = []
+
+        async def receive():
+            await body_ready.wait()  # both copies are suspended here together
+            return {"type": "http.request", "body": body, "more_body": False}
+
+        def sender():
+            async def send(message):
+                if message["type"] == "http.response.start":
+                    statuses.append(message["status"])
+            return send
+
+        tasks = [asyncio.create_task(middleware(dict(scope), receive, sender()))
+                 for _ in range(2)]
+        await asyncio.sleep(0.05)
+        body_ready.set()
+        await asyncio.gather(*tasks)
+        return statuses
+
+    statuses = asyncio.run(main())
+    assert sorted(statuses) == [200, 401]
+    assert calls == ["/simulate"]
 
 
 @pytest.mark.parametrize("method, path, body, status", [

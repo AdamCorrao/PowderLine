@@ -394,6 +394,10 @@ class SignedRequestMiddleware:
                                 scope.get('query_string', b''), nonce, timestamp, body)
         if not hmac.compare_digest(signature.encode('latin-1'), expected.encode()):
             return await self._reject(send, 401)
+        # Another copy of this request may have claimed the nonce while this one
+        # awaited its body; re-check and record it with no await in between.
+        if nonce in self._seen_nonces:
+            return await self._reject(send, 401)
         self._remember(nonce, now)
 
         body_sent = False
@@ -540,6 +544,30 @@ def _lock_held() -> bool:
         if _try_lock(fd):
             _unlock(fd)
             return False
+        return True
+    finally:
+        os.close(fd)
+
+
+def _clear_stale_state_files() -> bool:
+    """Remove PID/endpoint files left by a server that is gone.
+
+    Done while briefly holding the start lock, which proves no server is
+    running or starting, so a live server's files are never touched. Needed
+    where a server cannot clean up after itself — e.g. after ``stop`` on
+    Windows, which terminates the process. Returns False if the lock is held.
+    """
+    if _lock_fd is not None:
+        return False
+    fd = _open_state_file(LOCK_NAME, os.O_RDWR | os.O_CREAT)
+    try:
+        if not _try_lock(fd):
+            return False
+        try:
+            _unlink_state_file(ENDPOINT_NAME)
+            _unlink_state_file(PID_NAME)
+        finally:
+            _unlock(fd)
         return True
     finally:
         os.close(fd)
@@ -873,6 +901,7 @@ def stop_server() -> bool:
         for _ in range(50):  # 5 seconds timeout
             time.sleep(0.1)
             if not is_server_running():
+                _clear_stale_state_files()
                 print("Server stopped")
                 return True
 
@@ -885,6 +914,7 @@ def stop_server() -> bool:
         time.sleep(0.5)
 
         if not is_server_running():
+            _clear_stale_state_files()
             print("Server stopped (forced)")
             return True
         else:
