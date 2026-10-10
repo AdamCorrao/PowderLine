@@ -1435,9 +1435,10 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/xraydb-4.5.8-pyhd8ed1ab_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/zarr-3.3.0-pyhc364b38_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/zipp-4.1.0-pyhcf101f3_0.conda
-      - conda_source: gsas-ii[6e030bcb] @ git+https://github.com/tacaswell/gsas-ii?rev=enh%2Fpixi_pkg#e0910fc19bdd829a10f0204e3e4f4eaa38ad5e0f
+      - conda_source: gsas-ii[68fe1d1d] @ git+https://github.com/tacaswell/gsas-ii?rev=enh%2Fpixi_pkg#e0910fc19bdd829a10f0204e3e4f4eaa38ad5e0f
       - pypi: ./
       - pypi: https://files.pythonhosted.org/packages/0a/43/8e55ae7538ba5f28ccb3c845c6dd4549cf7016d5992e5326512519107cdd/yarl-1.24.5-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl
+      - pypi: https://files.pythonhosted.org/packages/0c/2c/b3f99646d4cea0dcb14450c86713aa846d6ee6ec4c3d9fa465739c321316/easydiffraction-0.21.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/10/cb/f2ad4230dc2eb1a74edf38f1a38b9b52277f75bef262d8908e60d957e13c/blinker-1.9.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/1e/77/dc8c558f7593132cf8fefec57c4f60c83b16941c574ac5f619abb3ae7933/dill-0.4.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/2a/2d/d4bf65e47cea8ff2c794a600c4fd1273a7902f268757c531e0ee9f18aa58/pooch-1.9.0-py3-none-any.whl
@@ -1450,7 +1451,6 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/71/43/1947f06babed6b3f1d7f38b0c767f52df66bfb2bc10b468c4a7de9eceff2/aiohappyeyeballs-2.7.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/78/3c/2a612b95ddbb9a6bdcb47b7a93c4884f74c6ff22356b2f7b213b16e65c35/pycifstar-0.3.0.tar.gz
       - pypi: https://files.pythonhosted.org/packages/82/f5/2f77f0bc663c13371d1c00ab8e550e2c9b11fec3c63ebf12a8336c0f534e/bumps-1.0.5-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/84/2f/fefe364d846c15c1e69ed8996d4baec8065932dfdcac4feaf81124564e8c/easydiffraction-0.20.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/88/39/799be3f2f0f38cc727ee3b4f1445fe6d5e4133064ec2e4115069418a5bb6/cloudpickle-3.1.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/8b/c6/979176efdaa3d239e36d503d5af63a0a773b36662ed8f52e5b6a6d9fd40e/propcache-0.5.2-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/94/d9/463feca73ec119a135d90c9f40c0172b4758150b5ed442f0ca1e8fed807a/python_socketio-5.16.4-py3-none-any.whl
@@ -1464,6 +1464,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/c7/a0/5ff05d1919ca249508012cad89f08fdc6cfbdaa15b41651c5fe6dffaf1d3/dfo_ls-1.6.5-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/ca/1c/7da8d08e74d56f00070822f9638ff3f1c563f8ad87d1efa996c87bfc8644/aiohttp-3.14.3-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/d5/4e/e4691508f9477ce67da2015d8c00acd751e6287739123113a9fca6f1604e/frozenlist-1.8.0-cp313-cp313-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl
+      - pypi: https://files.pythonhosted.org/packages/ee/86/032133892a5de43b5a98200b01aadcad68cc255e274a762f08b8a76d2912/filelock-4.1.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/f2/f2/728f041460f1b9739b85ee23b45fa5a505962ea11fd85bdbe2a02b021373/darkdetect-0.8.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/f9/ef/2196b9bf88ffa1bde45853c72df021fbd07a8fa91a0f59a22d14a050dc04/emcee-3.1.6-py2.py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/fb/76/641ae371508676492379f16e2fa48f4e2c11741bd63c48be4b12a6b09cba/aiosignal-1.4.0-py3-none-any.whl
@@ -1787,8 +1788,9 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zlib-1.3.2-h8088a28_3.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zlib-ng-2.3.3-h31dac16_1.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zstd-1.5.7-hf451053_7.conda
-      - conda_source: gsas-ii[2aac3dd1] @ git+https://github.com/tacaswell/gsas-ii?rev=enh%2Fpixi_pkg#e0910fc19bdd829a10f0204e3e4f4eaa38ad5e0f
+      - conda_source: gsas-ii[0af1ae92] @ git+https://github.com/tacaswell/gsas-ii?rev=enh%2Fpixi_pkg#e0910fc19bdd829a10f0204e3e4f4eaa38ad5e0f
       - pypi: ./
+      - pypi: https://files.pythonhosted.org/packages/0c/2c/b3f99646d4cea0dcb14450c86713aa846d6ee6ec4c3d9fa465739c321316/easydiffraction-0.21.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/0c/ab/6e5080ee374f875296c4243c381bbdef97a9ac39c6e3ce1d5f7d42cb78d6/frozenlist-1.8.0-cp313-cp313-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/10/cb/f2ad4230dc2eb1a74edf38f1a38b9b52277f75bef262d8908e60d957e13c/blinker-1.9.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/15/f0/7688d3f2cfff7590df2af38ec46d969f4281a4dddb08a9ad2eafbcdddf98/yarl-1.24.5-cp313-cp313-macosx_11_0_arm64.whl
@@ -1805,7 +1807,6 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/78/3c/2a612b95ddbb9a6bdcb47b7a93c4884f74c6ff22356b2f7b213b16e65c35/pycifstar-0.3.0.tar.gz
       - pypi: https://files.pythonhosted.org/packages/79/76/55cd7186f498ed080a18440c9013011eb548f77ae1b297206d030eb1180a/multidict-6.7.1-cp313-cp313-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/82/f5/2f77f0bc663c13371d1c00ab8e550e2c9b11fec3c63ebf12a8336c0f534e/bumps-1.0.5-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/84/2f/fefe364d846c15c1e69ed8996d4baec8065932dfdcac4feaf81124564e8c/easydiffraction-0.20.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/88/39/799be3f2f0f38cc727ee3b4f1445fe6d5e4133064ec2e4115069418a5bb6/cloudpickle-3.1.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/94/d9/463feca73ec119a135d90c9f40c0172b4758150b5ed442f0ca1e8fed807a/python_socketio-5.16.4-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/99/37/e8730c3587a65eb5645d4aba2d27aae48e8003614d6aaf15dda67f702f1f/bidict-0.23.1-py3-none-any.whl
@@ -1816,6 +1817,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/bc/6b/e7f13410d391c6e55b4c007a8de024355389d7d459e3d64c42b2d33617e5/aiohttp-3.14.3-cp313-cp313-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/c1/ea/53f2148663b321f21b5a606bd5f191517cf40b7072c0497d3c92c4a13b1e/executing-2.2.1-py2.py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/c7/a0/5ff05d1919ca249508012cad89f08fdc6cfbdaa15b41651c5fe6dffaf1d3/dfo_ls-1.6.5-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/ee/86/032133892a5de43b5a98200b01aadcad68cc255e274a762f08b8a76d2912/filelock-4.1.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/f2/f2/728f041460f1b9739b85ee23b45fa5a505962ea11fd85bdbe2a02b021373/darkdetect-0.8.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/f9/ef/2196b9bf88ffa1bde45853c72df021fbd07a8fa91a0f59a22d14a050dc04/emcee-3.1.6-py2.py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/fb/76/641ae371508676492379f16e2fa48f4e2c11741bd63c48be4b12a6b09cba/aiosignal-1.4.0-py3-none-any.whl
@@ -2138,8 +2140,9 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/win-64/zlib-1.3.2-hfd05255_3.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/zlib-ng-2.3.3-h0261ad2_1.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/zstd-1.5.7-h534d264_7.conda
-      - conda_source: gsas-ii[9f4a2ba7] @ git+https://github.com/tacaswell/gsas-ii?rev=enh%2Fpixi_pkg#e0910fc19bdd829a10f0204e3e4f4eaa38ad5e0f
+      - conda_source: gsas-ii[c16af650] @ git+https://github.com/tacaswell/gsas-ii?rev=enh%2Fpixi_pkg#e0910fc19bdd829a10f0204e3e4f4eaa38ad5e0f
       - pypi: ./
+      - pypi: https://files.pythonhosted.org/packages/0c/2c/b3f99646d4cea0dcb14450c86713aa846d6ee6ec4c3d9fa465739c321316/easydiffraction-0.21.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/10/cb/f2ad4230dc2eb1a74edf38f1a38b9b52277f75bef262d8908e60d957e13c/blinker-1.9.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/1b/fb/f844344b239344f9bac398c5cc30305fd473ae0cdc2eee5b8ad61ea678f0/crysfml-0.8.0-cp313-cp313-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/1c/fd/3f0f10dba4dabad3bf53102be007abf55481067952bde0fdddff439e7c61/propcache-0.5.2-cp313-cp313-win_amd64.whl
@@ -2154,7 +2157,6 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/71/43/1947f06babed6b3f1d7f38b0c767f52df66bfb2bc10b468c4a7de9eceff2/aiohappyeyeballs-2.7.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/78/3c/2a612b95ddbb9a6bdcb47b7a93c4884f74c6ff22356b2f7b213b16e65c35/pycifstar-0.3.0.tar.gz
       - pypi: https://files.pythonhosted.org/packages/82/f5/2f77f0bc663c13371d1c00ab8e550e2c9b11fec3c63ebf12a8336c0f534e/bumps-1.0.5-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/84/2f/fefe364d846c15c1e69ed8996d4baec8065932dfdcac4feaf81124564e8c/easydiffraction-0.20.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/86/e4/62a06b7e87c4246ac76b7c2da136f972eb4a3a1fc94abb07e7022d6fdb0a/yarl-1.24.5-cp313-cp313-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/88/39/799be3f2f0f38cc727ee3b4f1445fe6d5e4133064ec2e4115069418a5bb6/cloudpickle-3.1.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/94/d9/463feca73ec119a135d90c9f40c0172b4758150b5ed442f0ca1e8fed807a/python_socketio-5.16.4-py3-none-any.whl
@@ -2167,6 +2169,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/c1/ea/53f2148663b321f21b5a606bd5f191517cf40b7072c0497d3c92c4a13b1e/executing-2.2.1-py2.py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/c7/a0/5ff05d1919ca249508012cad89f08fdc6cfbdaa15b41651c5fe6dffaf1d3/dfo_ls-1.6.5-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/d8/cf/174c91dbc9cc49bc7b7aab74d8b734e974d1faa8f191c74af9b7e80848e6/frozenlist-1.8.0-cp313-cp313-win_amd64.whl
+      - pypi: https://files.pythonhosted.org/packages/ee/86/032133892a5de43b5a98200b01aadcad68cc255e274a762f08b8a76d2912/filelock-4.1.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/f2/f2/728f041460f1b9739b85ee23b45fa5a505962ea11fd85bdbe2a02b021373/darkdetect-0.8.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/f9/ef/2196b9bf88ffa1bde45853c72df021fbd07a8fa91a0f59a22d14a050dc04/emcee-3.1.6-py2.py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/fb/76/641ae371508676492379f16e2fa48f4e2c11741bd63c48be4b12a6b09cba/aiosignal-1.4.0-py3-none-any.whl
@@ -3310,7 +3313,7 @@ packages:
   license: MIT
   license_family: MIT
   purls:
-  - pkg:pypi/greenlet?source=compressed-mapping
+  - pkg:pypi/greenlet?source=hash-mapping
   run_exports: {}
   size: 276682
   timestamp: 1786384052888
@@ -5423,7 +5426,7 @@ packages:
   - python_abi 3.13.* *_cp313
   license: BSD-3-Clause and MIT-CMU
   purls:
-  - pkg:pypi/lxml?source=compressed-mapping
+  - pkg:pypi/lxml?source=hash-mapping
   run_exports: {}
   size: 1593788
   timestamp: 1787133202169
@@ -6109,7 +6112,8 @@ packages:
   license: LGPL-3.0-only
   license_family: LGPL
   purls:
-  - pkg:pypi/pyside6?source=compressed-mapping
+  - pkg:pypi/pyside6?source=hash-mapping
+  - pkg:pypi/shiboken6?source=hash-mapping
   run_exports: {}
   size: 13946979
   timestamp: 1787219441414
@@ -6482,7 +6486,7 @@ packages:
   license: MIT
   license_family: MIT
   purls:
-  - pkg:pypi/sqlalchemy?source=compressed-mapping
+  - pkg:pypi/sqlalchemy?source=hash-mapping
   run_exports: {}
   size: 3863012
   timestamp: 1786535232010
@@ -7345,7 +7349,7 @@ packages:
   license: Apache-2.0
   license_family: Apache
   purls:
-  - pkg:pypi/botocore?source=compressed-mapping
+  - pkg:pypi/botocore?source=hash-mapping
   run_exports: {}
   size: 8955962
   timestamp: 1787173734331
@@ -8515,7 +8519,7 @@ packages:
   license: MIT
   license_family: MIT
   purls:
-  - pkg:pypi/platformdirs?source=compressed-mapping
+  - pkg:pypi/platformdirs?source=hash-mapping
   run_exports: {}
   size: 26956
   timestamp: 1786708411066
@@ -10744,7 +10748,7 @@ packages:
   license: MIT
   license_family: MIT
   purls:
-  - pkg:pypi/greenlet?source=compressed-mapping
+  - pkg:pypi/greenlet?source=hash-mapping
   run_exports: {}
   size: 272799
   timestamp: 1786384260642
@@ -13021,7 +13025,7 @@ packages:
   license: MIT
   license_family: MIT
   purls:
-  - pkg:pypi/sqlalchemy?source=compressed-mapping
+  - pkg:pypi/sqlalchemy?source=hash-mapping
   run_exports: {}
   size: 3853940
   timestamp: 1786535264600
@@ -14162,7 +14166,7 @@ packages:
   license: MIT
   license_family: MIT
   purls:
-  - pkg:pypi/greenlet?source=compressed-mapping
+  - pkg:pypi/greenlet?source=hash-mapping
   run_exports: {}
   size: 258210
   timestamp: 1786384101896
@@ -16511,7 +16515,7 @@ packages:
   license: MIT
   license_family: MIT
   purls:
-  - pkg:pypi/sqlalchemy?source=compressed-mapping
+  - pkg:pypi/sqlalchemy?source=hash-mapping
   run_exports: {}
   size: 3825319
   timestamp: 1786535214697
@@ -16811,7 +16815,7 @@ packages:
     - zstd >=1.5.7,<1.6.0a0
   size: 387535
   timestamp: 1786599623274
-- conda_source: gsas-ii[2aac3dd1] @ git+https://github.com/tacaswell/gsas-ii?rev=enh%2Fpixi_pkg#e0910fc19bdd829a10f0204e3e4f4eaa38ad5e0f
+- conda_source: gsas-ii[0af1ae92] @ git+https://github.com/tacaswell/gsas-ii?rev=enh%2Fpixi_pkg#e0910fc19bdd829a10f0204e3e4f4eaa38ad5e0f
   version: 2.0.0
   build: h60d57d3_0
   subdir: osx-arm64
@@ -17019,7 +17023,7 @@ packages:
   - conda: https://conda.anaconda.org/conda-forge/osx-arm64/tk-8.6.13-hd3d0363_3.conda
   - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zlib-1.3.2-h8088a28_3.conda
   - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zstd-1.5.7-hf451053_7.conda
-- conda_source: gsas-ii[6e030bcb] @ git+https://github.com/tacaswell/gsas-ii?rev=enh%2Fpixi_pkg#e0910fc19bdd829a10f0204e3e4f4eaa38ad5e0f
+- conda_source: gsas-ii[68fe1d1d] @ git+https://github.com/tacaswell/gsas-ii?rev=enh%2Fpixi_pkg#e0910fc19bdd829a10f0204e3e4f4eaa38ad5e0f
   version: 2.0.0
   build: hb0f4dca_0
   subdir: linux-64
@@ -17188,7 +17192,7 @@ packages:
   - conda: https://conda.anaconda.org/conda-forge/win-64/vc14_runtime-14.51.36247-habf1de7_41.conda
   - conda: https://conda.anaconda.org/conda-forge/win-64/vcomp14-14.51.36247-habf1de7_41.conda
   - conda: https://conda.anaconda.org/conda-forge/win-64/zstd-1.5.7-h534d264_7.conda
-- conda_source: gsas-ii[9f4a2ba7] @ git+https://github.com/tacaswell/gsas-ii?rev=enh%2Fpixi_pkg#e0910fc19bdd829a10f0204e3e4f4eaa38ad5e0f
+- conda_source: gsas-ii[c16af650] @ git+https://github.com/tacaswell/gsas-ii?rev=enh%2Fpixi_pkg#e0910fc19bdd829a10f0204e3e4f4eaa38ad5e0f
   version: 2.0.0
   build: h9490d1a_0
   subdir: win-64
@@ -17384,6 +17388,75 @@ packages:
   - multidict>=4.0
   - propcache>=0.2.1
   requires_python: '>=3.10'
+- pypi: https://files.pythonhosted.org/packages/0c/2c/b3f99646d4cea0dcb14450c86713aa846d6ee6ec4c3d9fa465739c321316/easydiffraction-0.21.1-py3-none-any.whl
+  name: easydiffraction
+  version: 0.21.1
+  sha256: 7c4650d609a45385352bcbcf76fd9365b321e99ca222f114df21c7126b57c61a
+  requires_dist:
+  - asciichartpy
+  - asteval
+  - bumps
+  - crysfml>=0.8.0
+  - cryspy>=0.13.0
+  - darkdetect
+  - dfo-ls
+  - diffpy-pdffit2
+  - diffpy-utils
+  - emcee
+  - filelock
+  - gemmi
+  - h5py
+  - lmfit
+  - numpy
+  - pandas
+  - pillow
+  - plotly
+  - pooch
+  - pybaselines>=1.1
+  - rich
+  - scipy
+  - sympy
+  - typeguard
+  - typer
+  - uncertainties
+  - varname
+  - build ; extra == 'dev'
+  - codespell ; extra == 'dev'
+  - copier ; extra == 'dev'
+  - docstring-parser-fork!=0.0.15 ; extra == 'dev'
+  - docstripy ; extra == 'dev'
+  - format-docstring ; extra == 'dev'
+  - gitpython ; extra == 'dev'
+  - hypothesis ; extra == 'dev'
+  - interrogate ; extra == 'dev'
+  - jinja2 ; extra == 'dev'
+  - jupyterquiz ; extra == 'dev'
+  - jupytext ; extra == 'dev'
+  - mike ; extra == 'dev'
+  - mkdocs ; extra == 'dev'
+  - mkdocs-autorefs ; extra == 'dev'
+  - mkdocs-jupyter ; extra == 'dev'
+  - mkdocs-markdownextradata-plugin ; extra == 'dev'
+  - mkdocs-material ; extra == 'dev'
+  - mkdocs-plugin-inline-svg ; extra == 'dev'
+  - mkdocstrings-python ; extra == 'dev'
+  - nbmake ; extra == 'dev'
+  - nbqa ; extra == 'dev'
+  - nbstripout ; extra == 'dev'
+  - pre-commit ; extra == 'dev'
+  - pydoclint ; extra == 'dev'
+  - pytest ; extra == 'dev'
+  - pytest-benchmark ; extra == 'dev'
+  - pytest-cov ; extra == 'dev'
+  - pytest-randomly ; extra == 'dev'
+  - pytest-xdist ; extra == 'dev'
+  - pyyaml ; extra == 'dev'
+  - radon ; extra == 'dev'
+  - ruff ; extra == 'dev'
+  - spdx-headers ; extra == 'dev'
+  - validate-pyproject[all] ; extra == 'dev'
+  - versioningit ; extra == 'dev'
+  requires_python: '>=3.12'
 - pypi: https://files.pythonhosted.org/packages/0c/ab/6e5080ee374f875296c4243c381bbdef97a9ac39c6e3ce1d5f7d42cb78d6/frozenlist-1.8.0-cp313-cp313-macosx_11_0_arm64.whl
   name: frozenlist
   version: 1.8.0
@@ -17567,74 +17640,6 @@ packages:
   - sphinx ; extra == 'dev'
   - versioningit ; extra == 'dev'
   requires_python: '>=3.10'
-- pypi: https://files.pythonhosted.org/packages/84/2f/fefe364d846c15c1e69ed8996d4baec8065932dfdcac4feaf81124564e8c/easydiffraction-0.20.1-py3-none-any.whl
-  name: easydiffraction
-  version: 0.20.1
-  sha256: 7fe5b610682b5cf0212ba3fc627c4685e1261ab59a8d2cc2a7d0bd986f752488
-  requires_dist:
-  - asciichartpy
-  - asteval
-  - bumps
-  - crysfml>=0.8.0
-  - cryspy>=0.13.0
-  - darkdetect
-  - dfo-ls
-  - diffpy-pdffit2
-  - diffpy-utils
-  - emcee
-  - gemmi
-  - h5py
-  - lmfit
-  - numpy
-  - pandas
-  - pillow
-  - plotly
-  - pooch
-  - pybaselines>=1.1
-  - rich
-  - scipy
-  - sympy
-  - typeguard
-  - typer
-  - uncertainties
-  - varname
-  - build ; extra == 'dev'
-  - codespell ; extra == 'dev'
-  - copier ; extra == 'dev'
-  - docstring-parser-fork!=0.0.15 ; extra == 'dev'
-  - docstripy ; extra == 'dev'
-  - format-docstring ; extra == 'dev'
-  - gitpython ; extra == 'dev'
-  - hypothesis ; extra == 'dev'
-  - interrogate ; extra == 'dev'
-  - jinja2 ; extra == 'dev'
-  - jupyterquiz ; extra == 'dev'
-  - jupytext ; extra == 'dev'
-  - mike ; extra == 'dev'
-  - mkdocs ; extra == 'dev'
-  - mkdocs-autorefs ; extra == 'dev'
-  - mkdocs-jupyter ; extra == 'dev'
-  - mkdocs-markdownextradata-plugin ; extra == 'dev'
-  - mkdocs-material ; extra == 'dev'
-  - mkdocs-plugin-inline-svg ; extra == 'dev'
-  - mkdocstrings-python ; extra == 'dev'
-  - nbmake ; extra == 'dev'
-  - nbqa ; extra == 'dev'
-  - nbstripout ; extra == 'dev'
-  - pre-commit ; extra == 'dev'
-  - pydoclint ; extra == 'dev'
-  - pytest ; extra == 'dev'
-  - pytest-benchmark ; extra == 'dev'
-  - pytest-cov ; extra == 'dev'
-  - pytest-randomly ; extra == 'dev'
-  - pytest-xdist ; extra == 'dev'
-  - pyyaml ; extra == 'dev'
-  - radon ; extra == 'dev'
-  - ruff ; extra == 'dev'
-  - spdx-headers ; extra == 'dev'
-  - validate-pyproject[all] ; extra == 'dev'
-  - versioningit ; extra == 'dev'
-  requires_python: '>=3.12'
 - pypi: https://files.pythonhosted.org/packages/86/e4/62a06b7e87c4246ac76b7c2da136f972eb4a3a1fc94abb07e7022d6fdb0a/yarl-1.24.5-cp313-cp313-win_amd64.whl
   name: yarl
   version: 1.24.5
@@ -17824,6 +17829,11 @@ packages:
   version: 1.8.0
   sha256: 878be833caa6a3821caf85eb39c5ba92d28e85df26d57afb06b35b2efd937231
   requires_python: '>=3.9'
+- pypi: https://files.pythonhosted.org/packages/ee/86/032133892a5de43b5a98200b01aadcad68cc255e274a762f08b8a76d2912/filelock-4.1.0-py3-none-any.whl
+  name: filelock
+  version: 4.1.0
+  sha256: 2ce9818e3e2d8f284c1a964414447ef148d42a5fd5e2a477a7118e574b293ec1
+  requires_python: '>=3.10'
 - pypi: https://files.pythonhosted.org/packages/f2/f2/728f041460f1b9739b85ee23b45fa5a505962ea11fd85bdbe2a02b021373/darkdetect-0.8.0-py3-none-any.whl
   name: darkdetect
   version: 0.8.0

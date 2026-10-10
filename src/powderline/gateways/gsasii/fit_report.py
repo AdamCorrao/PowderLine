@@ -17,7 +17,12 @@ Read after the refinement from what GSAS-II stored:
 - GSAS-II's refinement message (``Rvals['msg']``: parameters dropped as
   singular, SVD problems, limits), which ``G2strMain.Refine`` only prints
   (EB-32), as a structured warning; and a warning when GSAS-II varied fewer
-  parameters than the recipe requested (A128).
+  parameters than the recipe requested (A128);
+- whether a Rietveld refinement converged (``Rvals['converged']``: the last
+  cycle's chi^2 change below GSAS-II's tolerance), as ``engine_details['converged']``
+  and the informative warning ``gsasii_fit_not_converged`` when it did not
+  (values kept, as for easydiffraction, A166, A172; EB-85). A peak fit has no such
+  flag (``DoPeakFit`` drops scipy's), so ``converged`` is ``None`` there.
 
 A calculated pattern that is not finite inside the fit window means the
 refinement diverged; GSAS-II does not report that as a failure (its wR shows
@@ -91,7 +96,9 @@ def fit_report(proj, hist, recipe, engine_rwp, engine_rvals=None) -> dict:
         "parameters_requested": requested,
         "parameters_varied": n_params,
         "message": message or None,
+        "converged": None if spf or rvals.get("converged") is None else bool(rvals["converged"]),
     }
+    simulation = recipe.payload.refinement_controls.refinement_cycles == 1
     warnings = []
     if message:
         dropped = _dropped(message)
@@ -101,6 +108,14 @@ def fit_report(proj, hist, recipe, engine_rwp, engine_rvals=None) -> dict:
                      + (f" ({dropped} parameter(s) dropped as singular are still counted in "
                         "parameters_varied, GSAS-II's own count, EB-33)" if dropped else "")),
             field_path=None))
+    if details["converged"] is False and not simulation:
+        warnings.append(StructuredWarning(
+            code="gsasii_fit_not_converged",
+            message=(f"GSAS-II stopped after {recipe.payload.refinement_controls.refinement_cycles} cycle(s) without "
+                     "converging (its last chi^2 change was above its tolerance); the values are reported as they "
+                     "stand. Likely causes: too few cycles (refinement_cycles) or poorly conditioned parameters "
+                     "(strong correlations); check the ESDs and GSAS-II's message"),
+            field_path="payload.refinement_controls.refinement_cycles"))
     if n_params < requested:
         warnings.append(StructuredWarning(
             code="gsasii_parameters_not_varied",
@@ -110,5 +125,5 @@ def fit_report(proj, hist, recipe, engine_rwp, engine_rvals=None) -> dict:
                      + "; compare refined_parameters with the recipe's refine flags"),
             field_path=None))
     return {"rwp": num(stats.rwp), "r_exp": num(stats.rexp), "gof": num(stats.gof), "chi2_red": num(stats.chi2_red),
-            "simulation_mode": recipe.payload.refinement_controls.refinement_cycles == 1,
+            "simulation_mode": simulation,
             "engine_details": details, "warnings": warnings}
