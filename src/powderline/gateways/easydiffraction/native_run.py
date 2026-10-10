@@ -27,7 +27,12 @@ dict with the shared report files (``refined_parameters.csv``,
   (A157 B7), ``easydiffraction_fit_not_converged`` (informative, A166: lmfit stopped without
   success; the values are reported), ``easydiffraction_reflections_not_available`` (CrysFML, A165),
   ``easydiffraction_negative_width`` (the refined profile makes a peak width
-  negative in the window, A171).
+  negative within the checked range, A171, A178),
+  ``easydiffraction_position_translated`` (an atom easydiffraction holds in
+  another writing of the same position; reports use the recipe's, A176),
+  ``easydiffraction_crysfml_start_dependent`` (every CrysFML refinement: its
+  single-precision pattern is flat at lmfit's finite-difference step, so the
+  result depends on the starting values, EB-90, A175).
 
 Runtime layer: imports easydiffraction.
 """
@@ -74,6 +79,7 @@ def run_native(model, output_dir, *, validated_warnings: list | None = None) -> 
     build = build_project(model)
     p = model.payload
     simulation = p.simulation_mode()
+    warnings += _translations(model, build)
     analysis = build.project.analysis
     fit_info = {}
     if simulation:
@@ -89,6 +95,14 @@ def run_native(model, output_dir, *, validated_warnings: list | None = None) -> 
         results = analysis.fit_results
         fit_info = {"success": bool(results.success), "message": str(results.message),
                     "iterations": results.iterations}
+        if rc.calculator == "crysfml":
+            warnings.append(StructuredWarning(
+                code="easydiffraction_crysfml_start_dependent",
+                message=("the CrysFML calculator computes in single precision: its pattern does not change for "
+                         "parameter steps below about 1e-7 relative, smaller than lmfit's finite-difference step, so "
+                         "the refined values, Rwp and ESDs can depend on the starting values (EB-90). Check by "
+                         "refining again from slightly different starts, or use the cryspy calculator"),
+                field_path="payload.refinement_controls.calculator"))
         if not results.success:
             warnings.append(StructuredWarning(
                 code="easydiffraction_fit_not_converged",
@@ -234,6 +248,23 @@ def _esd(param) -> float | None:
     return None if e is None or not math.isfinite(e) else float(e)
 
 
+def _translations(model, build: Build) -> list:
+    """Atoms easydiffraction holds in another writing of the stated position (a lattice translation, A176)."""
+    found = []
+    for (name, label), shift in build.translations.items():
+        site = build.structures[name].atom_sites[label]
+        atom = model.payload.phases[name].atoms[label]
+        held = (site.fract_x.value, site.fract_y.value, site.fract_z.value)
+        found.append(StructuredWarning(
+            code="easydiffraction_position_translated",
+            message=(f"easydiffraction holds {label} at {tuple(round(v, 10) for v in held)}, the stated "
+                     f"{(atom.x.value, atom.y.value, atom.z.value)} moved by the lattice vector {shift} (its own "
+                     "writing of the Wyckoff position, EB-74): the same atom and the same pattern. Refined "
+                     "coordinates are reported in the recipe's writing"),
+            field_path=f"payload.phases.{name}.atoms.{label}"))
+    return found
+
+
 def _limit_hits(build: Build) -> list:
     found = []
     for fp in build.free:
@@ -246,7 +277,7 @@ def _limit_hits(build: Build) -> list:
                 whose = "the recipe's stated bound" if source == "stated" else "easydiffraction's physical limit"
                 found.append(StructuredWarning(
                     code="easydiffraction_parameter_at_limit",
-                    message=(f"{fp.descriptive} ended at its {side} limit {lim:g} ({whose}): the refinement may "
+                    message=(f"{fp.descriptive} ended at its {side} limit {lim + fp.report_offset:g} ({whose}): the refinement may "
                              "have been stopped by the limit"),
                     field_path=fp.path))
     return found
@@ -280,7 +311,7 @@ def _refined_rows(model, build: Build) -> list[dict]:
             "parameter_name": fp.name, "descriptive_name": fp.descriptive, "phase_name": fp.phase or "",
             "phase_idx": phases.index(fp.phase) if fp.phase in phases else None,
             "atom_name": fp.atom or "", "atom_idx": atoms.index(fp.atom) if fp.atom in atoms else None,
-            "value": float(fp.parameter.value), "esd": _esd(fp.parameter), "category": fp.category,
+            "value": float(fp.parameter.value) + fp.report_offset, "esd": _esd(fp.parameter), "category": fp.category,
         })
     return rows
 

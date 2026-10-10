@@ -8,6 +8,7 @@ They are not converted recipes: PowderLine ships no 0.26.0 →
 | Fixture | What it is |
 |---|---|
 | `lab6_crysfml_tch.json` | LaB6, CrysFML, Thompson-Cox-Hastings with FCJ axial asymmetry (fixed); U, V, W, X, Y, cell, scale and a 6-term Chebyshev refined; window [1, 15] |
+| `lab6_crysfml_tch_calculation.json` | `lab6_crysfml_tch.json` with every refine flag cleared: a CrysFML calculation. Its golden carries CrysFML's numbers, because a CrysFML refinement stops at start-dependent points (EB-90) and the refinement's golden compares only the cell, counts and warnings |
 | `lab6_cryspy_pv.json` | LaB6, CrysPy, pseudo-Voigt (no asymmetry); the same refinement |
 | `lab6_slots_simulation.json` | Calculation only (no flag set), CrysPy, every instrument slot: Kα2 doublet, polarization with a monochromator angle, displacement, transparency, cylinder absorption, Bérar–Baldinozzi asymmetry, a peak cutoff. Exercises the builder; not a physical model |
 | `drx33_two_phase_cryspy.json` | Two phases from the `example_DRX_33` data: cubic DRX_33 (`F m -3 m`, four cations sharing 4a) and monoclinic Li4MgWO6 (`C 1 2/m 1`); CrysPy, pseudo-Voigt; U, V, W, X, Y, 6-term Chebyshev, both scales and cells (cubic a; a, b, c, β) refined; window [1, 15] |

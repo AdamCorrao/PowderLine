@@ -548,10 +548,18 @@ def test_matches_template_unit_cases():
 
 
 def test_run_lab6_crysfml_tch_success(lab6_crysfml_tch_result):
-    """CrysFML TCH fit succeeds."""
+    """CrysFML TCH fit succeeds and says that its result can depend on the starting values (EB-90, A175)."""
     result = lab6_crysfml_tch_result
     assert result["success"]
     assert result["simulation_mode"] is False
+    hits = [w for w in result["warnings"] if w["code"] == "easydiffraction_crysfml_start_dependent"]
+    assert len(hits) == 1 and hits[0]["field_path"] == "payload.refinement_controls.calculator"
+
+
+def test_crysfml_calculation_has_no_start_warning(lab6_crysfml_calculation_result, lab6_cryspy_pv_result):
+    """The start-dependence warning is for CrysFML refinements only, not a calculation or CrysPy (A175)."""
+    for result in (lab6_crysfml_calculation_result, lab6_cryspy_pv_result):
+        assert "easydiffraction_crysfml_start_dependent" not in [w["code"] for w in result["warnings"]]
 
 
 def test_run_lab6_cryspy_pv_success(lab6_cryspy_pv_result):
@@ -865,6 +873,58 @@ def test_run_divergence_nan_in_reflection_list(tmp_path, monkeypatch):
         native_run.build_result(model, build, tmp_path, [], elapsed=0.0, fit_info={})
 
 
+def _translated_recipe() -> dict:
+    """P -3 m 1, Fe on 6i (x, -x, z) written as a database would, (0.137, 0.863, 0.389); xyz refined."""
+    recipe = _load_fixture("lab6_cryspy_pv.json")
+    p = recipe["payload"]
+    for q in p["instrument"]["broadening"]["parameters"].values():
+        q[1] = False
+    p["background"]["chebyshev"]["refine_flag"] = False
+    cell = dict(zip(("a", "b", "c", "alpha", "beta", "gamma"), (5.1, 5.1, 7.3, 90.0, 90.0, 120.0)))
+    p["phases"] = {"FeHex": {
+        "space_group": "P -3 m 1", "unit_cell": {k: [v, False, None, None] for k, v in cell.items()},
+        "atoms": {"Fe1": {"element": "Fe", "x": [0.137, True, 0.1, 0.2], "y": [0.863, True, 0.8, 0.9],
+                          "z": [0.389, True, None, None], "occupancy": [1.0, False, None, None], "ADP": "Uiso",
+                          "Uiso": [0.005, False, None, None]}},
+        "scale": [1e-6, False, None, None]}}
+    return recipe
+
+
+def test_builder_position_translated_accepted():
+    """A176: easydiffraction holds (0.137, 0.863, z) on (x, -x, z) as (0.137, -0.137, z): accepted, recorded,
+    and the free coordinate's bounds, value and reports stay in the recipe's writing."""
+    model = schema.validate_recipe(_translated_recipe())
+    build = native_builder.build_project(model)
+    site = build.structures["FeHex"].atom_sites["Fe1"]
+    assert (site.fract_x.value, site.fract_y.value) == (0.137, -0.137)
+    assert build.translations == {("FeHex", "Fe1"): (0, 1, 0)}
+    rows = {r["parameter_name"]: r["value"] for r in native_run._refined_rows(model, build)}
+    stated = {"x": 0.137, "y": 0.863, "z": 0.389}
+    for fp in build.free:
+        member = fp.name.rsplit("_", 1)[1]
+        assert rows[fp.name] == pytest.approx(stated[member], abs=1e-12)
+        if member in ("x", "y"):
+            lo, hi = {"x": (0.1, 0.2), "y": (0.8, 0.9)}[member]
+            assert (fp.parameter.fit_min + fp.report_offset, fp.parameter.fit_max + fp.report_offset) == \
+                pytest.approx((lo, hi))
+    hits = native_run._translations(model, build)
+    assert [w["code"] for w in hits] == ["easydiffraction_position_translated"]
+    assert hits[0]["field_path"] == "payload.phases.FeHex.atoms.Fe1" and "(0, 1, 0)" in hits[0]["message"]
+
+
+def test_builder_free_offset_moves_bounds_and_reports():
+    """_free with an offset: easydiffraction's bounds are the recipe's minus the offset; reports add it back."""
+    from powderline.schema_core import BoundedRefinableParameter
+
+    build = native_builder.Build(project=None, experiment=None, structures={})
+    param = Mock()
+    native_builder._free(build, param, BoundedRefinableParameter.model_validate([0.863, True, 0.8, 0.9]),
+                         name="y", path="p.y", descriptive="y", category="atom_xyz", offset=1)
+    assert (param.fit_min, param.fit_max) == pytest.approx((-0.2, -0.1))
+    fp = build.free[0]
+    assert fp.limits == pytest.approx((-0.2, -0.1)) and fp.report_offset == 1
+
+
 def test_zero_gsasii_imports_subprocess():
     """A subprocess that blocks GSASII imports can import native_run and schema."""
     import textwrap
@@ -930,9 +990,31 @@ def test_two_phases_built_and_refined(drx33_two_phase_build, drx33_two_phase_res
 # ============================================================================
 
 _GOLDEN_CASES = [("lab6_crysfml_tch.json", "lab6_crysfml_tch_build", "lab6_crysfml_tch_result"),
+                 ("lab6_crysfml_tch_calculation.json", "lab6_crysfml_calculation_build",
+                  "lab6_crysfml_calculation_result"),
                  ("lab6_cryspy_pv.json", "lab6_cryspy_pv_build", "lab6_cryspy_pv_result"),
                  ("lab6_slots_simulation.json", "lab6_slots_simulation_build", "lab6_slots_simulation_result"),
                  ("drx33_two_phase_cryspy.json", "drx33_two_phase_build", "drx33_two_phase_run")]
+
+#: Cross-build tolerances (A179; docs/regression-tolerance.md: rtol 1e-3 for values, ESDs and statistics,
+#: 1e-4 for the cell). A value near zero is also accepted within 1 % of its ESD (easydiffraction's scales are
+#: ~1e-6, so GSAS-II's atol 1e-4 does not fit).
+GOLDEN_RTOL, GOLDEN_CELL_RTOL, GOLDEN_ESD_FRACTION = 1e-3, 1e-4, 1e-2
+
+#: CrysFML refinements stop at start-dependent points (EB-90, A175): their goldens compare only what does not
+#: depend on the stop (counts, warnings, the cell within 1e-4); the calculation fixture covers CrysFML's numbers.
+START_DEPENDENT = {"lab6_crysfml_tch.json"}
+
+
+@pytest.fixture(scope="module")
+def lab6_crysfml_calculation_build():
+    return native_builder.build_project(schema.validate_recipe(_load_fixture("lab6_crysfml_tch_calculation.json")))
+
+
+@pytest.fixture(scope="module")
+def lab6_crysfml_calculation_result(tmp_path_factory):
+    return gateway.run(_load_fixture("lab6_crysfml_tch_calculation.json"),
+                       str(tmp_path_factory.mktemp("lab6_crysfml_calculation")))
 
 
 @pytest.fixture(scope="module")
@@ -966,11 +1048,10 @@ def test_built_project_matches_golden(name, build_fixture, _result, request):
 
 @pytest.mark.parametrize("name,_build,result_fixture", _GOLDEN_CASES)
 def test_run_matches_golden(name, _build, result_fixture, request):
-    """Statistics, refined values (rel 1e-6) and ESDs (rel 1e-3), unit cell and warning codes match the golden."""
+    """Statistics, refined values, ESDs, unit cell and warning codes match the golden within cross-build tolerance."""
     res = request.getfixturevalue(result_fixture)
     gold = _golden(name)["run"]
-    for key in ("rwp", "r_exp", "gof", "chi2_red"):
-        assert res[key] == pytest.approx(gold[key], rel=1e-6)
+    assert sorted(w["code"] for w in res["warnings"]) == gold["warnings"]
     assert res["simulation_mode"] == gold["simulation_mode"]
     details = res["engine_details"]
     for key in ("calculator", "peak_type", "parameters_requested", "parameters_varied", "n_points"):
@@ -978,14 +1059,18 @@ def test_run_matches_golden(name, _build, result_fixture, request):
     rp = res["refined_parameters"]
     refined = {n: (v, _finite_or_none(e)) for n, v, e in zip(rp.parameter_name, rp.value, rp.esd)}
     assert refined.keys() == gold["refined"].keys()
-    for n, (value, esd) in gold["refined"].items():
-        assert refined[n][0] == pytest.approx(value, rel=1e-6, abs=1e-12)
-        assert (refined[n][1] is None) == (esd is None)
-        if esd is not None:
-            assert refined[n][1] == pytest.approx(esd, rel=1e-3)
     for phase, rows in gold["unit_cell"].items():
         got = res["unit_cell_data"][phase].to_dict("records")
         for g, r in zip(rows, got):
             assert r["parameter"] == g["parameter"]
-            assert r["value"] == pytest.approx(g["value"], rel=1e-9)
-    assert sorted(w["code"] for w in res["warnings"]) == gold["warnings"]
+            assert r["value"] == pytest.approx(g["value"], rel=GOLDEN_CELL_RTOL)
+    if name in START_DEPENDENT:
+        return
+    for key in ("rwp", "r_exp", "gof", "chi2_red"):
+        assert res[key] == pytest.approx(gold[key], rel=GOLDEN_RTOL)
+    for n, (value, esd) in gold["refined"].items():
+        floor = GOLDEN_ESD_FRACTION * esd if esd is not None else 1e-12
+        assert refined[n][0] == pytest.approx(value, rel=GOLDEN_RTOL, abs=floor), n
+        assert (refined[n][1] is None) == (esd is None), n
+        if esd is not None:
+            assert refined[n][1] == pytest.approx(esd, rel=GOLDEN_RTOL), n

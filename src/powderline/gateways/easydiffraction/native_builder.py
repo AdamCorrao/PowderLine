@@ -22,7 +22,12 @@ never moves one.
   anisotropic atom after an isotropic one would keep its starting tensor
   (EB-86). Order is not physics; everything is keyed by label.
 - **Checks after the build** (errors, never substitutions): easydiffraction's
-  multiplicity of every atom equals core's and no coordinate moved (EB-47);
+  multiplicity of every atom equals core's and no coordinate moved (EB-47),
+  except by a lattice translation: easydiffraction stores a template-pattern
+  position in its own writing, e.g. (0.137, 0.863, z) on (x, -x, z) as
+  (0.137, -0.137, z), the same atom (EB-74, A176). Such a translation is kept
+  per atom: stated bounds of a free coordinate are moved with it, reports give
+  the recipe's writing, and the run warns;
   with CrysPy, an atom on a special position with a free coordinate is
   written in the pattern of easydiffraction's template for its site, since
   CrysPy computes wrong structure factors for the other images (EB-77).
@@ -66,6 +71,8 @@ class FreeParameter:
     limit_source: tuple = (None, None)
     #: The recipe members this parameter stands for (a tie group), each with its relation k, c.
     members: tuple = ()
+    #: Added to easydiffraction's value to give the recipe's writing (a lattice translation, A176).
+    report_offset: float = 0.0
 
 
 @dataclass
@@ -76,6 +83,8 @@ class Build:
     free: list = field(default_factory=list)
     mask: np.ndarray = None
     tth: np.ndarray = None
+    #: (phase, label) -> (stated - held) per coordinate, integers: positions easydiffraction holds translated.
+    translations: dict = field(default_factory=dict)
 
 
 def structure_name(phase: str) -> str:
@@ -115,15 +124,17 @@ def _bounds(p: BoundedRefinableParameter, physical: tuple) -> tuple[tuple, tuple
 
 
 def _free(build: Build, param, p: BoundedRefinableParameter, *, name: str, path: str, descriptive: str,
-          category: str, physical: tuple = (None, None), phase=None, atom=None, members=()) -> None:
+          category: str, physical: tuple = (None, None), phase=None, atom=None, members=(), offset: float = 0.0) -> None:
+    """Free ``param`` with the recipe's bounds; ``offset`` = recipe writing - easydiffraction's (A176)."""
     param.free = True
     if p.min is not None:
-        param.fit_min = p.min
+        param.fit_min = p.min - offset
     if p.max is not None:
-        param.fit_max = p.max
+        param.fit_max = p.max - offset
     limits, source = _bounds(p, physical)
+    limits = tuple(None if v is None else (v - offset if src == "stated" else v) for v, src in zip(limits, source))
     build.free.append(FreeParameter(param, name, path, descriptive, category, phase, atom, limits, source,
-                                    members or ((name, 1, 0),)))
+                                    members or ((name, 1, 0),), offset))
 
 
 def _set(obj, name: str, value) -> None:
@@ -262,8 +273,10 @@ def _free_parameters(model, build: Build) -> None:
             site = s.atom_sites[label]
             apath = f"{ppath}.atoms.{label}"
             ties = coupling_groups(phase.space_group, (atom.x.value, atom.y.value, atom.z.value))
+            shift = dict(zip("xyz", build.translations.get((name, label), (0, 0, 0))))
             for group in ties.xyz.groups:
-                _free_group(build, site, _XYZ, atom, group, path=apath, phase=name, atom=label, category="atom_xyz")
+                _free_group(build, site, _XYZ, atom, group, path=apath, phase=name, atom=label, category="atom_xyz",
+                            offsets=shift)
             if atom.occupancy.refine_flag:
                 _free(build, site.occupancy, atom.occupancy, name=f"{name}_{label}_occupancy",
                       path=f"{apath}.occupancy", descriptive=f"{label} occupancy", category="atom_occupancy",
@@ -280,7 +293,7 @@ def _free_parameters(model, build: Build) -> None:
 
 
 def _free_group(build: Build, holder, attrs: dict, recipe, group, *, path: str, phase: str, category: str,
-                atom: Optional[str] = None, physical: tuple = (None, None)) -> None:
+                atom: Optional[str] = None, physical: tuple = (None, None), offsets: Optional[dict] = None) -> None:
     """Free one tie group: the member easydiffraction leaves free (its constraints tie the others, EB-47)."""
     members = group.members
     if not getattr(recipe, members[0]).refine_flag:  # F1: the whole group shares the flag
@@ -296,7 +309,8 @@ def _free_group(build: Build, holder, attrs: dict, recipe, group, *, path: str, 
     _free(build, getattr(holder, attrs[m]), getattr(recipe, m), name=f"{phase}_{atom + '_' if atom else ''}{m}",
           path=f"{path}.{m}", descriptive=f"{phase} {owner}{m}", category=category, phase=phase, atom=atom,
           physical=physical if m in ("a", "b", "c", "alpha", "beta", "gamma", "U11", "U22", "U33") else (None, None),
-          members=tuple((name, k, c) for name, k, c in zip(members, group.coefficients, group.offsets)))
+          members=tuple((name, k, c) for name, k, c in zip(members, group.coefficients, group.offsets)),
+          offset=(offsets or {}).get(m, 0))
 
 
 # --- checks after the build ---------------------------------------------------------------
@@ -327,7 +341,11 @@ def _matches_template(template: str, xyz: tuple) -> bool:
 
 
 def site_problems(model, build: Build) -> list[str]:
-    """Atoms easydiffraction reads differently from core (EB-47), or CrysPy computes wrongly (EB-77)."""
+    """Atoms easydiffraction reads differently from core (EB-47), or CrysPy computes wrongly (EB-77).
+
+    A position easydiffraction holds translated by a lattice vector is the same atom: it is recorded in
+    ``build.translations`` (EB-74, A176), not a problem.
+    """
     import easydiffraction.crystallography.crystallography as ecr
 
     problems = []
@@ -342,11 +360,20 @@ def site_problems(model, build: Build) -> list[str]:
             held = (site.fract_x.value, site.fract_y.value, site.fract_z.value)
             where = f"payload.phases.{name}.atoms.{label}"
             core_mult = phase.site(label).multiplicity
-            if site.multiplicity.value != core_mult or held != stated:
+            shift = tuple(a - b for a, b in zip(stated, held))
+            translated = all(abs(d - round(d)) <= 1e-9 for d in shift)
+            if site.multiplicity.value != core_mult:
                 problems.append(f"{where}: easydiffraction reads the position {stated} as Wyckoff "
                                 f"{site.wyckoff_letter.value!r} with multiplicity {site.multiplicity.value} at "
                                 f"{held}; core has multiplicity {core_mult} (EB-47)")
                 continue
+            if not translated:
+                problems.append(f"{where}: easydiffraction moved the position {stated} to {held} (Wyckoff "
+                                f"{site.wyckoff_letter.value!r}), not by a lattice translation; state the position "
+                                "exactly (EB-47, EB-74)")
+                continue
+            if any(round(d) for d in shift):
+                build.translations[(name, label)] = tuple(int(round(d)) for d in shift)
             entry = table.get(site.wyckoff_letter.value)
             free_coordinate = entry is not None and any(c in entry["coords_xyz"][0] for c in "xyz")
             if not (cryspy and free_coordinate and core_mult < len(orbit(phase.space_group, (0.1371, 0.2713, 0.3893)))):
