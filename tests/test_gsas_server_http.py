@@ -6,11 +6,12 @@ handles requests properly, and rejects callers that do not hold its token.
 These are integration tests: the module fixture starts a real server in a
 private, per-test state directory (via ``XDG_RUNTIME_DIR`` / ``LOCALAPPDATA``),
 so it never touches — or reuses — the developer's own server, and reads the
-server's port and bearer token from that directory. They skip if the server
+server's port and secret token from that directory. They skip if the server
 cannot start (e.g. GSAS-II unavailable).
 """
 
 import json
+import secrets
 import pytest
 import time
 import subprocess
@@ -31,13 +32,17 @@ def _endpoint_in(state_root: Path):
         return None
 
 
+def _signed(port: int, token: str, method: str, path: str, payload=None):
+    """Send a request signed with ``token``; the response signature is verified
+    (raises ``ServerIdentityError`` otherwise)."""
+    return GSASClient._signed_request({'pid': 0, 'port': port, 'token': token},
+                                      method, path, payload, timeout=5.0)
+
+
 def _health_ok(port: int, token: str) -> bool:
-    import httpx
     try:
-        resp = httpx.get(f"http://127.0.0.1:{port}/health", timeout=1.0,
-                         headers={"Authorization": f"Bearer {token}"}, trust_env=False)
-        return resp.status_code == 200
-    except (httpx.HTTPError, OSError):
+        return _signed(port, token, 'GET', '/health').status_code == 200
+    except Exception:
         return False
 
 
@@ -94,17 +99,12 @@ def test_server(server_state_root):
         proc.kill()
 
 
-def _auth(token: str) -> dict:
-    return {"Authorization": f"Bearer {token}"}
-
-
 def test_health_endpoint(test_server):
     """Test /health endpoint returns correct format."""
     import httpx
 
     port, token = test_server
-    resp = httpx.get(f"http://127.0.0.1:{port}/health", headers=_auth(token), timeout=2.0,
-                     trust_env=False)
+    resp = _signed(port, token, 'GET', '/health')
 
     assert resp.status_code == 200, "Health endpoint should return 200"
 
@@ -126,8 +126,7 @@ def test_health_endpoint_format(test_server):
     import httpx
 
     port, token = test_server
-    resp = httpx.get(f"http://127.0.0.1:{port}/health", headers=_auth(token), timeout=2.0,
-                     trust_env=False)
+    resp = _signed(port, token, 'GET', '/health')
 
     # Verify response is valid JSON
     data = resp.json()
@@ -145,32 +144,17 @@ def test_simulate_endpoint_missing_fields(test_server):
     port, token = test_server
 
     # Missing recipe_data
-    resp = httpx.post(
-        f"http://127.0.0.1:{port}/simulate",
-        headers=_auth(token),
-        trust_env=False,
-        json={"output_dir": "/tmp/test"},
-        timeout=5.0
+    resp = _signed(port, token, 'POST', '/simulate', {"output_dir": "/tmp/test"}
     )
     assert resp.status_code == 422, "Should return validation error for missing recipe_data"
 
     # Missing output_dir
-    resp = httpx.post(
-        f"http://127.0.0.1:{port}/simulate",
-        headers=_auth(token),
-        trust_env=False,
-        json={"recipe_data": {}},
-        timeout=5.0
+    resp = _signed(port, token, 'POST', '/simulate', {"recipe_data": {}}
     )
     assert resp.status_code == 422, "Should return validation error for missing output_dir"
 
     # Empty request
-    resp = httpx.post(
-        f"http://127.0.0.1:{port}/simulate",
-        headers=_auth(token),
-        trust_env=False,
-        json={},
-        timeout=5.0
+    resp = _signed(port, token, 'POST', '/simulate', {}
     )
     assert resp.status_code == 422, "Should return validation error for empty request"
 
@@ -183,15 +167,10 @@ def test_simulate_endpoint_invalid_recipe(test_server):
 
     # Invalid (empty) recipe_data — server should return 200 with success=False
     with tempfile.TemporaryDirectory() as tmpdir:
-        resp = httpx.post(
-            f"http://127.0.0.1:{port}/simulate",
-            headers=_auth(token),
-            trust_env=False,
-            json={
+        resp = _signed(port, token, 'POST', '/simulate', {
                 "recipe_data": {},
                 "output_dir": tmpdir
-            },
-            timeout=5.0
+            }
         )
 
         assert resp.status_code == 200, "Should return 200 even for errors (error in response body)"
@@ -212,31 +191,21 @@ def test_simulate_endpoint_optional_verbose(test_server):
 
     with tempfile.TemporaryDirectory() as tmpdir:
         # Request with verbose=true — should accept and return 200 (even if recipe invalid)
-        resp = httpx.post(
-            f"http://127.0.0.1:{port}/simulate",
-            headers=_auth(token),
-            trust_env=False,
-            json={
+        resp = _signed(port, token, 'POST', '/simulate', {
                 "recipe_data": {},
                 "output_dir": tmpdir,
                 "verbose": True
-            },
-            timeout=5.0
+            }
         )
 
         assert resp.status_code == 200, "Should accept verbose parameter"
 
         # Request with verbose=false
-        resp = httpx.post(
-            f"http://127.0.0.1:{port}/simulate",
-            headers=_auth(token),
-            trust_env=False,
-            json={
+        resp = _signed(port, token, 'POST', '/simulate', {
                 "recipe_data": {},
                 "output_dir": tmpdir,
                 "verbose": False
-            },
-            timeout=5.0
+            }
         )
 
         assert resp.status_code == 200, "Should accept verbose parameter"
@@ -249,8 +218,7 @@ def test_health_endpoint_performance(test_server):
     port, token = test_server
 
     start = time.time()
-    resp = httpx.get(f"http://127.0.0.1:{port}/health", headers=_auth(token), timeout=2.0,
-                     trust_env=False)
+    resp = _signed(port, token, 'GET', '/health')
     elapsed = time.time() - start
 
     assert resp.status_code == 200
@@ -265,8 +233,7 @@ def test_multiple_health_checks(test_server):
 
     # Multiple rapid health checks
     for _ in range(10):
-        resp = httpx.get(f"http://127.0.0.1:{port}/health", headers=_auth(token), timeout=2.0,
-                     trust_env=False)
+        resp = _signed(port, token, 'GET', '/health')
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "ok"
@@ -279,26 +246,19 @@ def test_server_increments_request_count(test_server):
     port, token = test_server
 
     # Get initial count (might not be 0 due to startup checks)
-    resp = httpx.get(f"http://127.0.0.1:{port}/health", headers=_auth(token), timeout=2.0,
-                     trust_env=False)
+    resp = _signed(port, token, 'GET', '/health')
     initial_count = resp.json()["request_count"]
 
     # Make a simulation request (will fail validation but should still increment counter)
     with tempfile.TemporaryDirectory() as tmpdir:
-        httpx.post(
-            f"http://127.0.0.1:{port}/simulate",
-            headers=_auth(token),
-            trust_env=False,
-            json={
+        _signed(port, token, 'POST', '/simulate', {
                 "recipe_data": {},
                 "output_dir": tmpdir
-            },
-            timeout=5.0
+            }
         )
 
     # Check count increased
-    resp = httpx.get(f"http://127.0.0.1:{port}/health", headers=_auth(token), timeout=2.0,
-                     trust_env=False)
+    resp = _signed(port, token, 'GET', '/health')
     new_count = resp.json()["request_count"]
 
     assert new_count > initial_count, "Request count should increment after simulation request"
@@ -306,21 +266,34 @@ def test_server_increments_request_count(test_server):
 
 # --- Multi-user safety: only the token holder can use the server ---
 
+def _forged_headers(token: str, method: str, path: str, body: bytes) -> dict:
+    """Headers signed with ``token`` (here: a token that is not the server's)."""
+    nonce, ts = secrets.token_hex(16), str(int(time.time()))
+    return {gsas_server.NONCE_HEADER: nonce, gsas_server.TIMESTAMP_HEADER: ts,
+            gsas_server.SIGNATURE_HEADER: gsas_server.sign_request(
+                token, method, path, b'', nonce, ts, body),
+            "Content-Type": "application/json"}
+
+
 def test_requests_without_token_rejected(test_server, tmp_path):
-    """No token (or a wrong one) -> 401 on every route, and nothing is written."""
+    """Unsigned, bearer-style, or wrongly signed requests -> 401 on every route,
+    and nothing is written."""
     import httpx
 
-    port, _ = test_server
+    port, token = test_server
     out = tmp_path / "other_users_output"
-    for headers in ({}, {"Authorization": "Bearer not-the-token"}):
+    body = json.dumps({"recipe_data": {}, "output_dir": str(out)}).encode()
+    for headers in ({},
+                    {"Authorization": f"Bearer {token}"},  # the old scheme: refused
+                    _forged_headers("not-the-token", "POST", "/simulate", body)):
         resp = httpx.post(f"http://127.0.0.1:{port}/simulate", headers=headers,
-                          json={"recipe_data": {}, "output_dir": str(out)},
-                          timeout=5.0, trust_env=False)
+                          content=body, timeout=5.0, trust_env=False)
         assert resp.status_code == 401
         resp = httpx.get(f"http://127.0.0.1:{port}/health", headers=headers,
                          timeout=2.0, trust_env=False)
         assert resp.status_code == 401
         assert "pid" not in resp.text
+        assert gsas_server.RESPONSE_SIGNATURE_HEADER not in resp.headers
     assert not out.exists(), "an unauthenticated request must not create output_dir"
 
 
@@ -328,7 +301,15 @@ def test_requests_without_token_rejected(test_server, tmp_path):
 def test_state_files_are_owner_only(test_server, server_state_root):
     state = server_state_root / "powderline"
     assert (state.stat().st_mode & 0o777) == 0o700
-    assert (state / "server.json").stat().st_mode & 0o777 == 0o600
+    for name in ("server.json", "server.pid", "server.lock", "server.log"):
+        assert (state / name).stat().st_mode & 0o777 == 0o600, name
+
+
+def test_live_server_holds_start_lock(test_server, server_state_root, monkeypatch):
+    """A second start is refused while the server runs; status sees it running."""
+    monkeypatch.setattr(gsas_server, "state_dir", lambda: server_state_root / "powderline")
+    assert gsas_server.is_server_running() is True
+    assert gsas_server._claim_server_lock(attempts=2, delay=0) is False
 
 
 def test_client_uses_own_server(test_server, server_state_root, monkeypatch):

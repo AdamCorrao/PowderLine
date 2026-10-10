@@ -194,8 +194,8 @@ not running and fall back to subprocess mode if the server fails to start.
 `powderline.run()` uses `GSASClient` internally.
 
 The server is per-user: it is started as, and only accepts jobs from, the
-calling user (bearer token in a private state directory; loopback only), so it
-is safe on shared hosts. Integrations that must never run a background server
+calling user (requests and responses signed with a secret token kept in a
+private state directory; loopback only), so it is safe on shared hosts. Integrations that must never run a background server
 can set `POWDERLINE_NO_SERVER=1`: `auto` then runs in-process, `server` mode
 returns an error result, and no server is ever started.
 

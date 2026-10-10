@@ -7,15 +7,20 @@ Security notes:
     - The server binds exclusively to ``127.0.0.1`` (loopback) on an ephemeral
       port (or ``POWDERLINE_SERVER_PORT`` if set). It is not accessible from
       remote hosts.
-    - Every endpoint requires ``Authorization: Bearer <token>``. The token is
-      generated at startup and stored, with the port and PID, in a per-user
-      state directory (see :func:`state_dir`) that only the owning user can
-      read. On a shared host other local users therefore cannot submit jobs
-      (which would write files as the server's owner) or even probe the
-      server. ``/health`` additionally proves to the client that the server
-      holds the token, so a client never talks to another user's listener.
-    - Set ``POWDERLINE_NO_SERVER=1`` (``true``/``yes``) to disable the server
-      entirely: clients run in-process and ``gsas-server start`` refuses.
+    - Every request must be signed with a per-start secret token (an HMAC over
+      method, path, nonce, timestamp and body), and every response is signed
+      back (see :class:`SignedRequestMiddleware`). The token is stored, with
+      the port and PID, in a per-user state directory (see :func:`state_dir`)
+      that only the owning user can read, and it never travels over the wire.
+      Other local users therefore cannot submit jobs (which would write files
+      as the server's owner) or even probe the server, and a client never
+      trusts a listener that cannot sign with its token — e.g. another user's
+      process that took over the port of a crashed server.
+    - A kernel-held lock on ``server.lock`` (released by the OS when the server
+      exits) ensures a single server per user, even with concurrent starts.
+    - Set ``POWDERLINE_NO_SERVER=1`` (``true``/``yes``/``on``) to disable the
+      server: ``auto`` mode runs in-process, ``server`` mode returns an error,
+      and ``gsas-server start``/``restart`` refuse.
     - No rate limiting is applied.
     - The server resolves ``output_dir`` in ITS OWN filesystem view. A client
       on another node — or a server started inside a sandbox/container with a
@@ -69,12 +74,26 @@ from pydantic import BaseModel
 HOST = "127.0.0.1"
 PORT_ENV = 'POWDERLINE_SERVER_PORT'
 NO_SERVER_ENV = 'POWDERLINE_NO_SERVER'
-NONCE_HEADER = 'X-PowderLine-Nonce'
+NO_SERVER_VALUES = ('1', 'true', 'yes', 'on')
 NO_SERVER_MESSAGE = (
     f"The GSAS-II server is disabled ({NO_SERVER_ENV} is set). "
     f"Run in-process instead (execution_mode='subprocess' / --no-server), "
     f"or unset {NO_SERVER_ENV}."
 )
+
+# Request/response signing (see sign_request / sign_response)
+NONCE_HEADER = 'X-PowderLine-Nonce'
+TIMESTAMP_HEADER = 'X-PowderLine-Timestamp'
+SIGNATURE_HEADER = 'X-PowderLine-Signature'
+RESPONSE_SIGNATURE_HEADER = 'X-PowderLine-Response-Signature'
+MAX_CLOCK_SKEW = 120                   # seconds a signed request stays valid
+MAX_BODY_BYTES = 64 * 1024 * 1024      # larger requests are refused unread
+
+# File names inside the per-user state directory
+PID_NAME = 'server.pid'
+ENDPOINT_NAME = 'server.json'
+LOG_NAME = 'server.log'
+LOCK_NAME = 'server.lock'
 
 
 class ServerStateError(RuntimeError):
@@ -82,18 +101,45 @@ class ServerStateError(RuntimeError):
 
 
 def server_disabled() -> bool:
-    """True if ``POWDERLINE_NO_SERVER`` is set to a truthy value (1/true/yes)."""
-    return os.environ.get(NO_SERVER_ENV, '').strip().lower() in ('1', 'true', 'yes')
+    """True if ``POWDERLINE_NO_SERVER`` is set to a truthy value (1/true/yes/on)."""
+    return os.environ.get(NO_SERVER_ENV, '').strip().lower() in NO_SERVER_VALUES
 
 
 def _private_parent(path: str) -> bool:
-    """True if ``path`` is a directory owned by us that others cannot write to."""
+    """True if ``path`` is a real directory (not a symlink) owned by us that
+    others cannot write to."""
     try:
-        st = os.stat(path)
+        st = os.lstat(path)
     except OSError:
         return False
     return (stat.S_ISDIR(st.st_mode) and st.st_uid == os.getuid()
             and not st.st_mode & 0o022)
+
+
+def _check_tempdir_parent(path: Path) -> None:
+    """Refuse a parent in which other users could rename or replace our entry.
+
+    Safe parents are owned by root or by us and are either not writable by
+    group/other or sticky (like ``/tmp``). Symlinks are followed here on
+    purpose (macOS ``/tmp`` -> ``/private/tmp``).
+    """
+    try:
+        st = os.stat(path)
+    except OSError as e:
+        raise ServerStateError(
+            f"Cannot use {path} for the GSAS-II server state directory: {e}") from e
+    if not stat.S_ISDIR(st.st_mode):
+        problem = "is not a directory"
+    elif st.st_uid not in (0, os.getuid()):
+        problem = f"is owned by uid {st.st_uid}"
+    elif st.st_mode & 0o022 and not st.st_mode & stat.S_ISVTX:
+        problem = "is writable by other users without the sticky bit"
+    else:
+        return
+    raise ServerStateError(
+        f"Refusing to keep the GSAS-II server state under {path}: it {problem}, "
+        f"so other users could replace the state directory. Point TMPDIR (or "
+        f"XDG_RUNTIME_DIR) at a private directory.")
 
 
 def _state_dir_path() -> Path:
@@ -113,22 +159,47 @@ def _state_dir_path() -> Path:
     return Path(tempfile.gettempdir()) / f'powderline-{os.getuid()}'
 
 
+def _unsafe_state_dir(st: os.stat_result) -> Optional[str]:
+    """Why a stat of the state directory makes it unsafe, or None if it is fine."""
+    if stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode):
+        return "is not a directory (or is a symlink)"
+    if st.st_uid != os.getuid():
+        return f"is owned by uid {st.st_uid}, not by you (uid {os.getuid()})"
+    if st.st_mode & 0o077:
+        return f"is accessible to other users (mode {stat.S_IMODE(st.st_mode):o})"
+    return None
+
+
+def _refuse(path: Path, problem: str) -> ServerStateError:
+    return ServerStateError(
+        f"Refusing to use GSAS-II server state directory {path}: it {problem}. "
+        f"Remove it so it can be recreated privately."
+    )
+
+
 def state_dir() -> Path:
     """Return the per-user server state directory, creating it if needed.
 
-    Holds the PID, endpoint (port + token) and log files. On POSIX it is
+    Holds the lock, PID, endpoint (port + token) and log files. On POSIX it is
     created with mode 0700 and refused if it is a symlink, not owned by the
-    current user, or accessible to group/other — a directory pre-created by
-    another user in a shared /tmp must never be trusted.
+    current user, or accessible to group/other, or if its parent would let
+    another user replace it — a directory pre-created by another user in a
+    shared /tmp must never be trusted. Files inside are then opened relative
+    to a re-verified directory handle (see :func:`_open_state_file`).
 
     Raises:
         ServerStateError: If the directory exists but is unsafe to use.
     """
     path = _state_dir_path()
-    try:
-        if os.name == 'nt':
+    if os.name == 'nt':
+        try:
             path.mkdir(parents=True, exist_ok=True)
-            return path
+        except OSError as e:
+            raise ServerStateError(
+                f"Cannot create GSAS-II server state directory {path}: {e}") from e
+        return path
+    _check_tempdir_parent(path.parent)
+    try:
         try:
             os.mkdir(path, 0o700)
             os.chmod(path, 0o700)  # umask may have stripped owner bits
@@ -138,41 +209,88 @@ def state_dir() -> Path:
     except OSError as e:
         raise ServerStateError(
             f"Cannot create GSAS-II server state directory {path}: {e}") from e
-    if stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode):
-        problem = "is not a directory (or is a symlink)"
-    elif st.st_uid != os.getuid():
-        problem = f"is owned by uid {st.st_uid}, not by you (uid {os.getuid()})"
-    elif st.st_mode & 0o077:
-        problem = f"is accessible to other users (mode {stat.S_IMODE(st.st_mode):o})"
-    else:
-        return path
-    raise ServerStateError(
-        f"Refusing to use GSAS-II server state directory {path}: it {problem}. "
-        f"Remove it so it can be recreated privately."
-    )
+    problem = _unsafe_state_dir(st)
+    if problem:
+        raise _refuse(path, problem)
+    return path
 
 
-def _pid_file() -> Path:
-    return state_dir() / 'server.pid'
+def _open_state_dir() -> int:
+    """Open the verified state directory without following symlinks (POSIX).
+
+    The returned descriptor is re-checked with ``fstat``, so the directory the
+    caller works in is exactly the one verified — it cannot be swapped for a
+    symlink between the check and the use.
+    """
+    path = state_dir()
+    try:
+        dfd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    except OSError as e:
+        raise _refuse(path, f"cannot be opened safely ({e})") from e
+    problem = _unsafe_state_dir(os.fstat(dfd))
+    if problem:
+        os.close(dfd)
+        raise _refuse(path, problem)
+    return dfd
 
 
-def _endpoint_file() -> Path:
-    return state_dir() / 'server.json'
+def _open_state_file(name: str, flags: int, mode: int = 0o600) -> int:
+    """``os.open`` a file in the state directory (never through a symlink)."""
+    if os.name == 'nt':
+        return os.open(state_dir() / name, flags | getattr(os, 'O_BINARY', 0), mode)
+    dfd = _open_state_dir()
+    try:
+        return os.open(name, flags | os.O_NOFOLLOW, mode, dir_fd=dfd)
+    finally:
+        os.close(dfd)
+
+
+def _read_state_file(name: str) -> Optional[str]:
+    """Contents of a state file, or None if it does not exist."""
+    try:
+        fd = _open_state_file(name, os.O_RDONLY)
+    except FileNotFoundError:
+        return None
+    with os.fdopen(fd, 'rb') as f:
+        return f.read().decode('utf-8', 'replace')
+
+
+def _unlink_state_file(name: str) -> None:
+    """Remove a state file if present."""
+    try:
+        if os.name == 'nt':
+            (state_dir() / name).unlink()
+            return
+        dfd = _open_state_dir()
+        try:
+            os.unlink(name, dir_fd=dfd)
+        finally:
+            os.close(dfd)
+    except FileNotFoundError:
+        pass
+
+
+def _write_private(name: str, text: str) -> None:
+    """Atomically write ``text`` to state file ``name``, readable by the owner only."""
+    tmp = name + '.tmp'
+    _unlink_state_file(tmp)
+    fd = _open_state_file(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
+    with os.fdopen(fd, 'w') as f:
+        f.write(text)
+    if os.name == 'nt':
+        d = state_dir()
+        os.replace(d / tmp, d / name)
+        return
+    dfd = _open_state_dir()
+    try:
+        os.replace(tmp, name, src_dir_fd=dfd, dst_dir_fd=dfd)
+    finally:
+        os.close(dfd)
 
 
 def log_file() -> Path:
     """Path of this user's server log file."""
-    return state_dir() / 'server.log'
-
-
-def _write_private(path: Path, text: str) -> None:
-    """Atomically write ``text`` to ``path``, readable by the owner only."""
-    tmp = path.with_name(path.name + '.tmp')
-    tmp.unlink(missing_ok=True)
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    with os.fdopen(fd, 'w') as f:
-        f.write(text)
-    os.replace(tmp, path)
+    return state_dir() / LOG_NAME
 
 
 def read_endpoint() -> Optional[Dict[str, Any]]:
@@ -182,16 +300,155 @@ def read_endpoint() -> Optional[Dict[str, Any]]:
         ServerStateError: If the state directory is unsafe to use.
     """
     try:
-        data = json.loads(_endpoint_file().read_text())
+        data = json.loads(_read_state_file(ENDPOINT_NAME) or '')
         return {'pid': int(data['pid']), 'port': int(data['port']),
                 'token': str(data['token'])}
     except (OSError, ValueError, KeyError, TypeError):
         return None
 
 
-def health_proof(token: str, nonce: str) -> str:
-    """HMAC proving knowledge of ``token`` for a client-chosen ``nonce``."""
-    return hmac.new(token.encode(), nonce.encode(), hashlib.sha256).hexdigest()
+def read_pid() -> Optional[int]:
+    """PID recorded by the server holding the start lock, or None."""
+    try:
+        return int(_read_state_file(PID_NAME) or '')
+    except (OSError, ValueError):
+        return None
+
+
+# --- Request/response signing ---
+#
+# The token never travels over the wire. Each request carries a fresh nonce,
+# a timestamp and an HMAC (keyed by the token) over the method, path, nonce,
+# timestamp and body; the server answers with an HMAC over the nonce, status
+# and response body. A listener that does not hold the token — e.g. another
+# user's process that grabbed the port of a crashed server — can neither
+# produce a valid response nor learn anything that would let it.
+
+def _mac(token: str, *parts) -> str:
+    msg = b'\n'.join(p if isinstance(p, bytes) else str(p).encode() for p in parts)
+    return hmac.new(token.encode(), msg, hashlib.sha256).hexdigest()
+
+
+def sign_request(token: str, method: str, path: str, query: bytes,
+                 nonce: str, timestamp: str, body: bytes) -> str:
+    """HMAC authenticating one request (method, target, nonce, time and body)."""
+    return _mac(token, b'powderline-request-v1', method.upper(), path, query,
+                nonce, timestamp, hashlib.sha256(body).hexdigest())
+
+
+def sign_response(token: str, nonce: str, status_code: int, body: bytes) -> str:
+    """HMAC proving a response came from the token holder, bound to the request nonce."""
+    return _mac(token, b'powderline-response-v1', nonce, status_code,
+                hashlib.sha256(body).hexdigest())
+
+
+class SignedRequestMiddleware:
+    """ASGI wrapper: only correctly signed requests reach the app; every
+    response it produces is signed.
+
+    It wraps the whole application, so 404/405/422 and error responses are
+    covered too, and unsigned requests are refused before their body is read.
+    """
+
+    def __init__(self, app, token: str):
+        self.app = app
+        self.token = token
+        self._seen_nonces: Dict[str, float] = {}
+
+    async def __call__(self, scope, receive, send):
+        if scope['type'] == 'lifespan':
+            return await self.app(scope, receive, send)
+        if scope['type'] != 'http':
+            if scope['type'] == 'websocket':
+                await send({'type': 'websocket.close', 'code': 1008})
+            return
+
+        headers = {k.decode('latin-1').lower(): v.decode('latin-1')
+                   for k, v in scope.get('headers', [])}
+        nonce = headers.get(NONCE_HEADER.lower(), '')
+        timestamp = headers.get(TIMESTAMP_HEADER.lower(), '')
+        signature = headers.get(SIGNATURE_HEADER.lower(), '')
+        now = time.time()
+        try:
+            fresh = abs(now - int(timestamp)) <= MAX_CLOCK_SKEW
+        except ValueError:
+            fresh = False
+        if not (fresh and 16 <= len(nonce) <= 128
+                and all(c in '0123456789abcdef' for c in nonce)
+                and signature and nonce not in self._seen_nonces):
+            return await self._reject(send, 401)
+
+        parts, size, more = [], 0, True
+        while more:
+            message = await receive()
+            if message['type'] == 'http.disconnect':
+                return
+            parts.append(message.get('body', b''))
+            size += len(parts[-1])
+            more = message.get('more_body', False)
+            if size > MAX_BODY_BYTES:
+                return await self._reject(send, 413)
+        body = b''.join(parts)
+
+        expected = sign_request(self.token, scope['method'], scope['path'],
+                                scope.get('query_string', b''), nonce, timestamp, body)
+        if not hmac.compare_digest(signature.encode('latin-1'), expected.encode()):
+            return await self._reject(send, 401)
+        self._remember(nonce, now)
+
+        body_sent = False
+
+        async def replay_receive():
+            nonlocal body_sent
+            if not body_sent:
+                body_sent = True
+                return {'type': 'http.request', 'body': body, 'more_body': False}
+            return await receive()
+
+        start = None
+        chunks = []
+
+        async def signing_send(message):
+            nonlocal start
+            if message['type'] == 'http.response.start':
+                start = message
+                return
+            if message['type'] != 'http.response.body':
+                return await send(message)
+            chunks.append(message.get('body', b''))
+            if message.get('more_body', False):
+                return
+            data = b''.join(chunks)
+            response_headers = [
+                (k, v) for k, v in start.get('headers', [])
+                if k.lower() not in (b'content-length',
+                                     RESPONSE_SIGNATURE_HEADER.lower().encode())
+            ]
+            response_headers += [
+                (b'content-length', str(len(data)).encode()),
+                (RESPONSE_SIGNATURE_HEADER.lower().encode(),
+                 sign_response(self.token, nonce, start['status'], data).encode()),
+            ]
+            await send({**start, 'headers': response_headers})
+            await send({'type': 'http.response.body', 'body': data, 'more_body': False})
+
+        await self.app(scope, replay_receive, signing_send)
+
+    def _remember(self, nonce: str, now: float) -> None:
+        """Record a used nonce (replay protection), forgetting expired ones."""
+        if len(self._seen_nonces) > 1024:
+            cutoff = now - 2 * MAX_CLOCK_SKEW
+            self._seen_nonces = {n: t for n, t in self._seen_nonces.items() if t > cutoff}
+        self._seen_nonces[nonce] = now
+
+    @staticmethod
+    async def _reject(send, status: int) -> None:
+        detail = b'{"detail":"Unauthorized"}' if status == 401 else b'{"detail":"Request too large"}'
+        await send({'type': 'http.response.start', 'status': status, 'headers': [
+            (b'content-type', b'application/json'),
+            (b'content-length', str(len(detail)).encode()),
+        ]})
+        await send({'type': 'http.response.body', 'body': detail})
 
 
 def _requested_port() -> int:
@@ -217,36 +474,93 @@ def _bind_listener(port: int) -> socket.socket:
     return sock
 
 
-def _claim_pid_file() -> bool:
-    """Atomically create the PID file; False if a live server already holds it.
+# --- Start lock ---
+#
+# A kernel-held lock on server.lock, kept for the server's whole lifetime. The
+# OS drops it when the process exits — however it exits — so there is no stale
+# lock to reclaim, and holding it is the definition of "a server is running".
+# The lock file itself is never deleted (deleting lock files reintroduces races).
 
-    This is the start lock: with ephemeral ports, two concurrent starts would
-    otherwise both succeed and orphan one server.
-    """
-    pid_path = _pid_file()
-    for _ in range(2):
-        try:
-            fd = os.open(pid_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        except FileExistsError:
-            if is_server_running():
-                return False
-            continue  # stale PID file was removed; try again
-        with os.fdopen(fd, 'w') as f:
-            f.write(str(os.getpid()))
+_lock_fd: Optional[int] = None  # held by this process while it is the server
+
+
+def _try_lock(fd: int) -> bool:
+    try:
+        if os.name == 'nt':
+            import msvcrt
+            os.lseek(fd, 0, os.SEEK_SET)
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         return True
+    except OSError:
+        return False
+
+
+def _unlock(fd: int) -> None:
+    if os.name == 'nt':
+        import msvcrt
+        os.lseek(fd, 0, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+    else:
+        import fcntl
+        fcntl.flock(fd, fcntl.LOCK_UN)
+
+
+def _claim_server_lock(attempts: int = 20, delay: float = 0.05) -> bool:
+    """Take the start lock for the life of this process; False if a server holds it.
+
+    A few retries absorb the instant during which ``is_server_running`` probes
+    the lock. Once held, any PID/endpoint files left over are stale (their
+    server is gone), so they are replaced.
+    """
+    global _lock_fd
+    if _lock_fd is not None:
+        return True
+    fd = _open_state_file(LOCK_NAME, os.O_RDWR | os.O_CREAT)
+    for attempt in range(attempts):
+        if _try_lock(fd):
+            _lock_fd = fd
+            _unlink_state_file(ENDPOINT_NAME)
+            _write_private(PID_NAME, str(os.getpid()))
+            return True
+        if attempt < attempts - 1:
+            time.sleep(delay)
+    os.close(fd)
     return False
 
 
-def _release_state_files() -> None:
-    """Remove the PID and endpoint files if they belong to this process."""
+def _lock_held() -> bool:
+    """True if some process (this one included) holds the start lock."""
+    if _lock_fd is not None:
+        return True
+    fd = _open_state_file(LOCK_NAME, os.O_RDWR | os.O_CREAT)
     try:
-        pid_path = _pid_file()
-        if int(pid_path.read_text()) != os.getpid():
-            return
-        _endpoint_file().unlink(missing_ok=True)
-        pid_path.unlink(missing_ok=True)
-    except (OSError, ValueError, ServerStateError):
+        if _try_lock(fd):
+            _unlock(fd)
+            return False
+        return True
+    finally:
+        os.close(fd)
+
+
+def _release_state_files() -> None:
+    """Remove the PID and endpoint files and drop the lock — only if we hold it."""
+    global _lock_fd
+    if _lock_fd is None:
+        return
+    try:
+        _unlink_state_file(ENDPOINT_NAME)
+        _unlink_state_file(PID_NAME)
+    except (OSError, ServerStateError):
         pass
+    try:
+        _unlock(_lock_fd)
+    except OSError:
+        pass
+    os.close(_lock_fd)
+    _lock_fd = None
 
 
 # --- Pydantic request/response models ---
@@ -276,13 +590,15 @@ class SimulationResponse(BaseModel):
 
 # --- Logging ---
 
-def setup_logging(log_file: Path) -> logging.Logger:
-    """Set up logging to both console and file."""
+def setup_logging() -> logging.Logger:
+    """Set up logging to both console and this user's server log file."""
     logger = logging.getLogger('powderline.server')
     logger.setLevel(logging.DEBUG)
 
-    # File handler (always log everything)
-    file_handler = logging.FileHandler(log_file, mode='a')
+    # File handler (always log everything); owner-only, opened in the
+    # verified state directory
+    log_fd = _open_state_file(LOG_NAME, os.O_WRONLY | os.O_CREAT | os.O_APPEND)
+    file_handler = logging.StreamHandler(os.fdopen(log_fd, 'a', encoding='utf-8'))
     file_handler.setLevel(logging.DEBUG)
 
     # Console handler (info level for cleaner output)
@@ -321,7 +637,7 @@ class GSASServer:
         self.token = secrets.token_urlsafe(32)
 
         # Set up logging
-        self.logger = logger or setup_logging(log_file())
+        self.logger = logger or setup_logging()
 
         # Import GSAS-II (this is the slow part we want to do once)
         self.logger.info("Loading GSAS-II libraries...")
@@ -343,28 +659,19 @@ class GSASServer:
             sys.exit(1)
 
     def create_app(self):
-        """Build and return the FastAPI application.
+        """Build and return the ASGI application.
 
-        Every route — including ``/health`` — requires
-        ``Authorization: Bearer <self.token>``; anything else gets 401.
+        The FastAPI app is wrapped in :class:`SignedRequestMiddleware`: every
+        route — including ``/health`` — requires a request signed with
+        ``self.token`` (anything else gets 401), and every response is signed
+        so the client can verify it reached the token holder.
         """
-        from fastapi import FastAPI, Request
-        from fastapi.responses import JSONResponse
+        from fastapi import FastAPI
 
         # No interactive docs/schema routes: nothing is served unauthenticated.
         app = FastAPI(title="PowderLine GSAS-II Server",
                       docs_url=None, redoc_url=None, openapi_url=None)
         server = self  # capture for closures
-        expected_auth = f"Bearer {self.token}".encode()
-
-        @app.middleware("http")
-        async def require_token(request: Request, call_next):
-            # Starlette decodes headers as latin-1, so this round-trips exactly.
-            provided = request.headers.get('authorization', '').encode('latin-1')
-            if not secrets.compare_digest(provided, expected_auth):
-                return JSONResponse(status_code=401, content={'detail': 'Unauthorized'},
-                                    headers={'WWW-Authenticate': 'Bearer'})
-            return await call_next(request)
 
         @app.post("/simulate", response_model=SimulationResponse)
         def simulate(req: SimulationRequest):
@@ -389,21 +696,16 @@ class GSASServer:
             return SimulationResponse(**result)
 
         @app.get("/health")
-        def health(request: Request):
+        def health():
             uptime = (datetime.now() - server.start_time).total_seconds() if server.start_time else 0
-            body = {
+            return {
                 "status": "ok",
                 "pid": os.getpid(),
                 "uptime_seconds": uptime,
                 "request_count": server.request_count,
             }
-            # Let the client verify it reached the holder of its token.
-            nonce = request.headers.get(NONCE_HEADER)
-            if nonce:
-                body["proof"] = health_proof(server.token, nonce)
-            return body
 
-        return app
+        return SignedRequestMiddleware(app, self.token)
 
     def start(self):
         """Start the server with uvicorn."""
@@ -418,7 +720,7 @@ class GSASServer:
         # and connections queue from the moment clients can discover it.
         sock = _bind_listener(_requested_port())
         port = sock.getsockname()[1]
-        _write_private(_endpoint_file(), json.dumps(
+        _write_private(ENDPOINT_NAME, json.dumps(
             {'pid': os.getpid(), 'port': port, 'token': self.token}))
 
         # Register cleanup
@@ -544,22 +846,12 @@ def _pid_alive(pid: int) -> bool:
 
 
 def is_server_running() -> bool:
-    """Check if this user's server is currently running (stale files are removed)."""
-    pid_path = _pid_file()
-    if not pid_path.exists():
-        return False
+    """True if this user's server is running (or starting): it holds the start lock.
 
-    try:
-        pid = int(pid_path.read_text())
-    except ValueError:
-        pid = None
-
-    if pid is not None and _pid_alive(pid):
-        return True
-    # PID file is unreadable or the process is gone
-    pid_path.unlink(missing_ok=True)
-    _endpoint_file().unlink(missing_ok=True)
-    return False
+    The lock is released by the OS when the server exits, however it exits, so
+    leftover PID files and recycled PIDs cannot make a dead server look alive.
+    """
+    return _lock_held()
 
 
 def stop_server() -> bool:
@@ -568,7 +860,10 @@ def stop_server() -> bool:
         print("Server is not running")
         return False
 
-    pid = int(_pid_file().read_text())
+    pid = read_pid()
+    if pid is None:
+        print("Server is starting up (no PID recorded yet); try again in a moment")
+        return False
     print(f"Stopping server (PID {pid})...")
 
     try:
@@ -598,7 +893,6 @@ def stop_server() -> bool:
 
     except ProcessLookupError:
         print("Server process not found")
-        _pid_file().unlink(missing_ok=True)
         return False
 
 
@@ -618,9 +912,10 @@ def get_server_info() -> Optional[Dict[str, Any]]:
     if not is_server_running():
         return None
 
+    pid = read_pid()
     try:
-        pid = int(_pid_file().read_text())
-
+        if pid is None:
+            raise LookupError("no PID recorded yet (server starting)")
         # Try to get process info
         import psutil
         proc = psutil.Process(pid)
@@ -635,7 +930,7 @@ def get_server_info() -> Optional[Dict[str, Any]]:
             'memory_mb': proc.memory_info().rss / 1024 / 1024,
         }
     except Exception:
-        # psutil not available, return basic info
+        # psutil not available (or no PID recorded yet), return basic info
         return {
             'pid': pid,
             'url': _server_url(),
@@ -644,20 +939,18 @@ def get_server_info() -> Optional[Dict[str, Any]]:
 
 
 def _start_foreground() -> None:
-    """Claim the PID file, load GSAS-II and serve until stopped."""
-    if not _claim_pid_file():
+    """Take the start lock, load GSAS-II and serve until stopped."""
+    if not _claim_server_lock():
         print("Server is already running")
-        print(f"   PID: {_pid_file().read_text()}")
+        print(f"   PID: {read_pid() or '(starting)'}")
         print(f"   URL: {_server_url()}")
         print(f"\n   To view logs: pixi run gsas-server logs")
         sys.exit(1)
-    # Release the claim even if the GSAS-II import below fails.
+    # Release the lock and state files even if the GSAS-II import below fails.
     atexit.register(_release_state_files)
-    # No client may use a leftover endpoint while GSAS-II loads.
-    _endpoint_file().unlink(missing_ok=True)
 
     print("Starting GSAS-II server...")
-    logger = setup_logging(log_file())
+    logger = setup_logging()
     server = GSASServer(logger)
     server.start()
 
@@ -725,7 +1018,12 @@ def _run_action(action: str) -> None:
 
     elif action == 'logs':
         path = log_file()
-        if not path.exists():
+        try:
+            text = _read_state_file(LOG_NAME)
+        except OSError as e:
+            print(f"Failed to read log file: {e}")
+            sys.exit(1)
+        if text is None:
             print(f"Log file not created yet: {path}")
             sys.exit(0)
 
@@ -735,10 +1033,8 @@ def _run_action(action: str) -> None:
 
         try:
             # Show last 50 lines
-            with open(path, 'r') as f:
-                lines = f.readlines()
-                for line in lines[-50:]:
-                    print(line.rstrip())
+            for line in text.splitlines()[-50:]:
+                print(line.rstrip())
         except Exception as e:
             print(f"Failed to read log file: {e}")
             sys.exit(1)

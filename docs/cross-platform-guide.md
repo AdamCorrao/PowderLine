@@ -553,7 +553,11 @@ If you prefer native tools, the platform equivalents are:
 `<log_file>` is `server.log` in the per-user state directory
 (`pixi run gsas-server status` prints it): `$XDG_RUNTIME_DIR/powderline` or
 `<tempdir>/powderline-<uid>` on Linux/macOS (POSIX mode 0700, ownership
-checked), `%LOCALAPPDATA%\powderline` on Windows (protected by the user-profile
-ACL; POSIX mode checks do not apply). The server's port and token live in the
-same directory, so the security model is identical on every platform: loopback
-TCP plus a bearer token only the owning user can read.
+checked), `%LOCALAPPDATA%\powderline` on Windows. The server's port and token
+live in the same directory, and the protocol is the same everywhere: loopback
+TCP with requests and responses signed by a token only the owning user can
+read. What protects that token differs: POSIX mode/ownership checks (enforced
+by PowderLine) on Linux/macOS, the user-profile ACL of `%LOCALAPPDATA%` on
+Windows (relied on, not checked — a profile whose ACL was loosened by an
+administrator is not detected). The start lock uses `flock` on POSIX and
+`msvcrt.locking` on Windows.

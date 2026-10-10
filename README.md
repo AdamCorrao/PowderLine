@@ -116,11 +116,13 @@ pixi run gsas-server status                 # start | status | stop | restart | 
 pixi run kicker <recipe.json> --no-server   # force an isolated one-shot subprocess
 ```
 
-The server is per-user: it listens on loopback only, requires a bearer token
-kept in a directory only you can read, and is never shared with (or used by)
-other users on the same machine. To switch it off entirely — e.g. on a shared
-workstation — set `POWDERLINE_NO_SERVER=1`: refinements then always run
-in-process and nothing is auto-started.
+The server is per-user: it listens on loopback only and accepts only requests
+signed with a secret token kept in a directory only you can read; your client
+in turn only accepts results signed with that token, so other users on the
+same machine can neither use your server nor impersonate it. To switch it off
+— e.g. on a shared workstation — set `POWDERLINE_NO_SERVER=1`: default
+(`auto`) runs then go in-process, explicit server mode (`--use-server` /
+`execution_mode='server'`) fails, and nothing is auto-started.
 
 **Simulate a pattern from Materials Project** (requires an MP API key in
 `.powderline_config.yaml` — see `.powderline_config.yaml.example` — or in the

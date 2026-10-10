@@ -3395,7 +3395,7 @@ def run(
 
             Only the calling user's own server is used. If the
             ``POWDERLINE_NO_SERVER`` environment variable is truthy
-            (``1``/``true``/``yes``), ``'auto'`` runs in-process without
+            (``1``/``true``/``yes``/``on``), ``'auto'`` runs in-process without
             starting a server and ``'server'`` returns an error result.
 
     Returns:

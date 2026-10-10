@@ -470,7 +470,7 @@ class SizeBroadening(BaseModel):
 
 **src/powderline/gsas_server.py / gsas_client.py**:
 - Persistent FastAPI server keeping GSAS-II loaded in memory, and the HTTP client that talks to it (with in-process subprocess fallback)
-- Per-user and token-authenticated (private state dir, loopback, ephemeral port); `POWDERLINE_NO_SERVER=1` disables it
+- Per-user and authenticated by signed requests/responses (private state dir, loopback, ephemeral port, single instance via a kernel lock); `POWDERLINE_NO_SERVER=1` disables it
 - **Role**: Execution backends for `run()`'s `server`/`auto` modes
 
 **src/powderline/topas/ + src/powderline/easydiff/ + src/powderline/engine.py**:
@@ -811,16 +811,26 @@ pixi run gsas-server stop    # Shutdown server
 ```
 
 **Server state and security (per user):** the server binds `127.0.0.1` on a
-free ephemeral port and writes its PID, log, and an endpoint file (port +
-random bearer token, mode 0600) to a private per-user state directory:
-`$XDG_RUNTIME_DIR/powderline` (if owned by you), else
+free ephemeral port and writes its lock, PID, log, and an endpoint file (port +
+random secret token) — all mode 0600 — to a private per-user state directory:
+`$XDG_RUNTIME_DIR/powderline` (if it is a real directory owned by you), else
 `<tempdir>/powderline-<uid>` on POSIX (mode 0700; refused if it is a symlink,
-owned by someone else, or group/other-accessible), and
-`%LOCALAPPDATA%\powderline` on Windows. Every endpoint requires the token, and
-`/health` returns an HMAC of a client nonce so the client knows it reached its
-own server. Other users on a shared host therefore can neither submit jobs to
-your server nor have their jobs land on it. `gsas-server start` holds the PID
-file as a lock, so concurrent auto-starts do not spawn duplicate servers.
+owned by someone else, or group/other-accessible, or if the temp directory
+would let others replace it), and `%LOCALAPPDATA%\powderline` on Windows. On
+POSIX the files are opened relative to a re-verified, no-follow directory
+handle.
+
+The token never travels over the wire: every request carries a fresh nonce, a
+timestamp and an HMAC-SHA256 over method, path, nonce, timestamp and body, and
+the server rejects anything unsigned, wrongly signed, stale, or replayed —
+on every route, including 404/405/422 — before reading the body. Every
+response is signed back over the nonce, status and body, and the client
+discards unsigned responses. Other users on a shared host therefore can
+neither submit jobs to your server nor impersonate it (e.g. by taking over the
+port of a crashed server). `gsas-server start` takes a kernel-held lock
+(`flock` / `msvcrt.locking` on `server.lock`) for the server's lifetime; the
+OS releases it when the process exits, so concurrent auto-starts never spawn
+duplicates and leftover PID files can never make a dead server look alive.
 
 **Pin the server port** (only if needed — the default ephemeral port avoids
 collisions between users):
@@ -832,7 +842,7 @@ pixi run kicker input.json  # client reads the port from your state directory
 
 **Disable the server entirely** (shared workstations, locked-down deployments):
 ```bash
-export POWDERLINE_NO_SERVER=1   # also: true / yes
+export POWDERLINE_NO_SERVER=1   # also: true / yes / on
 ```
 With it set, `execution_mode='auto'` (and the CLI default) runs in-process and
 never starts a server, `execution_mode='server'` / `--use-server` fail with a
