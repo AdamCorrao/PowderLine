@@ -421,6 +421,96 @@ def test_builder_eb77_crysfml_accepts_both_orientations():
         assert build is not None
 
 
+def _b_uaniso(recipe: dict, refine: bool = False) -> dict:
+    """LaB6's B (6f, x 1/2 1/2) anisotropic: U22 = U33 tied, no cross terms (site symmetry 4mm)."""
+    b = recipe["payload"]["phases"]["LaB6"]["atoms"]["B"]
+    b.pop("Uiso")
+    b["ADP"] = "Uaniso"
+    b["Uaniso"] = {k: [0.009 if k in ("U11", "U22", "U33") else 0.0, refine and k in ("U11", "U22", "U33"), None, None]
+                   for k in ("U11", "U22", "U33", "U12", "U13", "U23")}
+    return recipe
+
+
+def test_builder_anisotropic_atoms_handed_first():
+    """easydiffraction gets the anisotropic atoms first (A169, EB-86); the recipe lists La (Uiso) before B."""
+    build = native_builder.build_project(schema.validate_recipe(_b_uaniso(_load_fixture("lab6_cryspy_pv.json"))))
+    assert [a.id.value for a in build.structures["LaB6"].atom_sites] == ["B", "La"]
+    build = native_builder.build_project(schema.validate_recipe(_load_fixture("lab6_cryspy_pv.json")))
+    assert [a.id.value for a in build.structures["LaB6"].atom_sites] == ["La", "B"]  # recipe order otherwise
+
+
+def _everything_refined(calculator: str) -> dict:
+    """A LaB6 recipe with every refinable slot of the calculator's peak type flagged (cubic: a, b, c one group)."""
+    if calculator == "cryspy":
+        recipe = _b_uaniso(_load_fixture("lab6_slots_simulation.json"), refine=True)
+    else:
+        recipe = _load_fixture("lab6_crysfml_tch.json")
+        recipe["payload"]["instrument"]["corrections"].update(
+            {"calib_sample_displacement": [0.001, True, None, None], "calib_sample_transparency": [-0.0005, True, None, None]})
+        recipe["payload"]["instrument"]["absorption"] = {"type": "cylinder-hewat", "mu_r": [0.3, True, None, None]}
+    p = recipe["payload"]
+    inst = p["instrument"]
+    for q in (inst["radiation"]["setup_wavelength"], inst["absorption"]["mu_r"], *inst["corrections"].values(),
+              *inst["broadening"]["parameters"].values()):
+        q[1] = True
+    p["background"] = {"chebyshev": {"num_coefficients": 3, "coefficients": [30.0, 0.6, 0.7], "refine_flag": True}}
+    phase = p["phases"]["LaB6"]
+    phase["scale"][1] = True
+    for k in ("a", "b", "c"):
+        phase["unit_cell"][k][1] = True
+    phase["atoms"]["B"]["x"][1] = True
+    for atom in phase["atoms"].values():
+        atom["occupancy"][1] = True
+        if "Uiso" in atom:
+            atom["Uiso"][1] = True
+    return recipe
+
+
+@pytest.mark.parametrize("calculator", ["cryspy", "crysfml"])
+def test_every_free_parameter_changes_the_pattern_the_minimizer_sees(calculator):
+    """A127 principle: each parameter the builder frees changes the pattern computed on lmfit's own path.
+
+    Each value is moved the way the minimizer moves it and the pattern recomputed the way its residual
+    function does (structures, then the experiment, ``called_by_minimizer``): ``analysis.calculate()``
+    rebuilds everything and so hides an update bug such as EB-86.
+    """
+    from easydiffraction.analysis.fitting import intensity_category_for
+
+    model = schema.validate_recipe(_everything_refined(calculator))
+    build = native_builder.build_project(model)
+    build.project.analysis.calculate()  # the calculator's cached state, as at the start of a fit
+
+    def minimizer_pattern():
+        for s in build.structures.values():
+            s._update_categories(called_by_minimizer=True)
+        build.experiment._update_categories(called_by_minimizer=True)
+        return np.array(intensity_category_for(build.experiment).intensity_calc, dtype=float)
+
+    y0 = minimizer_pattern()
+    assert len(build.free) == parameters_requested(model)
+    dead = []
+    for fp in build.free:
+        v0 = float(fp.parameter.value)
+        fp.parameter._set_value_from_minimizer(v0 + (0.01 if fp.category == "atom_xyz" else max(abs(v0) * 0.1, 1e-3)))
+        if not np.max(np.abs(minimizer_pattern() - y0)) > 1e-10 * np.max(np.abs(y0)):
+            dead.append(fp.path)
+        fp.parameter._set_value_from_minimizer(v0)
+    assert not dead, f"no effect on lmfit's path: {dead}"
+
+
+def test_run_cryspy_refines_uaniso(tmp_path):
+    """A refined Uij is varied and moves with CrysPy although La (Uiso) precedes B in the recipe (A169, EB-86)."""
+    result = gateway.run(_b_uaniso(_load_fixture("lab6_cryspy_pv.json"), refine=True), str(tmp_path))
+    d = result["engine_details"]
+    assert result["success"] and d["fit_success"], d
+    assert d["parameters_varied"] == d["parameters_requested"]
+    rows = result["refined_parameters"].set_index("parameter_name")
+    for name in ("LaB6_B_U11", "LaB6_B_U22"):
+        assert abs(rows.loc[name, "value"] - 0.009) > 1e-5
+        assert np.isfinite(rows.loc[name, "esd"])
+    assert rows.loc["LaB6_B_U11", "atom_idx"] == 1  # reports keep the recipe's atom order
+
+
 def test_matches_template_unit_cases():
     """Unit tests for _matches_template."""
     from powderline.gateways.easydiffraction.native_builder import _matches_template

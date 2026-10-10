@@ -16,6 +16,11 @@ never moves one.
   ``fit_min``/``fit_max``; a ``null`` side keeps easydiffraction's physical
   limit, which the minimizer applies (A157 B4, EB-71). Fixed parameters are
   never freed (F2).
+- **Atom order**: anisotropic atoms are handed over first (A169). easydiffraction
+  0.21.1's CrysPy update during a fit writes a refined anisotropic tensor into
+  the column of its place among the anisotropic atoms, not its own, so an
+  anisotropic atom after an isotropic one would keep its starting tensor
+  (EB-86). Order is not physics; everything is keyed by label.
 - **Checks after the build** (errors, never substitutions): easydiffraction's
   multiplicity of every atom equals core's and no coordinate moved (EB-47);
   with CrysPy, an atom on a special position with a free coordinate is
@@ -120,6 +125,11 @@ def _set(obj, name: str, value) -> None:
     setattr(obj, name, value)
 
 
+def engine_atom_order(phase) -> list[tuple[str, object]]:
+    """The phase's ``(label, atom)`` pairs in the order handed to easydiffraction: anisotropic first (A169, EB-86)."""
+    return sorted(phase.atoms.items(), key=lambda item: item[1].Uaniso is None)  # stable: recipe order otherwise
+
+
 def build_project(model) -> Build:
     """The easydiffraction project for a validated ``easydiffraction.rietveld`` model (see the module docstring)."""
     from easydiffraction import ExperimentFactory, Project, StructureFactory
@@ -176,7 +186,7 @@ def build_project(model) -> Build:
             s.space_group.coord_system_code = code
         for member, attr in _CELL.items():
             _set(s.cell, attr, getattr(phase.unit_cell, member).value)
-        for label, atom in phase.atoms.items():
+        for label, atom in engine_atom_order(phase):
             s.atom_sites.create(id=label, type_symbol=atom.element, fract_x=atom.x.value, fract_y=atom.y.value,
                                 fract_z=atom.z.value, occupancy=atom.occupancy.value)
             site = s.atom_sites[label]

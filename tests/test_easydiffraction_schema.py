@@ -310,6 +310,26 @@ def test_cutoff_fwhm_with_cryspy_accepted():
     validate_recipe(r)
 
 
+def _b_uaniso(r: dict, u11: float = 0.009) -> dict:
+    """LaB6's B (6f, x 1/2 1/2) with an anisotropic tensor respecting its site symmetry (U22 = U33, no cross terms)."""
+    b = r["payload"]["phases"]["LaB6"]["atoms"]["B"]
+    b.pop("Uiso")
+    b["ADP"] = "Uaniso"
+    b["Uaniso"] = {"U11": P(u11), "U22": P(0.009), "U33": P(0.009), "U12": P(0.0), "U13": P(0.0), "U23": P(0.0)}
+    return r
+
+
+def test_uaniso_with_crysfml_rejected():
+    """CrysFML is handed B = 8 pi^2 Ueq only, so the tensor would have no effect (EB-23)."""
+    r = _b_uaniso(_load_fixture("lab6_crysfml_tch.json"))
+    errors = _fails(r, ("payload", "phases", "LaB6", "atoms", "B", "Uaniso"), "easydiffraction_uaniso_crysfml")
+    assert len(errors) == 1
+
+
+def test_uaniso_with_cryspy_accepted():
+    validate_recipe(_b_uaniso(_load_fixture("lab6_cryspy_pv.json"), u11=0.03))
+
+
 # --- per-type parameter sets (test 8) -----------------------------------------------
 
 

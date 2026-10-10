@@ -36,6 +36,8 @@ easydiffraction rules checked here:
   easydiffraction replaces a smaller sigma with 1.0 silently (A159);
 - the peak type must be one the calculator computes; ``cutoff_fwhm`` is a
   CrysPy setting (CrysFML ignores it) (A162, A127 principle);
+- ``Uaniso`` needs the cryspy calculator: easydiffraction hands CrysFML only
+  B = 8 pi^2 Ueq, so the tensor would have no effect (EB-23, A127 principle);
 - the Kα2 wavelength and its intensity ratio are stated together;
 - simulation = no refine flag set (lmfit is not run).
 """
@@ -484,6 +486,15 @@ class RietveldPayload(CoreModel):
             if why is not None:
                 problems.append(_error("easydiffraction_setting", "{why}", ("phases", name, "space_group"),
                                        phase.space_group, why=why))
+            if calculator == "crysfml":
+                for label, atom in phase.atoms.items():
+                    if atom.Uaniso is not None:
+                        problems.append(_error(
+                            "easydiffraction_uaniso_crysfml",
+                            "the crysfml calculator does not use anisotropic ADPs: easydiffraction hands CrysFML "
+                            "B = 8 pi^2 Ueq (the trace / 3) and the tensor has no effect (EB-23); state Uiso, or "
+                            "use the cryspy calculator",
+                            ("phases", name, "atoms", label, "Uaniso"), atom.Uaniso.model_dump()))
         profile = self.instrument.broadening
         if profile.peak_type not in CALCULATOR_PEAK_TYPES[calculator]:
             problems.append(_error(
