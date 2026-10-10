@@ -332,9 +332,73 @@ unchanged).
 
 ## easydiffraction engine schema
 
-### 1.0.0 — introduced in PowderLine 0.2.0
+### 1.0.0 — introduced in PowderLine 0.2.0 (in development)
 
-Entries added by re/06 (`easydiffraction.rietveld`).
+Defined in `src/powderline/gateways/easydiffraction/schema.py` (engine-free),
+on core 1.0.0. Accepted versions are declared: engine schema `==1.0.0`,
+requiring core `==1.0.0`. Native recipes use easydiffraction's own names and
+units (`setup_wavelength`, `calib_twotheta_offset`, `broad_gauss_u` in deg², …).
+There is no converter from 0.26.0 recipes (the 0.26.0 `GSASII_*` →
+easydiffraction path is unchanged until re/07).
+
+- **Workflow**: `easydiffraction.rietveld` (`phases`); no single peak fitting.
+- **easydiffraction version**: pinned (`==0.21.1`) and read at run time; a
+  recipe states none.
+- **No defaults**: a block left out means the feature is not modelled; every
+  value PowderLine would otherwise choose is a required field.
+- **Parameters**: `[value, refine_flag, min, max]`. A stated bound replaces
+  easydiffraction's physical limit on that side; `null` keeps it (cell lengths
+  0–30 Å, angles 0–180°, occupancy 0–1, Uiso and U11/U22/U33 0–10 Å², scale,
+  wavelength and μR ≥ 0). A value outside a physical limit is an error, even
+  when fixed (easydiffraction refuses it); a cell length over 30 Å cannot be
+  modelled.
+- **Instrument**: `radiation` (`setup_wavelength` > 0; a Kα2 line
+  `setup_wavelength_2` + `setup_wavelength_2_to_1_ratio` stated together);
+  `polarization` (`setup_polarization_coefficient` p, `setup_monochromator_twotheta`;
+  GSAS-II's P is 1 − p); `corrections` (`calib_twotheta_offset`, and optionally
+  `calib_sample_displacement`, `calib_sample_transparency`); `absorption`
+  (`cylinder-hewat`, `mu_r`); `broadening` `{peak_type, parameters}` with
+  `cwl-pseudo-voigt` (both calculators), `cwl-pseudo-voigt-berar-baldinozzi-asymmetry`
+  (CrysPy) or `cwl-thompson-cox-hastings` (CrysFML, FCJ `asym_fcj_1/2`), and
+  `cutoff_fwhm` (CrysPy only). Gaussian FWHM² = U tan²θ + V tanθ + W (deg²),
+  Lorentzian FWHM = X tanθ + Y/cosθ (deg; GSAS-II's X and Y swap roles). A stated
+  profile that makes either width negative at a point handed to the engine is
+  an error (easydiffraction would compute a wrong pattern without a message).
+- **Background**: `chebyshev`, over the fit window's first and last points.
+- **Phase block**: core's `space_group`, `unit_cell`, `atoms` (`Uiso` and
+  `Uaniso` in Å², used as given), plus `scale` (≥ 0: a phase may contribute
+  nothing). Symmetry ties become one easydiffraction parameter per tie group,
+  the one easydiffraction leaves free.
+- **Space groups**: the canonical name maps to one of easydiffraction's 230
+  short names plus a setting code (531 settings); each calculator accepts only
+  the settings it was verified to compute (CrysPy 437, CrysFML 230; the error
+  names one it computes, or the other calculator).
+- **Calculator-specific rules**: `Uaniso` needs CrysPy (CrysFML is handed only
+  B = 8π²·Ueq). With CrysPy, an atom on a special position with a free
+  coordinate must be written in the pattern of easydiffraction's Wyckoff
+  template for its site (CrysPy computes wrong intensities for other equivalent
+  writings); the run refuses it before calculating and names the position to
+  write.
+- **Refinement controls** (required): `calculator` (`cryspy` | `crysfml`),
+  `minimizer` (`lmfit (leastsq)`), `max_iterations` (lmfit's maximum number of
+  function evaluations), `chi_square_change_tolerance`,
+  `parameter_change_tolerance`, `gradient_tolerance`. No refine flag set = a
+  simulation (the pattern is calculated, lmfit is not run).
+- **Fit window and data**: easydiffraction gets exactly the weighted points
+  with min ≤ 2θ ≤ max (open ends: the data's first or last weighted point), as
+  a CIF data loop at full precision; a weight above 1e8 (σ < 1e-4) on one of
+  them is an error (easydiffraction would replace σ by 1.0 without saying so).
+- **Results**: `rwp`, `r_exp`, `gof`, `chi2_red` from PowderLine's uniform fit
+  statistics over the window (Rwp equal to easydiffraction's); its values,
+  calculator, peak type, `parameters_requested` and `parameters_varied`
+  (lmfit's count) under `engine_details`. The background column is
+  easydiffraction's own. CrysFML reports no reflection list, so no peak lists
+  are written with it. Warnings: `easydiffraction_parameters_not_varied`,
+  `easydiffraction_parameter_at_limit`, `easydiffraction_phase_contributes_nothing`
+  (informative), `easydiffraction_fit_not_converged` (the values are reported),
+  `easydiffraction_negative_width` (the refined profile makes a width negative
+  in the window), `easydiffraction_reflections_not_available` (CrysFML). Any
+  non-finite calculated value is a divergence error.
 
 ---
 
