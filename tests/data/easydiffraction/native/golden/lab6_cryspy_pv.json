@@ -537,6 +537,8 @@
     }
    ]
   },
-  "warnings": []
+  "warnings": [
+   "easydiffraction_negative_width"
+  ]
  }
 }
