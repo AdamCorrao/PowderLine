@@ -83,13 +83,18 @@ def structure_name(phase: str) -> str:
     return phase.lower()
 
 
+def _cif_number(v) -> str:
+    """``v`` at full precision without an exponent: easydiffraction's CIF loop cannot read ``5e-05`` (EB-89)."""
+    return np.format_float_positional(float(v), unique=True, trim="-")
+
+
 def data_cif(tth: np.ndarray, yobs: np.ndarray, sigma: np.ndarray) -> str:
-    """An experiment CIF holding only the experiment type and the data, numbers at full precision (EB-72)."""
+    """An experiment CIF holding only the experiment type and the data, numbers at full precision (EB-72, EB-89)."""
     lines = ["data_" + EXPERIMENT_NAME, "_experiment_type.sample_form powder",
              '_experiment_type.beam_mode "constant wavelength"', "_experiment_type.radiation_probe xray",
              "_experiment_type.scattering_type bragg", "", "loop_", "_data.two_theta", "_data.intensity_meas",
              "_data.intensity_meas_su"]
-    lines += [f"{float(x)!r} {float(y)!r} {float(s)!r}" for x, y, s in zip(tth, yobs, sigma)]
+    lines += [f"{_cif_number(x)} {_cif_number(y)} {_cif_number(s)}" for x, y, s in zip(tth, yobs, sigma)]
     return "\n".join(lines) + "\n"
 
 

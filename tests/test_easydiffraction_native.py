@@ -306,6 +306,22 @@ def test_builder_data_sigma(lab6_crysfml_tch_build):
     np.testing.assert_allclose(ed_sigma, sigma_expected, rtol=1e-15)
 
 
+def test_builder_small_intensities_handed_exactly():
+    """Normalized data (intensities ~1e-5, sigma >= 1e-4 as A159 requires) reach the engine exactly: the CIF
+    loop is written without exponents, which easydiffraction's reader cannot parse (EB-89)."""
+    recipe = _load_fixture("lab6_slots_simulation.json")
+    xrd = recipe["payload"]["xrd_data"]
+    xrd["Itth"] = [y * 1e-6 for y in xrd["Itth"]]
+    xrd["Itth_weights"] = [1e8] * len(xrd["Itth"])  # sigma = 1e-4
+    model = schema.validate_recipe(recipe)
+    build = native_builder.build_project(model)
+    mask = model.payload.window_mask()
+    np.testing.assert_array_equal(np.asarray(build.experiment.data.intensity_meas, dtype=float),
+                                  np.asarray(xrd["Itth"], dtype=float)[mask])
+    np.testing.assert_array_equal(np.asarray(build.experiment.data.intensity_meas_su, dtype=float), 1e-4)
+    assert "e-" not in native_builder.data_cif(np.array([5e-5]), np.array([1e16]), np.array([1e-4])).lower()
+
+
 def test_builder_free_parameters_lab6_crysfml_tch(lab6_crysfml_tch_build):
     """Free parameters for lab6_crysfml_tch: exactly the expected set."""
     build = lab6_crysfml_tch_build
