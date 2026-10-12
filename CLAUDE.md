@@ -4,13 +4,15 @@
 > **The architecture described below is the pre-refactor v0.1.1 baseline and is being replaced — do not treat it as the target.** Active on branch `refactor/multi-engine`. During the refactor the authoritative sources are, in order:
 > 1. `_dev/dossiers/multi-engine/05-master-plan.md` — decision log (§3) + invariants (§4) + orchestration guidance (§6)
 > 2. the active `_dev/dossiers/multi-engine/subplans/re-NN-*.md`
-> 3. `_dev/dossiers/multi-engine/00-pre-planning-findings.md` — codebase map (file:line anchors)
+> 3. `_dev/dossiers/multi-engine/execution-runbook.md` (§8: sandbox environment and lessons) and the tail of `_dev/dossiers/multi-engine/execution-log.md`
+>
+> `00-pre-planning-findings.md` is a historical map of v0.1.0: its file:line anchors predate the move into `gateways/`.
 >
 > **Ask, don't assume (master plan A25):** if a decision isn't in the decision log or the active subplan, **stop and ask the maintainer — do not infer** — and record the answer in the dossier before proceeding.
 >
-> **Frozen:** GSAS-II setup/execution in `kicker.py` is move-only; additive edits go only through the signed-off ledger `_dev/dossiers/multi-engine/tasks/re04-frozen-edits.md`.
+> **Frozen:** GSAS-II setup/execution, now in `src/powderline/gateways/gsasii/{helpers,project,setters,executors,extractors,constraints}.py` (code-hashed), is move-only. Additive or input-side edits go only through the signed-off ledger `_dev/dossiers/multi-engine/tasks/re04-frozen-edits.md`.
 >
-> **Known-stale below** (being changed — see the decision log): `0.26.0` / `EXPECTED_SCHEMA_VERSION` exact-match → core + per-engine schemas `1.0.0` with *declared* compatibility; the `engine=` arg → removed (engine named by `schema_name`, e.g. `gsasii.rietveld`); `GSASII_Rietveld`/`GSASII_SPF` → `gsasii.rietveld`/`gsasii.spf`; `src/powderline/{topas,easydiff}/` → `src/powderline/gateways/{gsasii,topas,easydiffraction}/`; env `easydiff` → `easydiffraction`; default env → core-only (no engines); the 6-name public API + flat "4-element list" → `RefinableParameter`/`BoundedRefinableParameter` (re/07).
+> **Done so far (re/01–re/06 merged):** every engine lives under `src/powderline/gateways/{gsasii,topas,easydiffraction}/`, discovered through entry points. Native schemas exist next to the legacy path: core `schema_core`, plus `gsasii.rietveld`/`gsasii.spf`, `topas.rietveld`/`topas.spf` and `easydiffraction.rietveld`, each `1.0.0`. **Known-stale below, still to change:** the 0.26.0 schema, the `engine=` argument and the legacy translation paths are removed in re/07; the env split (core-only default env, `gsasii`/`easydiffraction` envs, the `easydiff` rename) comes in re/08; the public API changes in re/07.
 >
 > _This banner is removed in `re/10` (docs migration), which rewrites this file for the new architecture._
 
