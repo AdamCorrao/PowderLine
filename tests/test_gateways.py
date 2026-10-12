@@ -24,7 +24,7 @@ from powderline import registry, schema
 from powderline.exceptions import EngineNotAvailableError, EngineVersionError
 from powderline.gateways.gsasii import gateway as gsasii_gateway
 from powderline.gateways.topas import gateway as topas_gateway
-from powderline.easydiff import gateway as easydiff_gateway
+from powderline.gateways.easydiffraction import gateway as easydiff_gateway
 from subprocess_utils import run_subprocess_utf8
 
 REPO = Path(__file__).resolve().parent.parent
@@ -56,7 +56,7 @@ def isolated_registry():
     [
         (gsasii_gateway, "==5.7.9"),
         (topas_gateway, ">=7,<8"),
-        (easydiff_gateway, ">=0.20.1,<0.21"),
+        (easydiff_gateway, "==0.21.1"),
     ],
 )
 def test_engine_version_spec_parses_and_matches_capabilities(gateway_module, expected_spec):
@@ -132,7 +132,7 @@ def test_validate_invalid_recipe_raises(gateway_module, invalid_recipe):
 
 def test_easydiff_validate_lab6_raises_translation_error():
     """Easydiffraction validate raises on the LaB6 recipe due to unsupported Z parameter."""
-    from powderline.easydiff.errors import EasyDiffractionTranslationError
+    from powderline.gateways.easydiffraction.errors import EasyDiffractionTranslationError
 
     recipe = _lab6_recipe()
     with pytest.raises(EasyDiffractionTranslationError, match="Z is flagged for refinement"):
@@ -290,9 +290,9 @@ def test_topas_validate_only_skips_version_check(tmp_path, monkeypatch):
 
 
 def test_easydiff_version_out_of_range_raises(tmp_path, monkeypatch):
-    """When installed_engine_version() returns '0.21.0', run() raises EngineVersionError."""
-    monkeypatch.setattr(easydiff_gateway, "installed_engine_version", lambda: "0.21.0")
-    from powderline.easydiff import engine
+    """When installed_engine_version() returns '0.20.1' (the previous pin), run() raises EngineVersionError."""
+    monkeypatch.setattr(easydiff_gateway, "installed_engine_version", lambda: "0.20.1")
+    from powderline.gateways.easydiffraction import engine
 
     fake_run = Mock()
     monkeypatch.setattr(engine, "run_easydiffraction_recipe", fake_run)
@@ -303,9 +303,9 @@ def test_easydiff_version_out_of_range_raises(tmp_path, monkeypatch):
 
 
 def test_easydiff_version_in_range_calls_engine(tmp_path, monkeypatch):
-    """When installed_engine_version() returns '0.20.1', run() calls the engine."""
-    monkeypatch.setattr(easydiff_gateway, "installed_engine_version", lambda: "0.20.1")
-    from powderline.easydiff import engine
+    """When installed_engine_version() returns '0.21.1', run() calls the engine."""
+    monkeypatch.setattr(easydiff_gateway, "installed_engine_version", lambda: "0.21.1")
+    from powderline.gateways.easydiffraction import engine
 
     fake_run = Mock(return_value={})
     monkeypatch.setattr(engine, "run_easydiffraction_recipe", fake_run)
@@ -332,7 +332,7 @@ def test_easydiff_not_installed_raises_engine_not_available_error(tmp_path):
 )
 def test_easydiff_not_installed_validate_only_does_not_raise(tmp_path, monkeypatch):
     """When easydiffraction is not installed, validate_only=True does not raise."""
-    from powderline.easydiff import engine
+    from powderline.gateways.easydiffraction import engine
 
     fake_run = Mock(return_value={})
     monkeypatch.setattr(engine, "run_easydiffraction_recipe", fake_run)
@@ -349,7 +349,7 @@ def test_easydiff_not_installed_validate_only_does_not_raise(tmp_path, monkeypat
 def test_easydiff_installed_version_satisfies_spec():
     """When easydiffraction is installed, its version satisfies ENGINE_VERSION_SPEC.
 
-    easydiffraction 0.20.1 has no ``__version__``; its own runtime version source
+    easydiffraction (0.20.1, 0.21.1) has no ``__version__``; its own runtime version source
     is ``utils.package_version`` (distribution metadata), which must agree.
     """
     from easydiffraction.utils.utils import package_version
@@ -476,7 +476,7 @@ import powderline.gateways.topas.gateway
 import powderline.gateways.topas.schema
 import powderline.gateways.topas.native_writer
 import powderline.gateways.topas.native_run
-import powderline.easydiff.gateway
+import powderline.gateways.easydiffraction.gateway
 from powderline import registry
 
 # The core phase block and its symmetry rules run engine-free (re/03b)

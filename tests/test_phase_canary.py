@@ -23,6 +23,8 @@ ENGINE_PHASES: list[tuple[str, str, type, dict]] = [
     ("powderline.gateways.gsasii.schema", "GsasiiPhase", RefinableParameter, {"scale": [1.0, False]}),
     ("powderline.gateways.topas.schema", "TopasPhase", BoundedRefinableParameter,
      {"scale": [1e-6, False, None, None]}),
+    ("powderline.gateways.easydiffraction.schema", "EasydiffractionPhase", BoundedRefinableParameter,
+     {"scale": [1e-6, False, None, None]}),
 ]
 
 
