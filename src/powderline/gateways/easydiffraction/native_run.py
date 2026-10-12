@@ -57,7 +57,9 @@ from powderline.gateways.easydiffraction.schema import profile_negative_widths, 
 from powderline.schema_core import collect_warnings, parameters_requested
 from powderline.symmetry import cell_tie_groups
 
-#: A refined value within this relative distance of a limit acting in the fit "ended at the limit".
+#: A refined value within this relative distance of a limit acting in the fit "ended at the limit"; for a
+#: limit of 0, relative to the parameter's starting value (A181: a phase scale is ~1e-6, a Uiso ~1e-2, so no
+#: absolute tolerance fits every parameter; with a starting value of 0 too, 1e-12 absolute).
 LIMIT_HIT_RTOL = 1e-6
 PEAK_LIST_COLUMNS = ("h", "k", "l", "d_spacing", "2theta", "F_calc_squared", "phase")
 
@@ -272,7 +274,8 @@ def _limit_hits(build: Build) -> list:
         for side, lim, source in zip(("min", "max"), fp.limits, fp.limit_source):
             if lim is None:
                 continue
-            tol = LIMIT_HIT_RTOL * abs(lim) if lim != 0 else 1e-12
+            scale = abs(lim) if lim != 0 else abs(fp.start)
+            tol = LIMIT_HIT_RTOL * scale if scale else 1e-12
             if abs(v - lim) <= tol:
                 whose = "the recipe's stated bound" if source == "stated" else "easydiffraction's physical limit"
                 found.append(StructuredWarning(

@@ -73,6 +73,8 @@ class FreeParameter:
     members: tuple = ()
     #: Added to easydiffraction's value to give the recipe's writing (a lattice translation, A176).
     report_offset: float = 0.0
+    #: The recipe's starting value: the scale of "at a zero limit" (A181).
+    start: float = 0.0
 
 
 @dataclass
@@ -134,7 +136,7 @@ def _free(build: Build, param, p: BoundedRefinableParameter, *, name: str, path:
     limits, source = _bounds(p, physical)
     limits = tuple(None if v is None else (v - offset if src == "stated" else v) for v, src in zip(limits, source))
     build.free.append(FreeParameter(param, name, path, descriptive, category, phase, atom, limits, source,
-                                    members or ((name, 1, 0),), offset))
+                                    members or ((name, 1, 0),), offset, float(p.value)))
 
 
 def _set(obj, name: str, value) -> None:

@@ -925,6 +925,22 @@ def test_builder_free_offset_moves_bounds_and_reports():
     assert fp.limits == pytest.approx((-0.2, -0.1)) and fp.report_offset == 1
 
 
+@pytest.mark.parametrize("start, value, hit", [
+    (5.4e-6, 1e-12, True),   # a phase scale pinned at 0: within 1e-6 of its start
+    (5.4e-6, 1.6e-9, False),  # statistically zero but not at the limit (the review's phantom phase)
+    (0.005, 3e-9, True),     # a Uiso at 0
+    (0.005, 1e-7, False),
+    (0.0, 1e-13, True),      # started at 0: 1e-12 absolute
+])
+def test_limit_hit_at_zero_relative_to_the_start(start, value, hit):
+    """A181 (N4): at a limit of 0, "ended at the limit" is relative to the parameter's starting value."""
+    fp = native_builder.FreeParameter(Mock(value=value), "LaB6_scale", "payload.phases.LaB6.scale", "LaB6 scale",
+                                      "scale", limits=(0.0, None), limit_source=("physical", None), start=start)
+    build = native_builder.Build(project=None, experiment=None, structures={}, free=[fp])
+    hits = native_run._limit_hits(build)
+    assert [w["code"] for w in hits] == (["easydiffraction_parameter_at_limit"] if hit else [])
+
+
 def test_zero_gsasii_imports_subprocess():
     """A subprocess that blocks GSASII imports can import native_run and schema."""
     import textwrap

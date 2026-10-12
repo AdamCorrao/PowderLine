@@ -407,7 +407,9 @@ easydiffraction path is unchanged until re/07).
   (lmfit's count) under `engine_details`. The background column is
   easydiffraction's own. CrysFML reports no reflection list, so no peak lists
   are written with it. Warnings: `easydiffraction_parameters_not_varied`,
-  `easydiffraction_parameter_at_limit`, `easydiffraction_phase_contributes_nothing`
+  `easydiffraction_parameter_at_limit` (a value within 1e-6 relative of a stated bound
+  or physical limit; for a limit of 0, within 1e-6 of the parameter's starting
+  value), `easydiffraction_phase_contributes_nothing`
   (informative), `easydiffraction_fit_not_converged` (the values are reported),
   `easydiffraction_negative_width` (the refined profile makes a width negative
   within the checked range), `easydiffraction_reflections_not_available`
