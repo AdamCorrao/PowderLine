@@ -1,4 +1,5 @@
 [workspace]
+requires-pixi = ">=0.82.1"
 authors = ["Dan Olds <dpolds@gmail.com>", "Adam Corrao <95718914+AdamCorrao@users.noreply.github.com>"]
 channels = ["conda-forge"]
 name = "PowderLine"
