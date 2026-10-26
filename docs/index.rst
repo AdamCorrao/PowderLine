@@ -26,6 +26,7 @@ fresh clone to a finished refinement, on Linux or Windows.
    TROUBLESHOOTING
    SCHEMA_HISTORY
    api
+   citing
 
 .. toctree::
    :maxdepth: 1
