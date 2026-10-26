@@ -71,11 +71,17 @@ The elements are `[value, refine_flag, min, max]`:
   TOPAS engines; only easydiffraction uses them, as fit bounds. Leave them
   `null` unless you need them.
 
-Symmetry-linked parameters refine as a group: for a cubic cell, flagging any of
-`a`, `b`, `c` refines all three together, and the same holds for coordinates
-tied by site symmetry. Flags on symmetry-fixed parameters (e.g. cubic angles)
-have no effect. See [Schema History](SCHEMA_HISTORY.md) for the full 0.26.0
-refine-flag semantics.
+In GSAS-II, symmetry-linked parameters refine as a group: for a cubic cell,
+flagging any of `a`, `b`, `c` refines all three together, and the same holds
+for coordinates and anisotropic displacement components tied by site symmetry.
+Flags on symmetry-fixed parameters (e.g. cubic angles) have no effect. The
+other engines differ: easydiffraction groups cell parameters the same way (and
+does not refine atom parameters), but TOPAS only groups cell lengths. TOPAS
+refines a flagged symmetry-fixed angle, site-restricted coordinate, or
+displacement component as given, with a warning rather than a constraint, so
+flag only the parameters the symmetry allows to vary. See
+[Schema History](SCHEMA_HISTORY.md) for the full 0.26.0 refine-flag semantics
+(GSAS-II).
 
 ### Units
 
@@ -89,7 +95,7 @@ PowderLine uses GSAS-II conventions throughout:
 | Instrument `U`, `V`, `W` | centidegrees² |
 | Instrument `X`, `Y`, `Z` | centidegrees |
 | Isotropic crystallite size | µm |
-| Isotropic strain | microstrain (Δd/d × 10⁻⁶) |
+| Isotropic strain | microstrain: (Δd/d) × 10⁶, so 1000 means Δd/d = 0.001 |
 | `Uiso`, `U11`…`U23` | Å² |
 | Data weights | 1/σ² |
 
@@ -128,9 +134,11 @@ data, structure, and flags.
 
 `pixi run mp-simulate` fetches a structure from Materials Project, builds a
 simulation recipe for it, and calculates the pattern. Add `--keep-recipe` to
-keep the generated recipe JSON as a starting point; to refine against your
-own data, replace its `xrd_data` and instrument and turn on the flags you need
-(see [Simulating Patterns from Materials Project](mp-simulation.md)). From
+keep the generated recipe JSON as a starting point. The generated recipe is
+in simulation mode, so to refine against your own data, replace its
+`xrd_data` and instrument, set `payload.refinement_controls.refinement_cycles`
+to a value greater than 1 (e.g. 5), and turn on the flags you need (see
+[Simulating Patterns from Materials Project](mp-simulation.md)). From
 Python, `SimulationRecipeBuilder().build_recipe_from_mp_structure(...)` (in
 `powderline.simulation_builder`) builds the same recipe from the structure
 returned by `MPInterface(api_key=...).get_structure(material_id)` (in

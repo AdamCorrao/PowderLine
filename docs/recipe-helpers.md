@@ -100,7 +100,7 @@ import numpy as np
 SCHEMA_VERSION = "0.26.0"  # must equal PowderLine's EXPECTED_SCHEMA_VERSION exactly
 
 DEFAULT_SIZE_UM = 10.0  # isotropic crystallite size, microns (GSAS-II convention)
-DEFAULT_MICROSTRAIN = 0.0  # isotropic microstrain (x 10^-6)
+DEFAULT_MICROSTRAIN = 0.0  # isotropic microstrain, (delta d / d) x 10^6
 EIGHT_PI_SQ = 8.0 * math.pi**2  # B = 8 pi^2 U
 U_KEYS = ("U11", "U22", "U33", "U12", "U13", "U23")
 
@@ -239,7 +239,10 @@ def read_cif(path, phase_name=None):
         cols = {k: _values(block, f"_atom_site_aniso_{prefix}_{k[1:]}") for k in U_KEYS}
         if all(cols.values()):
             for i, lbl in enumerate(aniso_labels):
-                aniso[gemmi.cif.as_string(lbl)] = {k: _number(cols[k][i]) * factor for k in U_KEYS}
+                values = {k: _number(cols[k][i]) for k in U_KEYS}
+                aniso[gemmi.cif.as_string(lbl)] = {
+                    k: None if value is None else value * factor for k, value in values.items()
+                }
             break
 
     atoms = {}
@@ -272,6 +275,8 @@ def read_cif(path, phase_name=None):
         if label in aniso and None not in aniso[label].values():
             atom["ADP"] = "Uaniso"
             atom["Uaniso"] = aniso[label]
+        elif label in aniso:
+            warnings.append(f"atom {label!r}: incomplete anisotropic ADPs, using Uiso instead")
         atoms[label] = atom
 
     structure = {"phase_name": name, "space_group": symbol, "unit_cell": cell, "atoms": atoms}
@@ -431,8 +436,9 @@ def read_pattern(path, x_unit="2theta", wavelength=None):
 
     if data.shape[1] == 3:
         esd = data[:, 2]
-        if np.any(~(esd > 0)):
-            raise ValueError(f"{path}: {np.count_nonzero(~(esd > 0))} esd values are <= 0 or not finite")
+        invalid_esd = ~np.isfinite(esd) | (esd <= 0)
+        if np.any(invalid_esd):
+            raise ValueError(f"{path}: {np.count_nonzero(invalid_esd)} esd values are <= 0 or not finite")
         weights = 1.0 / esd**2
     else:
         weights = 1.0 / np.maximum(intensity, 1.0)
@@ -554,12 +560,16 @@ Rules (schema 0.26.0):
 - Every refinable value is a 4-element list [value, refine_flag, min, max];
   value null keeps the starting value. min/max are ignored by GSAS-II and
   TOPAS but used as bounds by easydiffraction; leave them null unless I ask.
-- Symmetry-linked parameters (cubic a=b=c, special-position coordinates)
-  refine together if any one of them is flagged.
+- In GSAS-II, symmetry-linked parameters (cubic a=b=c, special-position
+  coordinates, anisotropic displacement components) refine together if any one
+  of them is flagged, and flags on symmetry-fixed parameters have no effect.
+  TOPAS does not enforce this beyond grouping cell lengths: it refines a
+  flagged symmetry-fixed angle or site-restricted coordinate/ADP on its own,
+  with only a warning. Only flag parameters the symmetry allows to vary.
 - Only single-wavelength, constant-wavelength X-ray data (Type PXC) on a 2theta
   axis is supported. Ka1/Ka2 doublets are not; io.instrument_block raises.
-- Peak broadening: only the isotropic size (microns) and strain (microstrain)
-  models exist. Keep explicit values; unset values fall back to engine
+- Peak broadening: only the isotropic size (microns) and strain (microstrain,
+  (delta d / d) x 10^6, so 1000 means 0.1%) models exist. Keep explicit values; unset values fall back to engine
   defaults that differ between engines.
 - The background single-peaks block uses pv_gaussian_sigma (sigma); the
   GSASII_SPF single_peaks block uses pv_gaussian_sigma_sq (sigma squared).

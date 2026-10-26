@@ -56,13 +56,19 @@ GSAS-II.
 | Parameter | GSAS-II | TOPAS v7 | easydiffraction |
 |---|---|---|---|
 | Phase scale | ✓ | ✓ | ✓ |
-| Unit cell, with symmetry-linked parameters refined together | ✓ | ✓ | ✓ |
-| Atom coordinates, occupancies, Uiso | ✓ | ✓ | Fixed only |
-| Anisotropic displacement (`U11`…`U23`) | ✓ | ✓ | Fixed values ignored; refining rejected |
+| Unit cell, with symmetry-linked parameters refined together | ✓ | ✓, but see note below | ✓ |
+| Atom coordinates, occupancies, Uiso | ✓ | ✓, but see note below | Fixed only |
+| Anisotropic displacement (`U11`…`U23`) | ✓ | ✓, but see note below | Fixed values ignored; refining rejected |
 | Isotropic crystallite size and microstrain, with Lorentzian/Gaussian mixing (`LG_eta`) | ✓ | ✓ | Ignored, with a warning (also when flagged) |
 
 Intensity is scaled through each phase's `scale`; the histogram scale is
 fixed at 1.
+
+**Note on symmetry with TOPAS:** GSAS-II refines symmetry-linked parameters
+together and ignores flags on symmetry-fixed ones. TOPAS only groups
+symmetry-linked cell lengths. A flagged symmetry-fixed cell angle,
+site-restricted coordinate, or anisotropic displacement component is refined
+as given, with a warning rather than a constraint.
 
 **Peak fitting alongside a structure.** A Rietveld recipe can fit individual
 peaks together with the structural model through background peaks
@@ -85,7 +91,8 @@ adding a field for one of these features will not make it take effect.
   displacement, extinction, and surface roughness.
 - **User-defined constraints, restraints, and rigid bodies** (for example,
   tying two sites' occupancies together, or restraining bond lengths).
-  Symmetry constraints are applied automatically.
+  Symmetry constraints are applied automatically by GSAS-II (see the note on
+  TOPAS above).
 - **Parameter limits.** The `min`/`max` entries are ignored by GSAS-II and
   TOPAS; only easydiffraction uses them, as fit bounds.
 - **Kα₁/Kα₂ doublets** and other multi-wavelength sources.
