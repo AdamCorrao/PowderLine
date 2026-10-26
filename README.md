@@ -63,6 +63,10 @@ Results are written next to the recipe in `examples/example_LaB6/output/`:
 > `examples/example_template/` is a fill-in-the-blanks skeleton, not a runnable
 > recipe — copy it to start your own.
 
+**Bringing your own CIF, instrument, and data files?** PowderLine has no
+built-in recipe builder; see [Building Recipes](docs/building-recipes.md) for
+starting points, validation, and helper code you can adapt.
+
 ## 3. Ways to use PowderLine
 
 **Command line** — run or validate a recipe:
@@ -191,6 +195,10 @@ request access).
 - **[Quickstart](docs/quickstart.md)** — clone → install → run → read the output.
 - **[Getting Started](docs/getting-started.rst)** — full recipe structure, output
   files, and the Python API.
+- **[Building Recipes](docs/building-recipes.md)** — writing and validating your
+  own recipes, with helper code and an LLM prompt template.
+- **[Supported Features](docs/capabilities.md)** — what a recipe can describe,
+  per engine, and what is not yet supported.
 - **[Troubleshooting](docs/TROUBLESHOOTING.md)** — common errors and fixes.
 - **[Schema History](docs/SCHEMA_HISTORY.md)** — recipe-schema changelog (current:
   **0.26.0**) and migration guidance.
