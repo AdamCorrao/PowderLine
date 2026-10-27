@@ -133,10 +133,14 @@ def _number(raw):
 
 
 def _element(raw):
-    """Element symbol from a type symbol or label ("O2-" -> "O", "La1" -> "La"), or None."""
+    """Element symbol from a type symbol or label, or None.
+
+    Case-insensitive, two-letter symbols first: "O2-" -> "O", "La1" -> "La",
+    "FE1" -> "Fe", "CL1" -> "Cl".
+    """
     text = gemmi.cif.as_string(raw).strip()
     for size in (2, 1):
-        symbol = text[:size]
+        symbol = text[:size].capitalize()
         if re.fullmatch(r"[A-Z][a-z]?", symbol) and gemmi.Element(symbol).name != "X":
             return symbol
     return None
@@ -252,10 +256,13 @@ def read_cif(path, phase_name=None):
         if None in coords:
             raise ValueError(f"{path}: atom {label!r} has missing coordinates")
         element = _element(types[i]) if types else None
-        element = element or _element(label)
+        if element is None:
+            element = _element(label)
+            if element is not None:
+                warnings.append(f"atom {label!r}: no usable type symbol, element {element!r} taken from the label")
         if element is None:
             raise ValueError(f"{path}: cannot determine the element of atom {label!r}")
-        if types and gemmi.cif.as_string(types[i]).strip() != element:
+        if types and gemmi.cif.as_string(types[i]).strip().lower() not in (element.lower(), ""):
             warnings.append(f"atom {label!r}: type {gemmi.cif.as_string(types[i])!r} used as neutral {element!r}")
 
         occ = _number(occs[i]) if occs else None
@@ -331,17 +338,24 @@ def merge_phases(*blocks):
 
 
 def read_instprm(path):
-    """Read a GSAS-II ``.instprm`` file (``key:value`` lines) into a flat dict."""
+    """Read a single-bank GSAS-II ``.instprm`` file into a flat dict.
+
+    Each line holds one or more ``key:value`` pairs separated by ``;``, as in
+    GSAS-II's own reader. For a multi-bank file, extract one bank first.
+    """
     flat = {}
     for line in Path(path).read_text().splitlines():
         line = line.strip()
-        if not line or line.startswith("#") or ":" not in line:
+        if not line or line.startswith("#"):
             continue
-        key, value = (s.strip() for s in line.split(":", 1))
-        try:
-            flat[key] = float(value)
-        except ValueError:
-            flat[key] = value
+        for pair in line.split(";"):
+            if ":" not in pair:
+                continue
+            key, value = (s.strip() for s in pair.split(":", 1))
+            try:
+                flat[key] = float(value)
+            except ValueError:
+                flat[key] = value
     return flat
 
 
@@ -552,8 +566,9 @@ What to do:
    it, as it contains the whole pattern), then
    powderline.run(recipe, "output", engine="<my engine>", validate_only=True).
    Fix anything rejected. Do not run the refinement unless I ask; when I do,
-   it is powderline.run(recipe, "output", engine=...) or, from the shell,
-   pixi run kicker recipe.json.
+   it is powderline.run(recipe, "output", engine=...). From the shell,
+   pixi run kicker recipe.json runs GSAS-II only and pixi run topas-kicker
+   recipe.json runs TOPAS; easydiffraction has no shell command.
 
 Rules (schema 0.26.0):
 - schema_version must be exactly "0.26.0".
